@@ -1,0 +1,85 @@
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, ShieldX, Globe, AlertTriangle, Clock, Link } from 'lucide-react';
+
+const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
+  const [loading, setLoading] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  useEffect(() => {
+    if (!session?.expiresAt) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((session.expiresAt - Date.now()) / 1000));
+      setSecondsLeft(left);
+      if (left === 0) onClose();
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [session?.expiresAt, onClose]);
+
+  const domainMismatch = session?.domain && session.registeredDomain && session.domain !== session.registeredDomain;
+
+  const handleApprove = async () => {
+    setLoading(true);
+    try { await onApprove(); } finally { setLoading(false); }
+  };
+
+  const handleDeny = async () => {
+    setLoading(true);
+    try { await onDeny(); } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6">
+        <h2 className="text-lg font-bold text-white mb-4 text-center">Auth Request</h2>
+
+        <div className="flex flex-col items-center gap-4">
+          {session?.iconUrl ? (
+            <img src={session.iconUrl} alt={session.appName} className="w-16 h-16 rounded-2xl object-cover" />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+              <Link size={28} className="text-white" />
+            </div>
+          )}
+
+          <div className="text-center">
+            <p className="font-bold text-white text-lg">{session?.appName || 'Unknown App'}</p>
+            <div className="flex items-center justify-center gap-1 text-sm text-gray-400 mt-1">
+              <Globe size={13} />
+              <span>{session?.domain}</span>
+            </div>
+            <p className="text-gray-500 text-sm mt-2">wants to verify your identity</p>
+          </div>
+
+          {domainMismatch && (
+            <div className="flex items-start gap-2 bg-red-950/50 border border-red-800 rounded-xl p-3 w-full">
+              <AlertTriangle size={14} className="text-red-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-red-300">
+                Domain mismatch — request from <strong>{session.domain}</strong> but registered for <strong>{session.registeredDomain}</strong>. Do not approve.
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <Clock size={12} />
+            <span>Expires in {secondsLeft}s</span>
+          </div>
+
+          <div className="flex gap-3 w-full">
+            <button onClick={handleDeny} disabled={loading}
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-red-950/60 hover:bg-red-900/60 border border-red-800 text-red-300 font-semibold transition-colors disabled:opacity-50">
+              <ShieldX size={16} /> Deny
+            </button>
+            <button onClick={handleApprove} disabled={loading || domainMismatch || secondsLeft === 0}
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-green-900/60 hover:bg-green-800/60 border border-green-700 text-green-300 font-semibold transition-colors disabled:opacity-50">
+              <ShieldCheck size={16} /> {loading ? 'Approving…' : 'Approve'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ApprovalModal;

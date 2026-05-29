@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="glow" cx="42%" cy="50%" r="46%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
+      <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Near-black warm background -->
+  <rect width="512" height="512" fill="#0f0d09"/>
+
+  <!-- Ambient amber glow behind key -->
+  <ellipse cx="218" cy="256" rx="230" ry="190" fill="url(#glow)"/>
+
+  <!-- Key: stroke-based, amber-400, rotated -38° around canvas center -->
+  <g transform="rotate(-38, 256, 256)"
+     stroke="#fbbf24"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     fill="none">
+    <!-- Bow ring -->
+    <circle cx="200" cy="256" r="80" stroke-width="34"/>
+    <!-- Shaft -->
+    <line x1="280" y1="256" x2="386" y2="256" stroke-width="34"/>
+    <!-- Bit 1 (longer) -->
+    <line x1="358" y1="256" x2="358" y2="308" stroke-width="30"/>
+    <!-- Bit 2 (shorter) -->
+    <line x1="316" y1="256" x2="316" y2="294" stroke-width="30"/>
+  </g>
+
+  <!-- Center dot in bow -->
+  <circle cx="200" cy="256" r="13" fill="#fbbf24" transform="rotate(-38, 256, 256)"/>
+</svg>
