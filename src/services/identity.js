@@ -2,8 +2,7 @@ import {
   collection, doc, addDoc, getDoc, getDocs, deleteDoc,
   onSnapshot, orderBy, query, serverTimestamp
 } from 'firebase/firestore';
-import { ref, set, get } from 'firebase/database';
-import { db, rtdb } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { encryptData, decryptData } from '../lib/crypto';
 import {
   generateEd25519KeyPair,
@@ -68,34 +67,25 @@ const getDecryptedPrivateKey = async (userId, cryptoKey, registeredAppId) => {
   return importEd25519SecretKey(privKeyData.key);
 };
 
-export const approveAuthSession = async (userId, cryptoKey, registeredAppId, sessionData, appName) => {
-  const { sessionId, challenge } = sessionData;
-  const secretKey = await getDecryptedPrivateKey(userId, cryptoKey, registeredAppId);
-
-  const signedPayload = {
-    sessionId,
-    appId: registeredAppId,
-    challenge,
-    userId,
-    timestamp: Date.now(),
-  };
-  const signedToken = signWithEd25519(signedPayload, secretKey);
-
-  await set(ref(rtdb, `authSessions/${sessionId}`), {
-    ...sessionData,
-    status: 'approved',
-    signedToken,
-    signedPayload,
-  });
-
-  await logActivity(userId, `Approved login for ${appName}`, 'success', 'ShieldCheck', cryptoKey);
+/**
+ * Derive the stable per-app subject ID from the app's Ed25519 public key.
+ * `sub = hex( SHA-256( utf8(publicKeyBase64) ) )`. Self-contained: the relying
+ * party recomputes the same value from the public key it receives (no kunji UID
+ * involved). Stable per (user, app) — the keypair is per app domain — and
+ * different across apps, so apps cannot correlate the same kunji user.
+ */
+export const deriveSubFromPublicKey = async (publicKeyBase64) => {
+  const data = new TextEncoder().encode(publicKeyBase64);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-export const denyAuthSession = async (userId, sessionId, appName, cryptoKey) => {
-  await set(ref(rtdb, `authSessions/${sessionId}/status`), 'denied');
-  await logActivity(userId, `Denied login for ${appName}`, 'danger', 'ShieldX', cryptoKey);
-};
-
+/**
+ * Parse a v2 discoverable-login QR payload.
+ * Shape: { kunjiAuth:'v2', mode:'discoverable', sessionId, challenge, audience,
+ *          callbackUrl, appName?, iconUrl?, expiresAt }
+ * The callbackUrl must be same-site as the audience and HTTPS (localhost may use HTTP).
+ */
 export const parseQRPayload = (rawValue) => {
   let parsed;
   try {
@@ -103,22 +93,70 @@ export const parseQRPayload = (rawValue) => {
   } catch {
     throw new Error('invalid_qr');
   }
-  // Accept both kunjiAuth (v1) and sanctumAuth (v1) for backwards compatibility
-  const isKunji = parsed?.kunjiAuth === 'v1';
-  const isSanctum = parsed?.sanctumAuth === 'v1';
-  if ((!isKunji && !isSanctum) || !parsed.sessionId || !parsed.registeredAppId || !parsed.challenge || !parsed.expiresAt) {
+
+  if (
+    parsed?.kunjiAuth !== 'v2' ||
+    parsed.mode !== 'discoverable' ||
+    !parsed.sessionId || !parsed.challenge || !parsed.audience ||
+    !parsed.callbackUrl || !parsed.expiresAt
+  ) {
     throw new Error('invalid_qr');
   }
+
+  // Callback must be same-site as the audience the user is shown, over HTTPS
+  // (HTTP allowed only for localhost so the local demo works).
+  let cbUrl;
+  try {
+    cbUrl = new URL(parsed.callbackUrl);
+  } catch {
+    throw new Error('untrusted_callback');
+  }
+  const host = cbUrl.hostname;
+  const isLocal = host === 'localhost' || host === '127.0.0.1';
+  const sameSite = host === parsed.audience || host.endsWith('.' + parsed.audience);
+  const secure = cbUrl.protocol === 'https:' || (isLocal && cbUrl.protocol === 'http:');
+  if (!sameSite || !secure) {
+    throw new Error('untrusted_callback');
+  }
+
   if (Date.now() > parsed.expiresAt) {
     throw new Error('expired_qr');
   }
+
   return parsed;
 };
 
-export const fetchSessionFromRTDB = async (sessionId) => {
-  const snap = await get(ref(rtdb, `authSessions/${sessionId}`));
-  if (!snap.exists()) throw new Error('Session not found');
-  return snap.val();
+/**
+ * Sign the discoverable-login assertion with the app's per-app key and POST it
+ * to the relying party's callback URL. Kunji writes nothing to any shared store —
+ * the only outbound effect is this single HTTPS POST to the app's own endpoint.
+ */
+export const submitDiscoverableAssertion = async (userId, cryptoKey, app, qr) => {
+  const secretKey = await getDecryptedPrivateKey(userId, cryptoKey, app.registeredAppId);
+  const publicKey = app.publicKey;
+  const sub = await deriveSubFromPublicKey(publicKey);
+
+  const signedPayload = {
+    sessionId: qr.sessionId,
+    challenge: qr.challenge,
+    audience: qr.audience,
+    sub,
+    timestamp: Date.now(),
+  };
+  const signedToken = signWithEd25519(signedPayload, secretKey);
+
+  const resp = await fetch(qr.callbackUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ publicKey, signedPayload, signedToken }),
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    throw new Error(`callback_rejected:${resp.status}${detail ? ` ${detail}` : ''}`);
+  }
+
+  await logActivity(userId, `Signed in to ${qr.audience}`, 'success', 'ShieldCheck', cryptoKey);
+  return { sub };
 };
 
 export const exportAllApps = async (userId, cryptoKey) => {

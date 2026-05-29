@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, ScanLine, Lock, KeyRound, Globe, Shield } from 'lucide-react';
-import { listenToApps, deleteApp, approveAuthSession, denyAuthSession, parseQRPayload, fetchSessionFromRTDB } from '../services/identity';
-import { logActivity } from '../services/activityLog';
+import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey } from '../services/identity';
 import AppCard from './AppCard';
 import RegisterAppModal from './RegisterAppModal';
 import ApprovalModal from './ApprovalModal';
@@ -30,16 +29,36 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
   const handleQRScan = async (rawValue) => {
     setShowScanner(false);
     try {
-      const qrData = parseQRPayload(rawValue);
-      const session = await fetchSessionFromRTDB(qrData.sessionId);
-      const matchedApp = apps.find(a => a.id === qrData.registeredAppId);
+      const qr = parseQRPayload(rawValue);
+
+      // Find an existing key for this audience domain, or auto-register one
+      // (first login to a domain == registration, fully client-side).
+      let matchedApp = apps.find(a => a.domain === qr.audience);
+      let isNew = false;
       if (!matchedApp) {
-        showToast('No registered app found for this QR code.', 'error');
-        return;
+        const { registeredAppId, publicKey } = await registerApp(user.uid, cryptoKey, {
+          name: qr.appName || qr.audience,
+          domain: qr.audience,
+          iconUrl: qr.iconUrl || '',
+        });
+        matchedApp = { id: registeredAppId, name: qr.appName || qr.audience, domain: qr.audience, publicKey };
+        isNew = true;
       }
-      setPendingSession({ ...session, ...qrData, appName: matchedApp.name, domain: matchedApp.domain });
+
+      const sub = await deriveSubFromPublicKey(matchedApp.publicKey);
+      setPendingSession({
+        ...qr,
+        registeredAppId: matchedApp.id,
+        publicKey: matchedApp.publicKey,
+        appName: matchedApp.name,
+        domain: qr.audience,
+        sub,
+        isNew,
+      });
     } catch (err) {
-      const msg = err.message === 'expired_qr' ? 'QR code has expired.' : 'Invalid QR code.';
+      const msg = err.message === 'expired_qr' ? 'QR code has expired.'
+        : err.message === 'untrusted_callback' ? 'Untrusted login request (callback domain mismatch).'
+        : 'Invalid QR code.';
       showToast(msg, 'error');
     }
   };
@@ -47,26 +66,23 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
   const handleApprove = async () => {
     if (!pendingSession) return;
     try {
-      await approveAuthSession(user.uid, cryptoKey, pendingSession.registeredAppId, pendingSession, pendingSession.appName);
-      showToast(`Approved login for ${pendingSession.appName}`);
-      logActivity(user.uid, `Approved: ${pendingSession.appName}`, 'success', 'ShieldCheck', cryptoKey);
+      await submitDiscoverableAssertion(
+        user.uid, cryptoKey,
+        { registeredAppId: pendingSession.registeredAppId, publicKey: pendingSession.publicKey },
+        pendingSession,
+      );
+      showToast(`Signed in to ${pendingSession.audience}`);
     } catch (e) {
-      showToast('Approval failed: ' + e.message, 'error');
+      showToast('Login failed: ' + e.message, 'error');
     } finally {
       setPendingSession(null);
     }
   };
 
-  const handleDeny = async () => {
-    if (!pendingSession) return;
-    try {
-      await denyAuthSession(user.uid, pendingSession.sessionId, pendingSession.appName, cryptoKey);
-      showToast('Login request denied.');
-    } catch (e) {
-      showToast('Deny failed: ' + e.message, 'error');
-    } finally {
-      setPendingSession(null);
-    }
+  const handleDeny = () => {
+    // No shared session to update — kunji simply declines locally.
+    showToast('Login request declined.');
+    setPendingSession(null);
   };
 
   const handleDeleteApp = async (app) => {

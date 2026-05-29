@@ -11,12 +11,11 @@
     script-src 'self' 'wasm-unsafe-eval' https://*.firebasedatabase.app;
     style-src 'self' 'unsafe-inline';
     connect-src 'self'
-      https://*.googleapis.com
-      https://*.firebaseio.com
+      https:
+      http://localhost:*
+      http://127.0.0.1:*
       wss://*.firebaseio.com
-      https://*.firebasedatabase.app
-      wss://*.firebasedatabase.app
-      https://storage.googleapis.com;
+      wss://*.firebasedatabase.app;
     font-src 'self' data:;
     img-src 'self' data: blob: https:;
     media-src 'self' blob:;
