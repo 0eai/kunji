@@ -1,0 +1,21 @@
+{
+  "projects": {
+    "default": "kunji-cc"
+  },
+  "targets": {
+    "kunji-cc": {
+      "hosting": {
+        "landing": [
+          "kunji-cc"
+        ],
+        "app": [
+          "app-kunji-cc"
+        ],
+        "redirect": [
+          "kunji-xyz"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

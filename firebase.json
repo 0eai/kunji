@@ -1,0 +1,37 @@
+{
+  "hosting": [
+    {
+      "target": "app",
+      "public": "dist",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=(), payment=()" },
+            { "key": "X-Frame-Options", "value": "DENY" },
+            { "key": "X-Content-Type-Options", "value": "nosniff" },
+            { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "landing",
+      "public": "landing",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+    },
+    {
+      "target": "redirect",
+      "public": "redirect-xyz",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "redirects": [
+        { "source": "**", "destination": "https://kunji.cc", "type": 301 }
+      ]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
