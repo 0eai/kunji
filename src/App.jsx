@@ -1,12 +1,28 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useVault } from './context/VaultContext';
 import { auth, ensureAnonymousAuth, onAuthStateChanged } from './lib/firebase';
 import { logActivity } from './services/activityLog';
 import LockScreen from './components/LockScreen';
 import Dashboard from './components/Dashboard';
 
+// Same-device deep link: an RP opens app.kunji.cc/?approve=<base64url(JSON payload)>.
+// Decode it once at startup so the Dashboard can show the approval without scanning.
+function readIncomingApproval() {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('approve');
+    if (!raw) return null;
+    const json = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
+    JSON.parse(json); // validate it's JSON
+    history.replaceState(null, '', window.location.pathname); // clear the query
+    return json;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const { user, cryptoKey, loading, lockReason, setAuthUser, unlockVault, lockVault } = useVault();
+  const [incomingApproval] = useState(readIncomingApproval);
 
   // Sign in anonymously on first load, persist session
   useEffect(() => {
@@ -99,6 +115,7 @@ export default function App() {
     <Dashboard
       user={user}
       cryptoKey={cryptoKey}
+      incomingApproval={incomingApproval}
       onLock={() => {
         logActivity(user.uid, 'Vault Locked', 'info', 'Lock', cryptoKey);
         lockVault();

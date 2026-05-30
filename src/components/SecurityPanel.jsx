@@ -1,15 +1,52 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, KeyRound, Copy, CheckCircle2, AlertTriangle, Smartphone, ScanLine } from 'lucide-react';
-import { exportRecoveryKey } from '../services/vault';
+import {
+  X, KeyRound, Copy, CheckCircle2, AlertTriangle, Smartphone, ScanLine,
+  Lock, LogOut, Activity, Unlock, ShieldCheck, ShieldX, RotateCcw, Link as LinkIcon, Unlink, Circle,
+} from 'lucide-react';
+import { exportRecoveryKey, resetUserVault } from '../services/vault';
 import { completeLink } from '../services/linking';
+import { listenToActivityLog } from '../services/activityLog';
+import { signOutDevice } from '../lib/firebase';
 import QRScannerOverlay from './QRScannerOverlay';
 import { useToast } from '../contexts/ToastContext';
 
 const MIN_PASSPHRASE = 8;
 const CLEAR_MS = 60000;
 
-const SecurityPanel = ({ userId, cryptoKey, onClose }) => {
+// Map stored activity icon names → lucide components.
+const ACTIVITY_ICONS = { Unlock, Lock, ShieldCheck, ShieldX, AlertTriangle, Smartphone, Link: LinkIcon, Unlink, RotateCcw, CheckCircle: CheckCircle2 };
+const TYPE_COLOR = { success: 'text-green-400', danger: 'text-red-400', info: 'text-gray-400' };
+
+const relTime = (createdAt) => {
+  const ms = createdAt?.toMillis ? createdAt.toMillis() : (createdAt?.seconds ? createdAt.seconds * 1000 : null);
+  if (!ms) return '';
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
+
+const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   const { showToast } = useToast();
+
+  // Activity log
+  const [events, setEvents] = useState([]);
+  useEffect(() => {
+    const unsub = listenToActivityLog(userId, setEvents, 30, cryptoKey);
+    return unsub;
+  }, [userId, cryptoKey]);
+
+  const handleSignOut = async () => {
+    if (!window.confirm("Sign out of this device?\n\nYou'll need your recovery key or another linked device to sign back in. Your registered apps stay synced on your other devices.")) return;
+    try {
+      await resetUserVault(userId);
+      await signOutDevice();
+      window.location.reload();
+    } catch (e) {
+      showToast('Sign out failed: ' + e.message, 'error');
+    }
+  };
 
   // Export Recovery Key
   const [passkey, setPasskey] = useState('');
@@ -141,6 +178,51 @@ const SecurityPanel = ({ userId, cryptoKey, onClose }) => {
                 </button>
               </div>
             )}
+          </section>
+
+          <div className="border-t border-[#27272a]" />
+
+          {/* Activity */}
+          <section>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+              <Activity size={15} className="text-amber-400" /> Recent activity
+            </h3>
+            {events.length === 0 ? (
+              <p className="text-xs text-gray-600">No activity on this device yet.</p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {events.map((e) => {
+                  const Icon = ACTIVITY_ICONS[e.icon] || Circle;
+                  return (
+                    <div key={e.id} className="flex items-center gap-3">
+                      <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-gray-400'} flex-shrink-0`} />
+                      <span className="text-xs text-gray-300 flex-1 truncate">{e.action}</span>
+                      <span className="text-[10px] text-gray-600 flex-shrink-0">{relTime(e.createdAt)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <div className="border-t border-[#27272a]" />
+
+          {/* Session */}
+          <section className="space-y-2">
+            {onLock && (
+              <button
+                onClick={() => { onClose(); onLock(); }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-semibold transition-colors"
+              >
+                <Lock size={16} /> Lock now
+              </button>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-950/60 hover:bg-red-900/60 border border-red-800 text-red-300 font-semibold transition-colors"
+            >
+              <LogOut size={16} /> Sign out of this device
+            </button>
           </section>
         </div>
       </div>

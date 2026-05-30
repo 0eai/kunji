@@ -2,9 +2,17 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // A user can read/write only their own vault: profile doc, apps, activity log.
+    // A user can read/write only their own per-device data: vault credentials + activity log.
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Shared vault data (the apps list), keyed by a master-key-derived vaultId so it
+    // syncs across a user's linked devices. The vaultId is a high-entropy secret known
+    // only to devices holding the master key, and all stored metadata is encrypted with
+    // that key — so reads/writes are gated only by being signed in.
+    match /vaults/{vaultId}/{document=**} {
+      allow read, write: if request.auth != null;
     }
 
     // Device-linking relay. The payload is ECDH-encrypted to the new device's

@@ -11,11 +11,13 @@ import {
 } from '../lib/crypto';
 import { logActivity } from './activityLog';
 
-const appsCol = (userId) => collection(db, 'users', userId, 'apps');
-const appDoc = (userId, appId) => doc(db, 'users', userId, 'apps', appId);
+// Apps are keyed by the master-key-derived vaultId so the list syncs across every
+// linked device. Activity logging stays per-device (userId).
+const appsCol = (vaultId) => collection(db, 'vaults', vaultId, 'apps');
+const appDoc = (vaultId, appId) => doc(db, 'vaults', vaultId, 'apps', appId);
 
-export const listenToApps = (userId, cryptoKey, callback) => {
-  const q = query(appsCol(userId), orderBy('createdAt', 'asc'));
+export const listenToApps = (vaultId, cryptoKey, callback) => {
+  const q = query(appsCol(vaultId), orderBy('createdAt', 'asc'));
   return onSnapshot(q, async (snap) => {
     const apps = [];
     for (const d of snap.docs) {
@@ -33,7 +35,7 @@ export const listenToApps = (userId, cryptoKey, callback) => {
   });
 };
 
-export const registerApp = async (userId, cryptoKey, { name, domain, iconUrl = '' }) => {
+export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = '' }, userId) => {
   // Per-app keypair is derived from the master key + domain (not stored).
   const { publicKey } = await deriveAppKeyPair(cryptoKey, domain);
   const pubKeyBase64 = exportEd25519PublicKey(publicKey);
@@ -42,19 +44,19 @@ export const registerApp = async (userId, cryptoKey, { name, domain, iconUrl = '
   // reproduced on demand from the master key, so it never needs to be stored.
   const payload = await encryptData({ name, domain, iconUrl }, cryptoKey);
 
-  const docRef = await addDoc(appsCol(userId), {
+  const docRef = await addDoc(appsCol(vaultId), {
     ...payload,
     publicKey: pubKeyBase64,
     createdAt: serverTimestamp(),
   });
 
-  await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey);
+  if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey);
   return { registeredAppId: docRef.id, publicKey: pubKeyBase64 };
 };
 
-export const deleteApp = async (userId, registeredAppId, appName, cryptoKey) => {
-  await deleteDoc(appDoc(userId, registeredAppId));
-  await logActivity(userId, `Removed app: ${appName}`, 'info', 'Unlink', cryptoKey);
+export const deleteApp = async (vaultId, registeredAppId, appName, cryptoKey, userId) => {
+  await deleteDoc(appDoc(vaultId, registeredAppId));
+  if (userId) await logActivity(userId, `Removed app: ${appName}`, 'info', 'Unlink', cryptoKey);
 };
 
 /**
@@ -150,8 +152,8 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, qr) => {
   return { sub };
 };
 
-export const exportAllApps = async (userId, cryptoKey) => {
-  const snap = await getDocs(appsCol(userId));
+export const exportAllApps = async (vaultId, cryptoKey) => {
+  const snap = await getDocs(appsCol(vaultId));
   const apps = [];
   for (const d of snap.docs) {
     const raw = d.data();

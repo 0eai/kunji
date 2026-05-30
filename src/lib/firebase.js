@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, setPersistence, browserLocalPersistence, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, setPersistence, browserLocalPersistence, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -30,5 +30,7 @@ export async function ensureAnonymousAuth() {
   const { user } = await signInAnonymously(auth);
   return user;
 }
+
+export const signOutDevice = () => signOut(auth);
 
 export { onAuthStateChanged };

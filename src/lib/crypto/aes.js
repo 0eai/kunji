@@ -66,6 +66,25 @@ export const deriveKeyFromPasskey = async (passkey, saltString, iterations = DEF
     );
 };
 
+// Derive a stable, high-entropy vault id from the master key. Every device that
+// holds the same master key computes the same id, so shared data (the apps list)
+// can live under vaults/{vaultId} and sync across linked devices automatically.
+export const deriveVaultId = async (masterKey) => {
+    const raw = await window.crypto.subtle.exportKey('raw', masterKey);
+    const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+    const bits = await window.crypto.subtle.deriveBits(
+        {
+            name: 'HKDF',
+            hash: 'SHA-256',
+            salt: new TextEncoder().encode('kunji-vault-id-v1'),
+            info: new TextEncoder().encode('kunji-vault-id'),
+        },
+        ikm,
+        256,
+    );
+    return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 export const deriveKeyArgon2id = async (passkey, saltString) => {
     const salt = new TextEncoder().encode(saltString);
     const hash = await argon2id({

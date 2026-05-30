@@ -1,35 +1,70 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, ScanLine, Lock, KeyRound, Shield, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ScanLine, Lock, KeyRound, Shield, Settings } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey } from '../services/identity';
+import { completeLink } from '../services/linking';
+import { deriveVaultId } from '../lib/crypto';
 import AppCard from './AppCard';
-import RegisterAppModal from './RegisterAppModal';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import QRScannerOverlay from './QRScannerOverlay';
 import SecurityPanel from './SecurityPanel';
 import { useToast } from '../contexts/ToastContext';
 
-const Dashboard = ({ user, cryptoKey, onLock }) => {
+const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const { showToast } = useToast();
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [vaultId, setVaultId] = useState(null);
 
-  const [showRegister, setShowRegister] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [pendingSession, setPendingSession] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
+  const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } after same-device approval
+  const incomingHandled = useRef(false);
+
+  // Derive the shared vault id from the master key (same on every linked device).
+  useEffect(() => {
+    deriveVaultId(cryptoKey).then(setVaultId).catch(() => setVaultId(null));
+  }, [cryptoKey]);
 
   useEffect(() => {
-    const unsub = listenToApps(user.uid, cryptoKey, (data) => {
+    if (!vaultId) return;
+    const unsub = listenToApps(vaultId, cryptoKey, (data) => {
       setApps(data);
       setLoading(false);
     });
     return unsub;
-  }, [user.uid, cryptoKey]);
+  }, [vaultId, cryptoKey]);
+
+  // Same-device deep-link: process an incoming approval payload once the vault is ready.
+  useEffect(() => {
+    if (!vaultId || !incomingApproval || incomingHandled.current) return;
+    incomingHandled.current = true;
+    handleQRScan(incomingApproval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultId, incomingApproval]);
 
   const handleQRScan = async (rawValue) => {
     setShowScanner(false);
+
+    // A device-link QR ({kunjiLink:'v1'}) — transfer the master key to the new device.
+    try {
+      const maybeLink = JSON.parse(rawValue);
+      if (maybeLink?.kunjiLink === 'v1') {
+        try {
+          await completeLink(rawValue, cryptoKey);
+          showToast('Device linked — it now shares your identity.');
+        } catch (e) {
+          const m = e.message === 'link_expired' ? 'Link QR expired.'
+            : e.message === 'link_already_used' ? 'That link was already used.'
+            : 'Linking failed: ' + e.message;
+          showToast(m, 'error');
+        }
+        return;
+      }
+    } catch { /* not JSON / not a link QR — fall through to login parsing */ }
+
     try {
       const qr = parseQRPayload(rawValue);
 
@@ -38,11 +73,11 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
       let matchedApp = apps.find(a => a.domain === qr.audience);
       let isNew = false;
       if (!matchedApp) {
-        const { registeredAppId, publicKey } = await registerApp(user.uid, cryptoKey, {
+        const { registeredAppId, publicKey } = await registerApp(vaultId, cryptoKey, {
           name: qr.appName || qr.audience,
           domain: qr.audience,
           iconUrl: qr.iconUrl || '',
-        });
+        }, user.uid);
         matchedApp = { id: registeredAppId, name: qr.appName || qr.audience, domain: qr.audience, publicKey };
         isNew = true;
       }
@@ -67,9 +102,11 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
 
   const handleApprove = async () => {
     if (!pendingSession) return;
+    const { audience, returnUrl } = pendingSession;
     try {
       await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession);
-      showToast(`Signed in to ${pendingSession.audience}`);
+      showToast(`Signed in to ${audience}`);
+      if (returnUrl) setReturnInfo({ audience, returnUrl });
     } catch (e) {
       showToast('Login failed: ' + e.message, 'error');
     } finally {
@@ -86,7 +123,7 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
   const handleDeleteApp = async (app) => {
     if (!window.confirm(`Remove "${app.name}"?\n\nExisting sessions signed by this app's key will no longer verify.`)) return;
     try {
-      await deleteApp(user.uid, app.id, app.name, cryptoKey);
+      await deleteApp(vaultId, app.id, app.name, cryptoKey, user.uid);
       showToast(`Removed ${app.name}`);
     } catch (e) {
       showToast('Delete failed: ' + e.message, 'error');
@@ -121,18 +158,12 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
       </header>
 
       {/* Actions */}
-      <div className="flex gap-3 px-5 py-3">
+      <div className="px-5 py-3">
         <button
           onClick={() => setShowScanner(true)}
-          className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-3.5 rounded-2xl transition-all active:scale-[0.97]"
+          className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-3.5 rounded-2xl transition-all active:scale-[0.97]"
         >
           <ScanLine size={18} /> Scan QR
-        </button>
-        <button
-          onClick={() => setShowRegister(true)}
-          className="flex items-center justify-center gap-2 bg-[#27272a] hover:bg-[#3f3f46] text-white font-semibold py-3.5 px-5 rounded-2xl transition-all active:scale-[0.97]"
-        >
-          <Plus size={18} /> Register App
         </button>
       </div>
 
@@ -146,8 +177,8 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
               <Shield size={28} className="text-gray-600" />
             </div>
             <div>
-              <p className="text-gray-400 font-medium">No apps registered</p>
-              <p className="text-gray-600 text-sm mt-1">Register an app to get its public key, then scan its QR code to approve logins.</p>
+              <p className="text-gray-400 font-medium">No apps yet</p>
+              <p className="text-gray-600 text-sm mt-1">Scan an app's login QR to sign in — it's added here automatically.</p>
             </div>
           </div>
         ) : (
@@ -165,18 +196,6 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
       </div>
 
       {/* Modals */}
-      {showRegister && (
-        <RegisterAppModal
-          user={user}
-          cryptoKey={cryptoKey}
-          onClose={() => setShowRegister(false)}
-          onRegistered={(app) => {
-            setShowRegister(false);
-            setSelectedApp(app);
-          }}
-        />
-      )}
-
       {showScanner && (
         <QRScannerOverlay
           onScan={handleQRScan}
@@ -204,8 +223,30 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
         <SecurityPanel
           userId={user.uid}
           cryptoKey={cryptoKey}
+          onLock={onLock}
           onClose={() => setShowSecurity(false)}
         />
+      )}
+
+      {returnInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6 text-center">
+            <div className="mx-auto w-14 h-14 bg-green-500/15 rounded-full flex items-center justify-center mb-4">
+              <Shield size={26} className="text-green-400" />
+            </div>
+            <h2 className="text-lg font-bold text-white mb-1">Signed in</h2>
+            <p className="text-sm text-gray-400 mb-5">You approved sign-in to <strong className="text-gray-200">{returnInfo.audience}</strong>.</p>
+            <a
+              href={returnInfo.returnUrl}
+              className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
+            >
+              Return to {returnInfo.audience}
+            </a>
+            <button onClick={() => setReturnInfo(null)} className="mt-2 w-full py-2.5 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white text-sm font-medium transition-colors">
+              Stay in kunji
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

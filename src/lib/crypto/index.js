@@ -17,6 +17,7 @@ export {
     importMasterKey,
     deriveKeyFromPasskey,
     deriveKeyArgon2id,
+    deriveVaultId,
     encryptData,
     decryptData,
     keyToUrlString,
