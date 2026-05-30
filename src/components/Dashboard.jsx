@@ -131,9 +131,9 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#09090b] text-white flex flex-col">
+    <div className="h-[100dvh] bg-[#09090b] text-white flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between px-5 pt-10 pb-4">
+      <header className="flex items-center justify-between px-5 pt-10 pb-4 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
             <KeyRound size={18} className="text-black" />
@@ -157,18 +157,8 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         </div>
       </header>
 
-      {/* Actions */}
-      <div className="px-5 py-3">
-        <button
-          onClick={() => setShowScanner(true)}
-          className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-3.5 rounded-2xl transition-all active:scale-[0.97]"
-        >
-          <ScanLine size={18} /> Scan QR
-        </button>
-      </div>
-
-      {/* App List */}
-      <div className="flex-1 px-5 py-2">
+      {/* App List (scrolls; the Scan QR action is pinned at the bottom) */}
+      <div className="flex-1 overflow-y-auto px-5 py-2">
         {loading ? (
           <div className="flex items-center justify-center h-48 text-gray-600">Loading...</div>
         ) : apps.length === 0 ? (
@@ -193,6 +183,16 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Pinned bottom action — primary action in the thumb zone */}
+      <div className="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[#18181b] bg-[#09090b]">
+        <button
+          onClick={() => setShowScanner(true)}
+          className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-3.5 rounded-2xl transition-all active:scale-[0.97]"
+        >
+          <ScanLine size={18} /> Scan QR
+        </button>
       </div>
 
       {/* Modals */}
