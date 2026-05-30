@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScanLine, Lock, KeyRound, Shield, Settings } from 'lucide-react';
-import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey } from '../services/identity';
+import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps } from '../services/identity';
 import { completeLink } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
 import AppCard from './AppCard';
@@ -36,6 +36,17 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     });
     return unsub;
   }, [vaultId, cryptoKey]);
+
+  // One-time: bring forward apps registered before the move to vaultId storage.
+  useEffect(() => {
+    if (!vaultId) return;
+    const flag = `kunji_migrated_${user.uid}`;
+    if (localStorage.getItem(flag)) return;
+    migrateLegacyApps(user.uid, vaultId)
+      .then((n) => { localStorage.setItem(flag, '1'); if (n) showToast(`Restored ${n} app${n > 1 ? 's' : ''}.`); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultId, user.uid]);
 
   // Same-device deep-link: process an incoming approval payload once the vault is ready.
   useEffect(() => {

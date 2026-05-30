@@ -1,5 +1,5 @@
 import {
-  collection, doc, addDoc, getDocs, deleteDoc,
+  collection, doc, addDoc, getDocs, deleteDoc, setDoc,
   onSnapshot, orderBy, query, serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -57,6 +57,22 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
 export const deleteApp = async (vaultId, registeredAppId, appName, cryptoKey, userId) => {
   await deleteDoc(appDoc(vaultId, registeredAppId));
   if (userId) await logActivity(userId, `Removed app: ${appName}`, 'info', 'Unlink', cryptoKey);
+};
+
+/**
+ * One-time migration: copy apps from the legacy per-device path (users/{uid}/apps)
+ * to the shared vault path (vaults/{vaultId}/apps) so previously-registered apps
+ * reappear after the move to vaultId-keyed storage. Idempotent (same doc ids).
+ */
+export const migrateLegacyApps = async (userId, vaultId) => {
+  const legacy = await getDocs(collection(db, 'users', userId, 'apps'));
+  if (legacy.empty) return 0;
+  let n = 0;
+  for (const d of legacy.docs) {
+    await setDoc(appDoc(vaultId, d.id), d.data());
+    n++;
+  }
+  return n;
 };
 
 /**
