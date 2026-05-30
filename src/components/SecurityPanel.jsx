@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X, KeyRound, Copy, CheckCircle2, AlertTriangle, Smartphone, ScanLine,
-  Lock, LogOut, Activity, Unlock, ShieldCheck, ShieldX, RotateCcw, Link as LinkIcon, Unlink, Circle,
+  Lock, LogOut, Activity, Unlock, ShieldCheck, ShieldX, RotateCcw, Link as LinkIcon, Unlink, Circle, ChevronDown,
 } from 'lucide-react';
 import { exportRecoveryKey, resetUserVault } from '../services/vault';
 import { completeLink } from '../services/linking';
@@ -12,6 +12,7 @@ import { useToast } from '../contexts/ToastContext';
 
 const MIN_PASSPHRASE = 8;
 const CLEAR_MS = 60000;
+const SIGNOUT_CONFIRM = 'SIGN OUT';
 
 // Map stored activity icon names → lucide components.
 const ACTIVITY_ICONS = { Unlock, Lock, ShieldCheck, ShieldX, AlertTriangle, Smartphone, Link: LinkIcon, Unlink, RotateCcw, CheckCircle: CheckCircle2 };
@@ -27,8 +28,27 @@ const relTime = (createdAt) => {
   return `${Math.floor(s / 86400)}d ago`;
 };
 
+// Collapsible section with an icon + title header (collapsed by default).
+const Section = ({ icon: Icon, title, open, onToggle, children }) => (
+  <section>
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 text-sm font-semibold text-white"
+    >
+      <Icon size={15} className="text-amber-400" />
+      <span className="flex-1 text-left">{title}</span>
+      <ChevronDown size={16} className={`text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    {open && <div className="mt-3">{children}</div>}
+  </section>
+);
+
 const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   const { showToast } = useToast();
+
+  // Which collapsible sections are open (all collapsed by default).
+  const [open, setOpen] = useState({ link: false, recovery: false, activity: false });
+  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   // Activity log
   const [events, setEvents] = useState([]);
@@ -37,14 +57,21 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     return unsub;
   }, [userId, cryptoKey]);
 
+  // Sign-out confirmation dialog
+  const [showSignOut, setShowSignOut] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
+
   const handleSignOut = async () => {
-    if (!window.confirm("Sign out of this device?\n\nYou'll need your recovery key or another linked device to sign back in. Your registered apps stay synced on your other devices.")) return;
+    if (confirmText.trim().toUpperCase() !== SIGNOUT_CONFIRM) return;
+    setSigningOut(true);
     try {
       await resetUserVault(userId);
       await signOutDevice();
       window.location.reload();
     } catch (e) {
       showToast('Sign out failed: ' + e.message, 'error');
+      setSigningOut(false);
     }
   };
 
@@ -111,12 +138,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           </button>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Link a device */}
-          <section>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
-              <Smartphone size={15} className="text-amber-400" /> Link a device
-            </h3>
+          <Section icon={Smartphone} title="Link a device" open={open.link} onToggle={() => toggle('link')}>
             <p className="text-xs text-gray-500 mb-3">
               Add another device to this identity. On the new device choose “Link from another device”, then scan its QR here.
             </p>
@@ -126,15 +150,12 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             >
               <ScanLine size={16} /> Scan device QR
             </button>
-          </section>
+          </Section>
 
           <div className="border-t border-[#27272a]" />
 
           {/* Export recovery key */}
-          <section>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
-              <KeyRound size={15} className="text-amber-400" /> Export recovery key
-            </h3>
+          <Section icon={KeyRound} title="Export recovery key" open={open.recovery} onToggle={() => toggle('recovery')}>
             <p className="text-xs text-gray-500 mb-3">
               A cold backup that restores your vault if you lose every device. Encrypted with a separate passphrase — store the key and passphrase apart.
             </p>
@@ -178,15 +199,12 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
                 </button>
               </div>
             )}
-          </section>
+          </Section>
 
           <div className="border-t border-[#27272a]" />
 
           {/* Activity */}
-          <section>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
-              <Activity size={15} className="text-amber-400" /> Recent activity
-            </h3>
+          <Section icon={Activity} title="Recent activity" open={open.activity} onToggle={() => toggle('activity')}>
             {events.length === 0 ? (
               <p className="text-xs text-gray-600">No activity on this device yet.</p>
             ) : (
@@ -203,7 +221,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
                 })}
               </div>
             )}
-          </section>
+          </Section>
 
           <div className="border-t border-[#27272a]" />
 
@@ -218,7 +236,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
               </button>
             )}
             <button
-              onClick={handleSignOut}
+              onClick={() => { setConfirmText(''); setShowSignOut(true); }}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-950/60 hover:bg-red-900/60 border border-red-800 text-red-300 font-semibold transition-colors"
             >
               <LogOut size={16} /> Sign out of this device
@@ -229,6 +247,46 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
       {showScanner && (
         <QRScannerOverlay onScan={handleLinkScan} onClose={() => setShowScanner(false)} />
+      )}
+
+      {showSignOut && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-red-900/60 rounded-3xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-9 h-9 bg-red-500/15 rounded-full flex items-center justify-center">
+                <LogOut size={16} className="text-red-400" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Sign out of this device?</h2>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              This device will forget your identity. You'll need your <strong className="text-gray-200">recovery key</strong> or
+              another <strong className="text-gray-200">linked device</strong> to sign back in. Your registered apps stay synced on your other devices.
+            </p>
+            <label className="block text-xs text-gray-500 mb-1">Type <span className="font-mono text-gray-300">{SIGNOUT_CONFIRM}</span> to confirm</label>
+            <input
+              autoFocus value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSignOut(); }}
+              placeholder={SIGNOUT_CONFIRM}
+              className="w-full p-3 rounded-xl bg-black border border-[#27272a] text-white placeholder-gray-700 focus:ring-2 focus:ring-red-600 focus:border-transparent outline-none mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSignOut(false)} disabled={signingOut}
+                className="flex-1 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSignOut}
+                disabled={signingOut || confirmText.trim().toUpperCase() !== SIGNOUT_CONFIRM}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+              >
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
