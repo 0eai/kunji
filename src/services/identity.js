@@ -1,5 +1,5 @@
 import {
-  collection, doc, addDoc, getDocs, deleteDoc, setDoc,
+  collection, doc, getDoc, getDocs, deleteDoc, setDoc,
   onSnapshot, orderBy, query, serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -16,15 +16,25 @@ import { logActivity } from './activityLog';
 const appsCol = (vaultId) => collection(db, 'vaults', vaultId, 'apps');
 const appDoc = (vaultId, appId) => doc(db, 'vaults', vaultId, 'apps', appId);
 
+// Deterministic doc id per domain, so a domain maps to exactly one app entry
+// (same id across devices and logins — registration is idempotent).
+const appIdForDomain = async (domain) => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(domain));
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 export const listenToApps = (vaultId, cryptoKey, callback) => {
   const q = query(appsCol(vaultId), orderBy('createdAt', 'asc'));
   return onSnapshot(q, async (snap) => {
     const apps = [];
+    const seenDomains = new Set();
     for (const d of snap.docs) {
       const raw = d.data();
       try {
         const decrypted = await decryptData(raw, cryptoKey);
         if (decrypted) {
+          if (seenDomains.has(decrypted.domain)) continue; // collapse legacy duplicates
+          seenDomains.add(decrypted.domain);
           apps.push({ id: d.id, ...decrypted, publicKey: raw.publicKey, createdAt: raw.createdAt });
         }
       } catch {
@@ -40,18 +50,18 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
   const { publicKey } = await deriveAppKeyPair(cryptoKey, domain);
   const pubKeyBase64 = exportEd25519PublicKey(publicKey);
 
-  // Only display metadata is persisted (encrypted at rest); the signing key is
-  // reproduced on demand from the master key, so it never needs to be stored.
-  const payload = await encryptData({ name, domain, iconUrl }, cryptoKey);
+  // Idempotent: one doc per domain. Only write (and log) the first time it's seen.
+  const id = await appIdForDomain(domain);
+  const ref = appDoc(vaultId, id);
+  const existed = (await getDoc(ref)).exists();
 
-  const docRef = await addDoc(appsCol(vaultId), {
-    ...payload,
-    publicKey: pubKeyBase64,
-    createdAt: serverTimestamp(),
-  });
+  if (!existed) {
+    const payload = await encryptData({ name, domain, iconUrl }, cryptoKey);
+    await setDoc(ref, { ...payload, publicKey: pubKeyBase64, createdAt: serverTimestamp() });
+    if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey);
+  }
 
-  if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey);
-  return { registeredAppId: docRef.id, publicKey: pubKeyBase64 };
+  return { registeredAppId: id, publicKey: pubKeyBase64, isNew: !existed };
 };
 
 export const deleteApp = async (vaultId, registeredAppId, appName, cryptoKey, userId) => {

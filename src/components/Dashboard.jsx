@@ -80,26 +80,20 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     try {
       const qr = parseQRPayload(rawValue);
 
-      // Find an existing key for this audience domain, or auto-register one
-      // (first login to a domain == registration, fully client-side).
-      let matchedApp = apps.find(a => a.domain === qr.audience);
-      let isNew = false;
-      if (!matchedApp) {
-        const { registeredAppId, publicKey } = await registerApp(vaultId, cryptoKey, {
-          name: qr.appName || qr.audience,
-          domain: qr.audience,
-          iconUrl: qr.iconUrl || '',
-        }, user.uid);
-        matchedApp = { id: registeredAppId, name: qr.appName || qr.audience, domain: qr.audience, publicKey };
-        isNew = true;
-      }
+      // Idempotent register (one entry per domain). isNew reflects first-ever use,
+      // independent of whether the in-memory app list has loaded yet.
+      const { registeredAppId, publicKey, isNew } = await registerApp(vaultId, cryptoKey, {
+        name: qr.appName || qr.audience,
+        domain: qr.audience,
+        iconUrl: qr.iconUrl || '',
+      }, user.uid);
 
-      const sub = await deriveSubFromPublicKey(matchedApp.publicKey);
+      const sub = await deriveSubFromPublicKey(publicKey);
       setPendingSession({
         ...qr,
-        registeredAppId: matchedApp.id,
-        publicKey: matchedApp.publicKey,
-        appName: matchedApp.name,
+        registeredAppId,
+        publicKey,
+        appName: qr.appName || qr.audience,
         domain: qr.audience,
         sub,
         isNew,
