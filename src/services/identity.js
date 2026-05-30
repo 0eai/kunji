@@ -121,27 +121,42 @@ export const parseQRPayload = (rawValue) => {
     throw new Error('invalid_qr');
   }
 
-  // Callback must be same-site as the audience the user is shown, over HTTPS
-  // (HTTP allowed only for localhost so the local demo works).
-  let cbUrl;
-  try {
-    cbUrl = new URL(parsed.callbackUrl);
-  } catch {
-    throw new Error('untrusted_callback');
-  }
-  const host = cbUrl.hostname;
-  const isLocal = host === 'localhost' || host === '127.0.0.1';
-  const sameSite = host === parsed.audience || host.endsWith('.' + parsed.audience);
-  const secure = cbUrl.protocol === 'https:' || (isLocal && cbUrl.protocol === 'http:');
-  if (!sameSite || !secure) {
-    throw new Error('untrusted_callback');
-  }
+  assertSameSiteCallback(parsed.audience, parsed.callbackUrl);
 
   if (Date.now() > parsed.expiresAt) {
     throw new Error('expired_qr');
   }
 
   return parsed;
+};
+
+// The callback must be same-site as the audience and HTTPS (HTTP only for localhost).
+const assertSameSiteCallback = (audience, callbackUrl) => {
+  let cbUrl;
+  try { cbUrl = new URL(callbackUrl); } catch { throw new Error('untrusted_callback'); }
+  const host = cbUrl.hostname;
+  const isLocal = host === 'localhost' || host === '127.0.0.1';
+  const sameSite = host === audience || host.endsWith('.' + audience);
+  const secure = cbUrl.protocol === 'https:' || (isLocal && cbUrl.protocol === 'http:');
+  if (!sameSite || !secure) throw new Error('untrusted_callback');
+};
+
+/**
+ * Device-authorization: resolve a 6-digit code shown by a relying party (already
+ * registered, so we know its domain) to its pending session. Returns the same
+ * shape parseQRPayload yields, so submitDiscoverableAssertion can consume it.
+ */
+export const lookupSessionByCode = async (domain, code) => {
+  const resp = await fetch(`https://${domain}/kunji/session?code=${encodeURIComponent(code)}`);
+  if (resp.status === 404) throw new Error('invalid_code');
+  if (resp.status === 410) throw new Error('expired_code');
+  if (resp.status === 429) throw new Error('rate_limited');
+  if (!resp.ok) throw new Error('lookup_failed');
+  const s = await resp.json();
+  if (!s.sessionId || !s.challenge || !s.audience || !s.callbackUrl) throw new Error('lookup_failed');
+  if (s.audience !== domain) throw new Error('untrusted_callback');
+  assertSameSiteCallback(s.audience, s.callbackUrl);
+  return s; // { sessionId, challenge, audience, callbackUrl }
 };
 
 /**

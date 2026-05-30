@@ -31,6 +31,7 @@ export default function LoginPage({ onSuccess }) {
   const [secondsLeft, setSeconds] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [deepLink, setDeepLink] = useState('');
+  const [code, setCode] = useState('');
   const canvasRef = useRef(null);
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
@@ -61,7 +62,8 @@ export default function LoginPage({ onSuccess }) {
         body: JSON.stringify({ audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME }),
       });
       if (!resp.ok) throw new Error('createSession failed');
-      const { sessionId, challenge, expiresAt } = await resp.json();
+      const { sessionId, challenge, code, expiresAt } = await resp.json();
+      setCode(code || '');
       localStorage.setItem(RESUME_KEY, sessionId); // resume this on same-device return
 
       // 2. Build the v2 discoverable payload — one shape, two transports (QR + deep link).
@@ -167,6 +169,15 @@ export default function LoginPage({ onSuccess }) {
           >
             Open kunji
           </a>
+
+          {code && (
+            <div className="mt-4">
+              <p className="text-xs text-gray-500 mb-1">Or enter this code in kunji</p>
+              <div className="font-mono text-3xl tracking-[0.3em] text-amber-300 font-bold">
+                {code.slice(0, 3)} {code.slice(3)}
+              </div>
+            </div>
+          )}
           <p className="text-xs text-gray-600 mt-4">Or scan the QR from another device.</p>
         </>
       )}

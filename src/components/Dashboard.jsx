@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScanLine, Lock, Shield, Settings, Trash2 } from 'lucide-react';
-import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps } from '../services/identity';
+import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps, lookupSessionByCode } from '../services/identity';
 import { completeLink } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
 import AppCard from './AppCard';
@@ -8,6 +8,7 @@ import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import QRScannerOverlay from './QRScannerOverlay';
 import SecurityPanel from './SecurityPanel';
+import CodeEntryModal from './CodeEntryModal';
 import { useToast } from '../contexts/ToastContext';
 
 const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
@@ -21,6 +22,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [pendingSession, setPendingSession] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
+  const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
   const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } after same-device approval
   const incomingHandled = useRef(false);
 
@@ -126,6 +128,23 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     setPendingSession(null);
   };
 
+  // Device-authorization: resolve a typed code for a known app, then show the
+  // normal approval. Throws on failure so CodeEntryModal can surface the error.
+  const handleCodeSubmit = async (app, code) => {
+    const session = await lookupSessionByCode(app.domain, code);
+    const sub = await deriveSubFromPublicKey(app.publicKey);
+    setCodeApp(null);
+    setPendingSession({
+      ...session,
+      registeredAppId: app.id,
+      publicKey: app.publicKey,
+      appName: app.name,
+      domain: session.audience,
+      sub,
+      isNew: false,
+    });
+  };
+
   const confirmDelete = async () => {
     const app = pendingDelete;
     setPendingDelete(null);
@@ -185,6 +204,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
                 app={app}
                 onDetails={() => setSelectedApp(app)}
                 onDelete={() => setPendingDelete(app)}
+                onEnterCode={() => setCodeApp(app)}
               />
             ))}
           </div>
@@ -231,6 +251,14 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           cryptoKey={cryptoKey}
           onLock={onLock}
           onClose={() => setShowSecurity(false)}
+        />
+      )}
+
+      {codeApp && (
+        <CodeEntryModal
+          app={codeApp}
+          onSubmit={handleCodeSubmit}
+          onClose={() => setCodeApp(null)}
         />
       )}
 

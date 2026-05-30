@@ -1,7 +1,7 @@
 import React from 'react';
-import { Globe, Calendar, Link, Info, Trash2 } from 'lucide-react';
+import { Globe, Calendar, Link, Info, Trash2, KeyRound } from 'lucide-react';
 
-const AppCard = ({ app, onDetails, onDelete }) => {
+const AppCard = ({ app, onDetails, onDelete, onEnterCode }) => {
   const createdDate = app.createdAt?.toDate
     ? app.createdAt.toDate().toLocaleDateString()
     : app.createdAt ? new Date(app.createdAt).toLocaleDateString() : null;
@@ -32,6 +32,9 @@ const AppCard = ({ app, onDetails, onDelete }) => {
       </div>
 
       <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+        <button onClick={onEnterCode} className="p-2 text-gray-500 hover:text-amber-400 hover:bg-amber-950/50 rounded-lg transition-colors" title="Sign in with a code">
+          <KeyRound size={16} />
+        </button>
         <button onClick={onDetails} className="p-2 text-gray-500 hover:text-amber-400 hover:bg-amber-950/50 rounded-lg transition-colors" title="View public key">
           <Info size={16} />
         </button>
