@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase.js';
 
 // The RP's identity. In production this is your real domain, hardcoded server-side.
-// For the local demo we use the current origin (audience = hostname, e.g. "localhost").
+// Here it's the current origin (audience = hostname; callback is same-site via Hosting rewrite).
 const AUDIENCE = window.location.hostname;
 const CALLBACK_URL = `${window.location.origin}/kunji/callback`;
 const APP_NAME = 'Kunji Demo';
@@ -20,11 +22,11 @@ export default function LoginPage({ onSuccess }) {
   const [secondsLeft, setSeconds] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const canvasRef = useRef(null);
-  const pollRef = useRef(null);
+  const unsubRef = useRef(null);
   const timerRef = useRef(null);
 
   const stop = () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   };
 
@@ -33,48 +35,40 @@ export default function LoginPage({ onSuccess }) {
     setStatus('loading');
     setErrorMsg('');
     try {
-      // 1. Ask our own backend to create a session.
+      // 1. Ask our own backend (Function) to create a session.
       const resp = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME }),
       });
+      if (!resp.ok) throw new Error('createSession failed');
       const { sessionId, challenge, expiresAt } = await resp.json();
 
       // 2. Build the v2 discoverable QR and render it.
       const qrData = JSON.stringify({
-        kunjiAuth: 'v2',
-        mode: 'discoverable',
-        sessionId,
-        challenge,
-        audience: AUDIENCE,
-        callbackUrl: CALLBACK_URL,
-        appName: APP_NAME,
-        expiresAt,
+        kunjiAuth: 'v2', mode: 'discoverable', sessionId, challenge,
+        audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME, expiresAt,
       });
-      await QRCode.toCanvas(canvasRef.current, qrData, {
-        width: 240, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' },
-      });
+      await QRCode.toCanvas(canvasRef.current, qrData, { width: 240, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' } });
       setStatus('scanning');
 
       // Countdown
       const tick = () => setSeconds(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
       tick();
-      timerRef.current = setInterval(tick, 1000);
+      timerRef.current = setInterval(() => {
+        tick();
+        if (Date.now() > expiresAt) { stop(); setStatus('expired'); setTimeout(startFlow, 1000); }
+      }, 1000);
 
-      // 3. Poll our backend for the verified result.
-      pollRef.current = setInterval(async () => {
-        const r = await fetch(`/api/session/${sessionId}`).then(x => x.json()).catch(() => ({}));
-        if (r.status === 'approved') {
+      // 3. Listen to our session doc — flips to signed-in the instant the wallet approves.
+      unsubRef.current = onSnapshot(doc(db, 'loginSessions', sessionId), (snap) => {
+        const d = snap.data();
+        if (d?.status === 'approved') {
           stop();
           setStatus('approved');
-          setTimeout(() => onSuccess({ sub: r.sub }), 700);
-        } else if (r.status === 'expired' || r.status === 'unknown') {
-          stop();
-          setStatus('expired');
-          setTimeout(startFlow, 1000);
+          setTimeout(() => onSuccess({ sub: d.sub }), 700);
         }
-      }, 1500);
+      });
     } catch (err) {
       setStatus('error');
       setErrorMsg(err.message || 'Failed to start login.');

@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "site": "kunji-demo",
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/api/session", "function": { "functionId": "createSession", "region": "us-central1" } },
+      { "source": "/kunji/callback", "function": { "functionId": "kunjiCallback", "region": "us-central1" } },
+      { "source": "**", "destination": "/index.html" }
+    ]
+  },
+  "functions": { "source": "functions" }
+}
