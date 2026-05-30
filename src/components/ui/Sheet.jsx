@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /* Ref-counted body scroll-lock so nested sheets don't fight over <body> overflow. */
 let lockCount = 0;
@@ -16,6 +16,7 @@ let savedOverflow = '';
  */
 export default function Sheet({ children, onClose, labelledBy, z = 50, className = '' }) {
   const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);   // guard the timer without re-subscribing effects
   const closeTimer = useRef(null);
 
   useEffect(() => {
@@ -27,23 +28,30 @@ export default function Sheet({ children, onClose, labelledBy, z = 50, className
     };
   }, []);
 
-  const requestClose = () => {
-    if (!onClose || closing) return;
+  // Play the exit animation, then unmount. Guarded by a ref so the keydown
+  // effect below can stay subscribed to [onClose] only — putting `closing` in
+  // its deps would tear down (clearTimeout) the pending close and strand an
+  // invisible, click-blocking scrim on screen.
+  const requestClose = useCallback(() => {
+    if (!onClose || closingRef.current) return;
+    closingRef.current = true;
     setClosing(true);
-    closeTimer.current = setTimeout(onClose, 200); // let the exit animation play
-  };
+    closeTimer.current = setTimeout(onClose, 200);
+  }, [onClose]);
 
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e) => { if (e.key === 'Escape') requestClose(); };
     window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('keydown', onKey); clearTimeout(closeTimer.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, closing]);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, requestClose]);
+
+  // Clear the pending timer only on real unmount.
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
 
   return (
     <div
-      className={`fixed inset-0 flex items-end sm:items-center justify-center bg-ink/25 backdrop-blur-[2px] ${closing ? 'animate-fade-out' : 'animate-fade'}`}
+      className={`fixed inset-0 flex items-end sm:items-center justify-center bg-ink/25 backdrop-blur-[2px] ${closing ? 'animate-fade-out pointer-events-none' : 'animate-fade'}`}
       style={{ zIndex: z }}
       onClick={requestClose}
     >
