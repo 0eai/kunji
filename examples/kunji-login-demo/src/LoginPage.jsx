@@ -111,7 +111,15 @@ export default function LoginPage({ onSuccess }) {
   useEffect(() => {
     const saved = localStorage.getItem(RESUME_KEY);
     if (saved) resumeFlow(saved); else startFlow();
-    return stop;
+
+    // If the page is restored from bfcache (e.g. back button), re-check the saved session.
+    const onPageShow = (e) => {
+      if (!e.persisted) return;
+      const id = localStorage.getItem(RESUME_KEY);
+      if (id) resumeFlow(id);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => { window.removeEventListener('pageshow', onPageShow); stop(); };
   }, [startFlow, resumeFlow]);
 
   const meta = STATUS[status] || STATUS.loading;
