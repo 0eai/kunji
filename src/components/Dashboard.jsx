@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScanLine, Lock, KeyRound, Shield, Settings, Trash2 } from 'lucide-react';
+import { ScanLine, Lock, Shield, Settings, Trash2 } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps } from '../services/identity';
 import { completeLink } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
@@ -143,9 +143,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       {/* Header */}
       <header className="flex items-center justify-between px-5 pt-10 pb-4 shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-            <KeyRound size={18} className="text-black" />
-          </div>
+          <img src="/icons/icon.svg" alt="kunji" className="w-8 h-8 rounded-lg" />
           <span className="text-xl font-bold tracking-tight">kunji</span>
         </div>
         <div className="flex items-center gap-1">

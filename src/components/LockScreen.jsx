@@ -10,6 +10,7 @@ import { resetUserVault } from '../services/vault';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
 import LinkDeviceScreen from './LinkDeviceScreen';
+import InstallButton from './InstallButton';
 
 const getDelay = (failCount) => {
   if (failCount <= 0) return 0;
@@ -357,6 +358,10 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             Link from another device
           </button>
         )}
+
+        <div className="mt-4">
+          <InstallButton />
+        </div>
 
         <div className="mt-8 flex justify-between items-center">
           {!isNewUser && (

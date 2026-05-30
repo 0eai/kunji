@@ -8,6 +8,7 @@ import { completeLink } from '../services/linking';
 import { listenToActivityLog } from '../services/activityLog';
 import { signOutDevice } from '../lib/firebase';
 import QRScannerOverlay from './QRScannerOverlay';
+import InstallButton from './InstallButton';
 import { useToast } from '../contexts/ToastContext';
 
 const MIN_PASSPHRASE = 8;
@@ -227,6 +228,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
           {/* Session */}
           <section className="space-y-2">
+            <InstallButton variant="row" />
             {onLock && (
               <button
                 onClick={() => { onClose(); onLock(); }}

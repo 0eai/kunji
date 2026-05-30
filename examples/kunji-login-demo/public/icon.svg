@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Amber rounded-square background -->
+  <rect width="512" height="512" rx="116" fill="#f59e0b"/>
+
+  <!-- Flat solid key, dark ink, rotated -40° -->
+  <g transform="rotate(-40 256 256)" fill="#1c1606">
+    <!-- Bow ring (hollow via evenodd) -->
+    <path fill-rule="evenodd" d="
+      M 282,256 A 86,86 0 0,1 110,256 A 86,86 0 0,1 282,256 Z
+      M 244,256 A 48,48 0 0,0 148,256 A 48,48 0 0,0 244,256 Z"/>
+    <!-- Shaft -->
+    <rect x="196" y="238" width="200" height="36" rx="18"/>
+    <!-- Teeth -->
+    <rect x="356" y="274" width="28" height="48" rx="8"/>
+    <rect x="314" y="274" width="28" height="36" rx="8"/>
+  </g>
+</svg>

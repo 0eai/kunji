@@ -5,6 +5,14 @@ import { VaultProvider } from './context/VaultContext';
 import { ToastProvider } from './contexts/ToastContext';
 import './index.css';
 
+// Capture the PWA install prompt early (Chrome fires it before React mounts) so a
+// custom "Install kunji" button can trigger it later. iOS Safari never fires this.
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.__kunjiDeferredInstall = e;
+  window.dispatchEvent(new Event('kunji-installable'));
+});
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <VaultProvider>

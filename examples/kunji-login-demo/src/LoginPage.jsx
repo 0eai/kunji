@@ -127,9 +127,7 @@ export default function LoginPage({ onSuccess }) {
   return (
     <div className="bg-[#18140c] border border-[#2a2316] rounded-3xl p-8 max-w-sm w-full text-center">
       <div className="mb-6">
-        <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center mx-auto mb-3">
-          <svg className="w-6 h-6 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2m-5 3 3 3m-6-6 3 3"/></svg>
-        </div>
+        <img src="/icon.svg" alt="kunji" className="w-12 h-12 rounded-xl mx-auto mb-3" />
         <h1 className="text-2xl font-bold">Sign in</h1>
         <p className="text-gray-500 text-sm mt-1">with kunji</p>
       </div>
