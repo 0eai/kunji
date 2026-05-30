@@ -13,9 +13,14 @@ const KUNJI_APP_URL = 'https://app.kunji.cc';
 // base64url so it rides safely in a URL query param.
 const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
+// Same-device login navigates this tab away to the wallet; persist the pending
+// session id so we can resume (not restart) it when the user returns.
+const RESUME_KEY = 'kunji_demo_pending';
+
 const STATUS = {
   loading:  { color: 'text-amber-400', label: 'Generating QR…' },
   scanning: { color: 'text-gray-400', label: 'Scan with the kunji app' },
+  resuming: { color: 'text-amber-400', label: 'Finishing sign-in…' },
   approved: { color: 'text-green-400', label: 'Verified! Signing you in…' },
   expired:  { color: 'text-amber-400', label: 'QR expired. Refreshing…' },
   error:    { color: 'text-red-400',   label: 'Something went wrong.' },
@@ -29,10 +34,19 @@ export default function LoginPage({ onSuccess }) {
   const canvasRef = useRef(null);
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
+  const fallbackRef = useRef(null);
 
   const stop = () => {
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (fallbackRef.current) { clearTimeout(fallbackRef.current); fallbackRef.current = null; }
+  };
+
+  const succeed = (sub) => {
+    stop();
+    localStorage.removeItem(RESUME_KEY);
+    setStatus('approved');
+    setTimeout(() => onSuccess({ sub }), 700);
   };
 
   const startFlow = useCallback(async () => {
@@ -48,6 +62,7 @@ export default function LoginPage({ onSuccess }) {
       });
       if (!resp.ok) throw new Error('createSession failed');
       const { sessionId, challenge, expiresAt } = await resp.json();
+      localStorage.setItem(RESUME_KEY, sessionId); // resume this on same-device return
 
       // 2. Build the v2 discoverable payload — one shape, two transports (QR + deep link).
       const payload = {
@@ -70,12 +85,7 @@ export default function LoginPage({ onSuccess }) {
 
       // 3. Listen to our session doc — flips to signed-in the instant the wallet approves.
       unsubRef.current = onSnapshot(doc(db, 'loginSessions', sessionId), (snap) => {
-        const d = snap.data();
-        if (d?.status === 'approved') {
-          stop();
-          setStatus('approved');
-          setTimeout(() => onSuccess({ sub: d.sub }), 700);
-        }
+        if (snap.data()?.status === 'approved') succeed(snap.data().sub);
       });
     } catch (err) {
       setStatus('error');
@@ -83,7 +93,26 @@ export default function LoginPage({ onSuccess }) {
     }
   }, [onSuccess]);
 
-  useEffect(() => { startFlow(); return stop; }, [startFlow]);
+  // Same-device return: resume the saved session instead of starting a new one.
+  const resumeFlow = useCallback((savedId) => {
+    stop();
+    setStatus('resuming');
+    unsubRef.current = onSnapshot(doc(db, 'loginSessions', savedId), (snap) => {
+      if (snap.data()?.status === 'approved') succeed(snap.data().sub);
+    });
+    // If it wasn't approved (cancelled / gone), fall back to a fresh QR.
+    fallbackRef.current = setTimeout(() => {
+      localStorage.removeItem(RESUME_KEY);
+      startFlow();
+    }, 9000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startFlow]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(RESUME_KEY);
+    if (saved) resumeFlow(saved); else startFlow();
+    return stop;
+  }, [startFlow, resumeFlow]);
 
   const meta = STATUS[status] || STATUS.loading;
 
