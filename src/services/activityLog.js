@@ -6,13 +6,14 @@ import { encryptData, decryptData } from '../lib/crypto';
 
 const activityCol = (uid) => collection(db, 'users', uid, 'activity_log');
 
-export const logActivity = async (uid, action, type = 'success', icon = 'CheckCircle', cryptoKey = null) => {
+// `extra` is merged into the (encrypted) payload — e.g. { domain } to tag app events.
+export const logActivity = async (uid, action, type = 'success', icon = 'CheckCircle', cryptoKey = null, extra = {}) => {
   if (!uid) return;
   try {
-    const payload = { action, type, icon };
+    const payload = { action, type, icon, ...extra };
     const stored = cryptoKey
       ? { ...(await encryptData(payload, cryptoKey)), createdAt: serverTimestamp() }
-      : { action, type, icon, createdAt: serverTimestamp() };
+      : { ...payload, createdAt: serverTimestamp() };
     await addDoc(activityCol(uid), stored);
   } catch (e) {
     console.warn('Activity log failed:', e);

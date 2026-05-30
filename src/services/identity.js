@@ -58,7 +58,7 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
   if (!existed) {
     const payload = await encryptData({ name, domain, iconUrl }, cryptoKey);
     await setDoc(ref, { ...payload, publicKey: pubKeyBase64, createdAt: serverTimestamp() });
-    if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey);
+    if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, { domain });
   }
 
   return { registeredAppId: id, publicKey: pubKeyBase64, isNew: !existed };
@@ -189,7 +189,7 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, qr) => {
     throw new Error(`callback_rejected:${resp.status}${detail ? ` ${detail}` : ''}`);
   }
 
-  await logActivity(userId, `Signed in to ${qr.audience}`, 'success', 'ShieldCheck', cryptoKey);
+  await logActivity(userId, `Signed in to ${qr.audience}`, 'success', 'ShieldCheck', cryptoKey, { domain: qr.audience });
   return { sub };
 };
 

@@ -241,6 +241,8 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       {selectedApp && (
         <AppDetailsModal
           app={selectedApp}
+          userId={user.uid}
+          cryptoKey={cryptoKey}
           onClose={() => setSelectedApp(null)}
         />
       )}
