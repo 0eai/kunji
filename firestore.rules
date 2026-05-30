@@ -6,5 +6,19 @@ service cloud.firestore {
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Device-linking relay. The payload is ECDH-encrypted to the new device's
+    // ephemeral key and the linkId is a random secret, so any signed-in user may
+    // participate in a specific handshake; the master key is never exposed in plaintext.
+    match /linkSessions/{linkId} {
+      allow create, get, update: if request.auth != null;
+    }
+
+    // Demo relying-party login sessions (examples/kunji-login-demo). Writes are
+    // server-only via Cloud Functions (admin); the frontend reads its own session
+    // by random id to flip to "signed in". The doc holds no secrets.
+    match /loginSessions/{sessionId} {
+      allow get: if true;
+    }
   }
 }

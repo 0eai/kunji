@@ -9,6 +9,7 @@ import {
 import { resetUserVault } from '../services/vault';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
+import LinkDeviceScreen from './LinkDeviceScreen';
 
 const getDelay = (failCount) => {
   if (failCount <= 0) return 0;
@@ -48,6 +49,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
 
   const [isNewUser, setIsNewUser] = useState(null);
   const [isRecovering, setIsRecovering] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
   const [recoveryInput, setRecoveryInput] = useState('');
   const [recoveryPassphrase, setRecoveryPassphrase] = useState('');
 
@@ -237,6 +239,10 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
 
   const strength = (isNewUser || isRecovering) ? getStrength(keyInput) : null;
 
+  if (isLinking) {
+    return <LinkDeviceScreen user={user} onUnlock={onUnlock} onCancel={() => setIsLinking(false)} />;
+  }
+
   return (
     <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#09090b] text-white p-6">
       <div className={`bg-[#18181b] p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-[#27272a] transition-transform ${errorShake ? 'animate-shake' : ''}`}>
@@ -338,6 +344,15 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
               : 'Unlock Vault'}
           </button>
         </form>
+
+        {isNewUser && !isRecovering && (
+          <button
+            onClick={() => setIsLinking(true)}
+            className="mt-4 w-full py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white text-sm font-semibold transition-colors"
+          >
+            Link from another device
+          </button>
+        )}
 
         <div className="mt-8 flex justify-between items-center">
           {!isNewUser && (

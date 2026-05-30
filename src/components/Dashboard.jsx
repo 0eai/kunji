@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ScanLine, Lock, KeyRound, Globe, Shield } from 'lucide-react';
+import { Plus, ScanLine, Lock, KeyRound, Shield, Settings } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey } from '../services/identity';
 import AppCard from './AppCard';
 import RegisterAppModal from './RegisterAppModal';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import QRScannerOverlay from './QRScannerOverlay';
+import SecurityPanel from './SecurityPanel';
 import { useToast } from '../contexts/ToastContext';
 
 const Dashboard = ({ user, cryptoKey, onLock }) => {
@@ -15,6 +16,7 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
 
   const [showRegister, setShowRegister] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
   const [pendingSession, setPendingSession] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
 
@@ -66,11 +68,7 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
   const handleApprove = async () => {
     if (!pendingSession) return;
     try {
-      await submitDiscoverableAssertion(
-        user.uid, cryptoKey,
-        { registeredAppId: pendingSession.registeredAppId, publicKey: pendingSession.publicKey },
-        pendingSession,
-      );
+      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession);
       showToast(`Signed in to ${pendingSession.audience}`);
     } catch (e) {
       showToast('Login failed: ' + e.message, 'error');
@@ -105,12 +103,21 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
           </div>
           <span className="text-xl font-bold tracking-tight">kunji</span>
         </div>
-        <button
-          onClick={onLock}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-[#27272a]"
-        >
-          <Lock size={13} /> Lock
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowSecurity(true)}
+            className="p-2 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-[#27272a]"
+            title="Security"
+          >
+            <Settings size={16} />
+          </button>
+          <button
+            onClick={onLock}
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-[#27272a]"
+          >
+            <Lock size={13} /> Lock
+          </button>
+        </div>
       </header>
 
       {/* Actions */}
@@ -190,6 +197,14 @@ const Dashboard = ({ user, cryptoKey, onLock }) => {
         <AppDetailsModal
           app={selectedApp}
           onClose={() => setSelectedApp(null)}
+        />
+      )}
+
+      {showSecurity && (
+        <SecurityPanel
+          userId={user.uid}
+          cryptoKey={cryptoKey}
+          onClose={() => setShowSecurity(false)}
         />
       )}
     </div>
