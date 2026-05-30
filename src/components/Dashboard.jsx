@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScanLine, Lock, KeyRound, Shield, Settings } from 'lucide-react';
+import { ScanLine, Lock, KeyRound, Shield, Settings, Trash2 } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps } from '../services/identity';
 import { completeLink } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
@@ -20,6 +20,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [showSecurity, setShowSecurity] = useState(false);
   const [pendingSession, setPendingSession] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } after same-device approval
   const incomingHandled = useRef(false);
 
@@ -131,8 +132,10 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     setPendingSession(null);
   };
 
-  const handleDeleteApp = async (app) => {
-    if (!window.confirm(`Remove "${app.name}"?\n\nExisting sessions signed by this app's key will no longer verify.`)) return;
+  const confirmDelete = async () => {
+    const app = pendingDelete;
+    setPendingDelete(null);
+    if (!app) return;
     try {
       await deleteApp(vaultId, app.id, app.name, cryptoKey, user.uid);
       showToast(`Removed ${app.name}`);
@@ -189,7 +192,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
                 key={app.id}
                 app={app}
                 onDetails={() => setSelectedApp(app)}
-                onDelete={() => handleDeleteApp(app)}
+                onDelete={() => setPendingDelete(app)}
               />
             ))}
           </div>
@@ -237,6 +240,36 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           onLock={onLock}
           onClose={() => setShowSecurity(false)}
         />
+      )}
+
+      {pendingDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-9 h-9 bg-red-500/15 rounded-full flex items-center justify-center">
+                <Trash2 size={16} className="text-red-400" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Remove {pendingDelete.name}?</h2>
+            </div>
+            <p className="text-sm text-gray-400 mb-5">
+              It's removed from your list on all your devices. You can re-add it anytime by scanning its login QR — your identity for it stays the same.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPendingDelete(null)}
+                className="flex-1 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {returnInfo && (
