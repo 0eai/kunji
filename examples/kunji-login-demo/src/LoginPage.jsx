@@ -159,6 +159,8 @@ export default function LoginPage({ onSuccess }) {
           <p className="text-[15px] text-muted mt-1">with kunji — no password, no account.</p>
         </div>
 
+        {/* constant-height region so switching tabs / states never moves the heading */}
+        <div className="min-h-[24rem]">
         {status === 'approved' ? (
           <p className="text-[15px] font-medium text-success py-6">Verified — signing you in…</p>
         ) : status === 'expired' ? (
@@ -219,6 +221,7 @@ export default function LoginPage({ onSuccess }) {
             )}
           </>
         )}
+        </div>
       </main>
     </>
   );

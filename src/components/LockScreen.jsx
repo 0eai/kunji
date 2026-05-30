@@ -273,7 +273,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             <Key size={22} className="text-accent" strokeWidth={2.25} />
           </div>
           <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">{heading}</h1>
-          <p className={`text-[15px] leading-relaxed ${isError ? 'text-danger' : isWarn ? 'text-accent' : 'text-muted'}`}>
+          <p className={`text-[15px] leading-relaxed min-h-[2.75rem] ${isError ? 'text-danger' : isWarn ? 'text-accent' : 'text-muted'}`}>
             {subtitle}
           </p>
         </div>
@@ -318,24 +318,26 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             />
           )}
 
-          {strength && keyInput.length > 0 && (
-            <div className="pt-3">
-              <div className="h-px bg-line overflow-hidden">
-                <div className={`h-full ${strength.color} transition-all duration-300`} style={{ width: strength.width }} />
-              </div>
-              <div className="flex justify-between items-center mt-2">
-                <span className="text-[11px] text-muted uppercase tracking-[0.14em]">{strength.label}</span>
-                <span className="text-[11px] font-mono text-faint">{keyInput.length}</span>
-              </div>
+          {/* indicator + button as one unit; the slot holds a constant height so
+              the button never shifts as strength / char-count appear */}
+          <div className="pt-2">
+            <div className="h-7">
+              {strength && keyInput.length > 0 ? (
+                <div>
+                  <div className="h-px bg-line overflow-hidden">
+                    <div className={`h-full ${strength.color} transition-all duration-300`} style={{ width: strength.width }} />
+                  </div>
+                  <div className="flex justify-between items-center mt-1.5">
+                    <span className="text-[11px] text-muted uppercase tracking-[0.14em]">{strength.label}</span>
+                    <span className="text-[11px] font-mono text-faint tabular">{keyInput.length}</span>
+                  </div>
+                </div>
+              ) : (!isNewUser && !isRecovering && keyInput.length > 0 && keyInput.length < MIN_PASSKEY_LENGTH) ? (
+                <div className="text-right text-[11px] font-mono text-faint tabular">{keyInput.length}/{MIN_PASSKEY_LENGTH}</div>
+              ) : null}
             </div>
-          )}
 
-          {!isNewUser && !isRecovering && keyInput.length > 0 && keyInput.length < MIN_PASSKEY_LENGTH && (
-            <div className="text-[11px] font-mono text-faint text-right pt-2">{keyInput.length}/{MIN_PASSKEY_LENGTH}</div>
-          )}
-
-          <div className="pt-5">
-            <Btn type="submit" disabled={isDeriving || cooldownRemaining > 0} className="w-full">
+            <Btn type="submit" disabled={isDeriving || cooldownRemaining > 0} className="w-full mt-1">
               {isDeriving ? <><Spinner /> {isNewUser ? 'Creating…' : isRecovering ? 'Recovering…' : 'Unlocking…'}</>
                 : cooldownRemaining > 0 ? <span className="tabular">Locked · {cooldownRemaining}s</span>
                 : isNewUser ? 'Create vault'
