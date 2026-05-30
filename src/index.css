@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+/* Tell the browser the app is dark so the UA chrome (incl. iOS Safari's status-bar
+   safe area) and form controls render dark, and paint the page dark behind it. */
+:root { color-scheme: dark; }
+html, body { background-color: #09090b; }
