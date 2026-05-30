@@ -8,6 +8,10 @@ import { db } from './firebase.js';
 const AUDIENCE = window.location.hostname;
 const CALLBACK_URL = `${window.location.origin}/kunji/callback`;
 const APP_NAME = 'Kunji Demo';
+const KUNJI_APP_URL = 'https://app.kunji.cc';
+
+// base64url so it rides safely in a URL query param.
+const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 const STATUS = {
   loading:  { color: 'text-amber-400', label: 'Generating QR…' },
@@ -21,6 +25,7 @@ export default function LoginPage({ onSuccess }) {
   const [status, setStatus] = useState('loading');
   const [secondsLeft, setSeconds] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
+  const [deepLink, setDeepLink] = useState('');
   const canvasRef = useRef(null);
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
@@ -44,12 +49,15 @@ export default function LoginPage({ onSuccess }) {
       if (!resp.ok) throw new Error('createSession failed');
       const { sessionId, challenge, expiresAt } = await resp.json();
 
-      // 2. Build the v2 discoverable QR and render it.
-      const qrData = JSON.stringify({
+      // 2. Build the v2 discoverable payload — one shape, two transports (QR + deep link).
+      const payload = {
         kunjiAuth: 'v2', mode: 'discoverable', sessionId, challenge,
         audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME, expiresAt,
-      });
+        returnUrl: window.location.href,
+      };
+      const qrData = JSON.stringify(payload);
       await QRCode.toCanvas(canvasRef.current, qrData, { width: 240, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' } });
+      setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(qrData)}`); // same-device: open kunji directly
       setStatus('scanning');
 
       // Countdown
@@ -110,8 +118,22 @@ export default function LoginPage({ onSuccess }) {
       {status === 'scanning' && secondsLeft > 0 && (
         <p className="text-xs text-gray-500 mt-2">Expires in <span className="font-mono">{secondsLeft}s</span></p>
       )}
-      {status === 'scanning' && (
-        <p className="text-xs text-gray-600 mt-5">Open <strong className="text-gray-400">kunji</strong> → tap <strong className="text-gray-400">Scan QR</strong></p>
+
+      {status === 'scanning' && deepLink && (
+        <>
+          <div className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-[#2a2316]" />
+            <span className="text-[11px] text-gray-600 uppercase tracking-wider">on this device</span>
+            <div className="flex-1 h-px bg-[#2a2316]" />
+          </div>
+          <a
+            href={deepLink}
+            className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
+          >
+            Open kunji
+          </a>
+          <p className="text-xs text-gray-600 mt-4">Or scan the QR from another device.</p>
+        </>
       )}
     </div>
   );
