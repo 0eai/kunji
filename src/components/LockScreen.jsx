@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { Lock, RotateCcw, ShieldAlert, Key } from 'lucide-react';
+import { Lock, RotateCcw, ShieldAlert, Key, AlertTriangle } from 'lucide-react';
 import { db } from '../lib/firebase';
 import {
   deriveKeyFromPasskey, deriveKeyArgon2id, generateSalt, encryptData, decryptData,
@@ -53,6 +53,9 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const [recoveryInput, setRecoveryInput] = useState('');
   const [recoveryPassphrase, setRecoveryPassphrase] = useState('');
 
+  const [showReset, setShowReset] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState('');
+
   useEffect(() => {
     if (!user) return;
     const check = async () => {
@@ -78,7 +81,8 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const handleKeyDown = (e) => { if (e.key === 'Enter') handleSubmit(e); };
 
   const handleHardReset = async () => {
-    if (!window.confirm('⚠️ FACTORY RESET\n\nThis will PERMANENTLY DELETE all vault data.\nAre you absolutely sure?')) return;
+    if (resetConfirm.trim().toUpperCase() !== 'RESET') return;
+    setShowReset(false);
     setStatus('Wiping data...');
     setIsDeriving(true);
     try {
@@ -364,7 +368,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             </button>
           )}
           <button
-            onClick={handleHardReset}
+            onClick={() => { setResetConfirm(''); setShowReset(true); }}
             className="text-[10px] uppercase tracking-widest text-gray-600 hover:text-red-500 flex items-center gap-2 transition-colors font-semibold ml-auto"
           >
             <RotateCcw size={12} /> Reset Vault
@@ -372,6 +376,46 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         </div>
       </div>
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}.animate-shake{animation:shake .4s ease-in-out}`}</style>
+
+      {showReset && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-red-900/60 rounded-3xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-9 h-9 bg-red-500/15 rounded-full flex items-center justify-center">
+                <AlertTriangle size={16} className="text-red-400" />
+              </div>
+              <h2 className="text-lg font-bold text-white">Reset this vault?</h2>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              This <strong className="text-gray-200">permanently erases this device's vault</strong>. Without your
+              recovery key or another linked device, your identity can't be recovered.
+            </p>
+            <label className="block text-xs text-gray-500 mb-1">Type <span className="font-mono text-gray-300">RESET</span> to confirm</label>
+            <input
+              autoFocus value={resetConfirm}
+              onChange={(e) => setResetConfirm(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleHardReset(); }}
+              placeholder="RESET"
+              className="w-full p-3 rounded-xl bg-black border border-[#27272a] text-white placeholder-gray-700 focus:ring-2 focus:ring-red-600 focus:border-transparent outline-none mb-4"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowReset(false)} disabled={isDeriving}
+                className="flex-1 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleHardReset}
+                disabled={isDeriving || resetConfirm.trim().toUpperCase() !== 'RESET'}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+              >
+                {isDeriving ? 'Wiping…' : 'Reset vault'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
