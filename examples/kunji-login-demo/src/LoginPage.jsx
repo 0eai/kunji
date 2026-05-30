@@ -32,7 +32,9 @@ export default function LoginPage({ onSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [deepLink, setDeepLink] = useState('');
   const [code, setCode] = useState('');
-  const canvasRef = useRef(null);
+  const [qrUrl, setQrUrl] = useState('');
+  // Show one method at a time; default to the one that fits the device.
+  const [tab, setTab] = useState(() => (window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'device'));
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
   const fallbackRef = useRef(null);
@@ -73,7 +75,7 @@ export default function LoginPage({ onSuccess }) {
         returnUrl: window.location.href,
       };
       const qrData = JSON.stringify(payload);
-      await QRCode.toCanvas(canvasRef.current, qrData, { width: 240, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' } });
+      setQrUrl(await QRCode.toDataURL(qrData, { width: 200, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' } }));
       setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(qrData)}`); // same-device: open kunji directly
       setStatus('scanning');
 
@@ -129,69 +131,73 @@ export default function LoginPage({ onSuccess }) {
 
   const meta = STATUS[status] || STATUS.loading;
 
+  const tabBtn = (id, label) =>
+    <button
+      onClick={() => setTab(id)}
+      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}
+    >{label}</button>;
+
   return (
-    <div className="bg-[#18140c] border border-[#2a2316] rounded-3xl p-8 max-w-sm w-full text-center">
-      <div className="mb-6">
-        <img src="/icon.svg" alt="kunji" className="w-12 h-12 rounded-xl mx-auto mb-3" />
-        <h1 className="text-2xl font-bold">Sign in</h1>
-        <p className="text-gray-500 text-sm mt-1">with kunji</p>
+    <div className="bg-[#18140c] border border-[#2a2316] rounded-3xl p-6 max-w-sm w-full text-center">
+      <div className="mb-4">
+        <img src="/icon.svg" alt="kunji" className="w-11 h-11 rounded-xl mx-auto mb-2" />
+        <h1 className="text-xl font-bold">Sign in with kunji</h1>
       </div>
 
-      <div className="relative flex items-center justify-center mb-5">
-        <div className={`rounded-2xl overflow-hidden border-2 transition-all ${status === 'scanning' ? 'border-amber-500/40' : 'border-[#2a2316]'}`}>
-          <canvas ref={canvasRef} className={`block transition-opacity ${status === 'scanning' ? 'opacity-100' : 'opacity-30'}`} />
+      {status === 'approved' ? (
+        <div className="flex flex-col items-center gap-2 py-6">
+          <div className="w-14 h-14 bg-green-500/15 rounded-full flex items-center justify-center">
+            <svg className="w-8 h-8 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <p className="text-sm font-medium text-green-400">Signing you in…</p>
         </div>
-        {status === 'approved' && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-[#18140c]/85">
-            <div className="w-14 h-14 bg-green-500/15 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <p className={`text-sm font-medium ${meta.color} min-h-[20px]`}>
-        {meta.label}
-        {errorMsg && <span className="block mt-1 text-xs text-red-400">{errorMsg}</span>}
-      </p>
-
-      {status === 'scanning' && secondsLeft > 0 && (
-        <p className="text-xs text-gray-500 mt-2">Expires in <span className="font-mono">{secondsLeft}s</span></p>
-      )}
-
-      {status === 'scanning' && deepLink && (
+      ) : status === 'expired' ? (
+        <div className="py-4">
+          <p className="text-sm text-amber-400 mb-4">Code expired.</p>
+          <button onClick={startFlow} className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors">
+            Show new code
+          </button>
+        </div>
+      ) : status === 'error' ? (
+        <div className="py-4">
+          <p className="text-sm text-red-400">{errorMsg || 'Something went wrong.'}</p>
+          <button onClick={startFlow} className="mt-4 w-full py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-semibold transition-colors">Try again</button>
+        </div>
+      ) : status !== 'scanning' ? (
+        <p className={`text-sm font-medium ${meta.color} py-8`}>{meta.label}</p>
+      ) : (
         <>
-          <div className="flex items-center gap-3 my-4">
-            <div className="flex-1 h-px bg-[#2a2316]" />
-            <span className="text-[11px] text-gray-600 uppercase tracking-wider">on this device</span>
-            <div className="flex-1 h-px bg-[#2a2316]" />
+          {/* Method toggle */}
+          <div className="flex gap-1 p-1 rounded-xl bg-black/40 border border-[#2a2316] mb-4">
+            {tabBtn('device', 'This device')}
+            {tabBtn('qr', 'Another device')}
           </div>
-          <a
-            href={deepLink}
-            className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
-          >
-            Open kunji
-          </a>
 
-          {code && (
-            <div className="mt-4">
-              <p className="text-xs text-gray-500 mb-1">Or enter this code in kunji</p>
-              <div className="font-mono text-3xl tracking-[0.3em] text-amber-300 font-bold">
-                {code.slice(0, 3)} {code.slice(3)}
-              </div>
+          {tab === 'device' ? (
+            <div>
+              <a href={deepLink} className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors">
+                Open kunji
+              </a>
+              {code && (
+                <div className="mt-4">
+                  <p className="text-xs text-gray-500 mb-1">Or type this code in kunji</p>
+                  <div className="font-mono text-3xl tracking-[0.25em] text-amber-300 font-bold">
+                    {code.slice(0, 3)} {code.slice(3)}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center">
+              {qrUrl && <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px] rounded-xl border-2 border-amber-500/40" />}
+              <p className="text-xs text-gray-500 mt-3">Scan with the kunji app on your phone</p>
             </div>
           )}
-          <p className="text-xs text-gray-600 mt-4">Or scan the QR from another device.</p>
-        </>
-      )}
 
-      {status === 'expired' && (
-        <button
-          onClick={startFlow}
-          className="mt-4 w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
-        >
-          Show new code
-        </button>
+          {secondsLeft > 0 && (
+            <p className="text-xs text-gray-600 mt-3">Expires in <span className="font-mono">{secondsLeft}s</span></p>
+          )}
+        </>
       )}
     </div>
   );
