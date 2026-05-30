@@ -38,6 +38,7 @@ export default function LoginPage({ onSuccess }) {
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
   const fallbackRef = useRef(null);
+  const sessionIdRef = useRef(null);
 
   const stop = () => {
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
@@ -66,7 +67,7 @@ export default function LoginPage({ onSuccess }) {
       if (!resp.ok) throw new Error('createSession failed');
       const { sessionId, challenge, code, expiresAt } = await resp.json();
       setCode(code || '');
-      localStorage.setItem(RESUME_KEY, sessionId); // resume this on same-device return
+      sessionIdRef.current = sessionId; // stashed for RESUME_KEY only when "Open kunji" is tapped
 
       // 2. Build the v2 discoverable payload — one shape, two transports (QR + deep link).
       const payload = {
@@ -116,13 +117,20 @@ export default function LoginPage({ onSuccess }) {
   }, [startFlow]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(RESUME_KEY);
+    // Resume only if we navigated out via "Open kunji" (one-shot: read + clear).
+    const consumeResume = () => {
+      const id = localStorage.getItem(RESUME_KEY);
+      if (id) localStorage.removeItem(RESUME_KEY);
+      return id;
+    };
+
+    const saved = consumeResume();
     if (saved) resumeFlow(saved); else startFlow();
 
-    // If the page is restored from bfcache (e.g. back button), re-check the saved session.
+    // If the page is restored from bfcache (e.g. back button) after Open kunji.
     const onPageShow = (e) => {
       if (!e.persisted) return;
-      const id = localStorage.getItem(RESUME_KEY);
+      const id = consumeResume();
       if (id) resumeFlow(id);
     };
     window.addEventListener('pageshow', onPageShow);
@@ -175,7 +183,11 @@ export default function LoginPage({ onSuccess }) {
 
           {tab === 'device' ? (
             <div>
-              <a href={deepLink} className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors">
+              <a
+                href={deepLink}
+                onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
+                className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
+              >
                 Open kunji
               </a>
               {code && (
