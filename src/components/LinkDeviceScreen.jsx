@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { Smartphone, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { startLink, listenForLinkedKey } from '../services/linking';
 import { provisionVaultFromMasterKey } from '../services/vault';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
+import { Field, Btn } from './ui/primitives';
 
 const MIN_PASSKEY_LENGTH = 8;
 
@@ -27,7 +28,7 @@ const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
         const { linkId, privateKey, qrData } = await startLink();
         if (!alive) return;
         privKeyRef.current = privateKey;
-        setQrDataUrl(await QRCode.toDataURL(qrData, { width: 240, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' } }));
+        setQrDataUrl(await QRCode.toDataURL(qrData, { width: 240, margin: 1, color: { dark: '#1a1a18', light: '#ffffff' } }));
         setPhase('waiting');
         unsubRef.current = listenForLinkedKey(
           linkId,
@@ -63,56 +64,52 @@ const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#f6f7f9] text-[#18181b] p-6">
-      <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-[#e6e8eb]">
-        <button onClick={onCancel} className="text-xs text-gray-500 hover:text-[#18181b] flex items-center gap-1.5 mb-5 transition-colors">
-          <ArrowLeft size={13} /> Back
+    <div className="min-h-[100dvh] w-full flex flex-col bg-paper text-ink">
+      <header className="flex items-center gap-2 px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
+        <button onClick={onCancel} className="flex items-center gap-1.5 text-[13px] text-muted hover:text-ink transition-colors">
+          <ArrowLeft size={15} /> Back
         </button>
+      </header>
 
+      <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6">
         {phase === 'received' || phase === 'saving' ? (
           <>
-            <div className="mx-auto w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mb-6">
-              <ShieldCheck size={32} className="text-green-600" />
+            <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
+              <ShieldCheck size={22} className="text-success" strokeWidth={2.25} />
             </div>
-            <h2 className="text-2xl font-bold mb-1 text-center tracking-tight">Identity received</h2>
-            <p className="text-center mb-6 text-sm text-gray-600">Set a passkey to lock kunji on this device.</p>
-            <form onSubmit={handleSave}>
-              <input
-                type="password" autoFocus value={passkey} onChange={e => setPasskey(e.target.value)}
-                placeholder="Choose a passkey"
-                className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
-              />
-              <input
-                type="password" value={confirmKey} onChange={e => setConfirmKey(e.target.value)}
-                placeholder="Confirm passkey"
-                className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-3 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
-              />
-              <button type="submit" disabled={phase === 'saving'}
-                className="w-full py-4 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black rounded-xl font-bold transition-all active:scale-[0.98]">
-                {phase === 'saving' ? 'Saving…' : 'Unlock on this device'}
-              </button>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">Identity received</h1>
+            <p className="text-[15px] text-muted leading-relaxed mb-9">Set a passkey to lock kunji on this device.</p>
+            <form onSubmit={handleSave} className="space-y-1">
+              <Field type="password" autoFocus value={passkey} onChange={e => setPasskey(e.target.value)}
+                placeholder="Choose a passkey" className="text-lg" />
+              <Field type="password" value={confirmKey} onChange={e => setConfirmKey(e.target.value)}
+                placeholder="Confirm passkey" className="text-lg" />
+              <div className="pt-7">
+                <Btn type="submit" disabled={phase === 'saving'} className="w-full">
+                  {phase === 'saving' ? 'Saving…' : 'Unlock on this device'}
+                </Btn>
+              </div>
             </form>
           </>
         ) : (
           <>
-            <div className="mx-auto w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mb-6">
-              <Smartphone size={32} className="text-black" />
-            </div>
-            <h2 className="text-2xl font-bold mb-1 text-center tracking-tight">Link this device</h2>
-            <p className="text-center mb-6 text-sm text-gray-600">
-              On a device where kunji is already unlocked, open <strong className="text-gray-900">Security → Scan device QR</strong> and scan this code.
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">Link this device</h1>
+            <p className="text-[15px] text-muted leading-relaxed mb-8">
+              On a device where kunji is already unlocked, open <strong className="text-ink font-medium">Security → Link a device</strong> and scan this code.
             </p>
-            <div className="bg-white rounded-2xl p-3 flex items-center justify-center mb-4 min-h-[200px]">
-              {qrDataUrl
-                ? <img src={qrDataUrl} alt="Device link QR" className="w-[200px] h-[200px]" />
-                : <span className="text-gray-600 text-sm">Preparing…</span>}
+            <div className="flex justify-center mb-6">
+              <div className="rounded-2xl border border-line p-4 bg-surface min-h-[224px] flex items-center justify-center">
+                {qrDataUrl
+                  ? <img src={qrDataUrl} alt="Device link QR" className="w-[192px] h-[192px]" />
+                  : <span className="text-muted text-sm">Preparing…</span>}
+              </div>
             </div>
-            <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" /> Waiting for the other device…
+            <p className="text-center text-[12px] text-faint flex items-center justify-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-fill animate-pulse" /> Waiting for the other device…
             </p>
           </>
         )}
-      </div>
+      </main>
     </div>
   );
 };

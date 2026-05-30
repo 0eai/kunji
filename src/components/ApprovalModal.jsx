@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ShieldX, Globe, Clock, Link, Fingerprint, Sparkles } from 'lucide-react';
+import Sheet from './ui/Sheet';
+import { Monogram, Btn } from './ui/primitives';
 
 const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
   const [loading, setLoading] = useState(false);
@@ -29,67 +30,50 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6">
-        <h2 className="text-lg font-bold text-[#18181b] mb-4 text-center">Auth Request</h2>
-
-        <div className="flex flex-col items-center gap-4">
-          {session?.iconUrl ? (
-            <img src={session.iconUrl} alt={session.appName} className="w-16 h-16 rounded-2xl object-cover" />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-              <Link size={28} className="text-[#18181b]" />
-            </div>
-          )}
-
-          <div className="text-center">
-            <p className="font-bold text-[#18181b] text-lg">{session?.appName || 'Unknown App'}</p>
-            <div className="flex items-center justify-center gap-1 text-sm text-gray-600 mt-1">
-              <Globe size={13} />
-              <span>{session?.domain}</span>
-            </div>
-            <p className="text-gray-500 text-sm mt-2">wants to verify your identity</p>
-          </div>
-
-          {sub && (
-            <div className="flex items-center gap-2 bg-[#eef0f2]/50 border border-[#e6e8eb] rounded-xl px-3 py-2 w-full">
-              <Fingerprint size={14} className="text-amber-600 flex-shrink-0" />
-              <p className="text-xs text-gray-600">
-                Shared as <code className="text-gray-900 font-mono">{sub.slice(0, 4)}…{sub.slice(-4)}</code>
-                <span className="text-gray-400"> · unique to this app</span>
-              </p>
-            </div>
-          )}
-
-          {session?.isNew && (
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 w-full">
-              <Sparkles size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-amber-700">
-                First time here — kunji will create a new identity for <strong>{session.audience}</strong>. Other apps can't see it.
-              </p>
-            </div>
-          )}
-
-          {!!session?.expiresAt && (
-            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-              <Clock size={12} />
-              <span>Expires in {secondsLeft}s</span>
-            </div>
-          )}
-
-          <div className="flex gap-3 w-full">
-            <button onClick={handleDeny} disabled={loading}
-              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-semibold transition-colors disabled:opacity-50">
-              <ShieldX size={16} /> Deny
-            </button>
-            <button onClick={handleApprove} disabled={loading || (!!session?.expiresAt && secondsLeft === 0)}
-              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-green-50 hover:bg-green-100 border border-green-200 text-green-700 font-semibold transition-colors disabled:opacity-50">
-              <ShieldCheck size={16} /> {loading ? 'Signing in…' : 'Approve'}
-            </button>
-          </div>
+    <Sheet onClose={onClose} labelledBy="approval-title">
+      {/* Header — who is asking */}
+      <div className="flex items-center gap-3.5 mb-7">
+        <Monogram name={session?.appName} src={session?.iconUrl} size="lg" />
+        <div className="min-w-0">
+          <h2 id="approval-title" className="text-lg font-semibold tracking-tight truncate">{session?.appName || 'Unknown app'}</h2>
+          <p className="text-[13px] font-mono text-muted truncate">{session?.domain}</p>
         </div>
       </div>
-    </div>
+
+      <p className="text-[15px] text-ink mb-6">
+        Sign in to <span className="font-medium">{session?.appName || 'this app'}</span>?
+      </p>
+
+      {/* Detail rows */}
+      <div className="divide-y divide-line border-y border-line mb-6">
+        {sub && (
+          <div className="flex items-center justify-between gap-4 py-3.5">
+            <span className="text-[13px] text-muted">Shared as</span>
+            <span className="text-[13px] font-mono text-ink">{sub.slice(0, 6)}…{sub.slice(-6)}</span>
+          </div>
+        )}
+        {session?.isNew && (
+          <div className="py-3.5">
+            <p className="text-[13px] text-accent">
+              First time here — kunji creates a new private identity for this app. Other apps can't see it.
+            </p>
+          </div>
+        )}
+        {!!session?.expiresAt && (
+          <div className="flex items-center justify-between gap-4 py-3.5">
+            <span className="text-[13px] text-muted">Expires in</span>
+            <span className="text-[13px] font-mono text-ink">{secondsLeft}s</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-end gap-1">
+        <Btn variant="quiet" onClick={handleDeny} disabled={loading}>Deny</Btn>
+        <Btn variant="primary" onClick={handleApprove} disabled={loading || (!!session?.expiresAt && secondsLeft === 0)}>
+          {loading ? 'Signing in…' : 'Approve'}
+        </Btn>
+      </div>
+    </Sheet>
   );
 };
 

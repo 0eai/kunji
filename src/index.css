@@ -1,8 +1,48 @@
 @import "tailwindcss";
 
-/* Light theme: geometric system font, light UA chrome, light page behind content. */
+/* ───────────────────────────────────────────────────────────────
+   kunji design system — "Editorial / mono on warm paper"
+   No cards. Hairline-separated rows. Mono for domains/keys/codes.
+   Generous negative space. One amber accent.
+   ─────────────────────────────────────────────────────────────── */
+@theme {
+  --color-paper:        #faf9f6;
+  --color-surface:      #ffffff;
+  --color-ink:          #1a1a18;
+  --color-muted:        #6b6b66;
+  --color-faint:        #a8a59c;
+  --color-line:         #e7e5e0;
+  --color-line-strong:  #dcd9d2;
+  --color-accent:       #d97706;
+  --color-accent-fill:  #f59e0b;
+  --color-accent-soft:  #fdf3e3;
+  --color-danger:       #dc2626;
+  --color-danger-soft:  #fdf0ef;
+  --color-success:      #16a34a;
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
 :root { color-scheme: light; }
+
 html, body {
-  background-color: #f6f7f9;
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Sheet slide-up (mobile) + fade for the overlay scrim */
+@keyframes kunji-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes kunji-fade     { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kunji-shake    { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-9px)} 75%{transform:translateX(9px)} }
+
+.animate-sheet { animation: kunji-slide-up .26s cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-fade  { animation: kunji-fade .18s ease-out; }
+.animate-shake { animation: kunji-shake .4s ease-in-out; }
+
+@media (min-width: 640px) {
+  .animate-sheet { animation: kunji-fade .2s ease-out; }
 }

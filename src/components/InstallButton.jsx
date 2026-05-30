@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Download, Share, Plus, X } from 'lucide-react';
+import { Download, Share, Plus } from 'lucide-react';
 import { useInstall } from '../hooks/useInstall';
+import Sheet from './ui/Sheet';
 
 /**
  * "Install kunji" affordance. Hidden once installed (standalone). On Chrome it
  * triggers the native prompt; on iOS Safari it shows Add-to-Home-Screen steps.
- * @param {'block'|'row'} variant - full-width button (lock screen) or compact row (panel)
+ * @param {'block'|'row'} variant - lock-screen text link, or a hairline list row (panel)
  */
 const InstallButton = ({ variant = 'block' }) => {
   const { isStandalone, isIOS, canPrompt, promptInstall } = useInstall();
@@ -16,38 +17,36 @@ const InstallButton = ({ variant = 'block' }) => {
 
   const onClick = () => { if (canPrompt) promptInstall(); else setShowIOS(true); };
 
-  const btnClass = variant === 'row'
-    ? 'w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-semibold transition-colors'
-    : 'w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] text-sm font-semibold transition-colors';
+  const trigger = variant === 'row' ? (
+    <button onClick={onClick}
+      className="w-full flex items-center gap-3 py-4 text-left text-ink hover:text-accent transition-colors">
+      <Download size={17} className="text-muted" /> <span className="text-[15px] font-medium">Install kunji</span>
+    </button>
+  ) : (
+    <button onClick={onClick}
+      className="w-full inline-flex items-center justify-center gap-2 text-sm font-medium text-accent hover:text-ink transition-colors">
+      <Download size={16} /> Install kunji
+    </button>
+  );
 
   return (
     <>
-      <button onClick={onClick} className={btnClass}>
-        <Download size={16} /> Install kunji
-      </button>
-
+      {trigger}
       {showIOS && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowIOS(false)}>
-          <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-[#18181b]">Install kunji</h2>
-              <button onClick={() => setShowIOS(false)} className="p-1.5 rounded-lg text-gray-500 hover:text-[#18181b] hover:bg-[#eef0f2] transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">Add kunji to your home screen for an app-like experience:</p>
-            <ol className="space-y-3 text-sm text-gray-700">
-              <li className="flex items-center gap-3">
-                <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
-                Tap the <Share size={15} className="text-amber-600 inline-block" /> <strong>Share</strong> icon in Safari.
-              </li>
-              <li className="flex items-center gap-3">
-                <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
-                Choose <Plus size={15} className="text-amber-600 inline-block" /> <strong>Add to Home Screen</strong>.
-              </li>
-            </ol>
-          </div>
-        </div>
+        <Sheet onClose={() => setShowIOS(false)} z={70} labelledBy="install-title">
+          <h2 id="install-title" className="text-lg font-semibold tracking-tight mb-1">Install kunji</h2>
+          <p className="text-[14px] text-muted mb-6">Add kunji to your home screen for an app-like experience.</p>
+          <ol className="divide-y divide-line border-y border-line">
+            <li className="flex items-center gap-3 py-4 text-[15px] text-ink">
+              <span className="w-6 h-6 rounded-full bg-accent-soft text-accent text-xs font-semibold flex items-center justify-center shrink-0">1</span>
+              <span>Tap the <Share size={15} className="text-accent inline-block align-text-bottom" /> <strong className="font-medium">Share</strong> icon in Safari.</span>
+            </li>
+            <li className="flex items-center gap-3 py-4 text-[15px] text-ink">
+              <span className="w-6 h-6 rounded-full bg-accent-soft text-accent text-xs font-semibold flex items-center justify-center shrink-0">2</span>
+              <span>Choose <Plus size={15} className="text-accent inline-block align-text-bottom" /> <strong className="font-medium">Add to Home Screen</strong>.</span>
+            </li>
+          </ol>
+        </Sheet>
       )}
     </>
   );

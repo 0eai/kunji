@@ -18,12 +18,12 @@ const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=
 const RESUME_KEY = 'kunji_demo_pending';
 
 const STATUS = {
-  loading:  { color: 'text-amber-600', label: 'Generating QR…' },
-  scanning: { color: 'text-gray-600', label: 'Scan with the kunji app' },
-  resuming: { color: 'text-amber-600', label: 'Finishing sign-in…' },
-  approved: { color: 'text-green-600', label: 'Verified! Signing you in…' },
-  expired:  { color: 'text-amber-600', label: 'Code expired.' },
-  error:    { color: 'text-red-600',   label: 'Something went wrong.' },
+  loading:  { color: 'text-accent',  label: 'Generating code…' },
+  scanning: { color: 'text-muted',   label: 'Scan with the kunji app' },
+  resuming: { color: 'text-accent',  label: 'Finishing sign-in…' },
+  approved: { color: 'text-success', label: 'Verified! Signing you in…' },
+  expired:  { color: 'text-accent',  label: 'Code expired.' },
+  error:    { color: 'text-danger',  label: 'Something went wrong.' },
 };
 
 export default function LoginPage({ onSuccess }) {
@@ -76,7 +76,7 @@ export default function LoginPage({ onSuccess }) {
         returnUrl: window.location.href,
       };
       const qrData = JSON.stringify(payload);
-      setQrUrl(await QRCode.toDataURL(qrData, { width: 200, margin: 1, color: { dark: '#1c1606', light: '#fbbf24' } }));
+      setQrUrl(await QRCode.toDataURL(qrData, { width: 200, margin: 1, color: { dark: '#1a1a18', light: '#ffffff' } }));
       setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(qrData)}`); // same-device: open kunji directly
       setStatus('scanning');
 
@@ -142,75 +142,84 @@ export default function LoginPage({ onSuccess }) {
   const tabBtn = (id, label) =>
     <button
       onClick={() => setTab(id)}
-      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-amber-500 text-black' : 'text-gray-600 hover:text-[#18181b]'}`}
+      className={`pb-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+        tab === id ? 'border-accent text-ink' : 'border-transparent text-faint hover:text-muted'
+      }`}
     >{label}</button>;
 
   return (
-    <div className="bg-white border border-[#e6e8eb] rounded-3xl p-6 max-w-sm w-full text-center">
-      <div className="mb-4">
-        <img src="/icon.svg" alt="kunji" className="w-11 h-11 rounded-xl mx-auto mb-2" />
-        <h1 className="text-xl font-bold">Sign in with kunji</h1>
-      </div>
+    <>
+      <header className="flex items-center gap-2 max-w-[26rem] w-full mx-auto px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
+        <span className="text-[15px] font-medium text-faint">Kunji Demo</span>
+      </header>
 
-      {status === 'approved' ? (
-        <div className="flex flex-col items-center gap-2 py-6">
-          <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
-            <svg className="w-8 h-8 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-          </div>
-          <p className="text-sm font-medium text-green-600">Signing you in…</p>
+      <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6">
+        <div className="mb-9">
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Sign in</h1>
+          <p className="text-[15px] text-muted mt-1">with kunji — no password, no account.</p>
         </div>
-      ) : status === 'expired' ? (
-        <div className="py-4">
-          <p className="text-sm text-amber-600 mb-4">Code expired.</p>
-          <button onClick={startFlow} className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors">
-            Show new code
-          </button>
-        </div>
-      ) : status === 'error' ? (
-        <div className="py-4">
-          <p className="text-sm text-red-600">{errorMsg || 'Something went wrong.'}</p>
-          <button onClick={startFlow} className="mt-4 w-full py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-[#18181b] font-semibold transition-colors">Try again</button>
-        </div>
-      ) : status !== 'scanning' ? (
-        <p className={`text-sm font-medium ${meta.color} py-8`}>{meta.label}</p>
-      ) : (
-        <>
-          {/* Method toggle */}
-          <div className="flex gap-1 p-1 rounded-xl bg-[#eef0f2] border border-[#e6e8eb] mb-4">
-            {tabBtn('device', 'This device')}
-            {tabBtn('qr', 'Another device')}
-          </div>
 
-          {tab === 'device' ? (
-            <div>
-              <a
-                href={deepLink}
-                onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
-                className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
-              >
-                Open kunji
-              </a>
-              {code && (
-                <div className="mt-4">
-                  <p className="text-xs text-gray-500 mb-1">Or type this code in kunji</p>
-                  <div className="font-mono text-3xl tracking-[0.25em] text-amber-700 font-bold">
-                    {code.slice(0, 3)} {code.slice(3)}
+        {status === 'approved' ? (
+          <p className="text-[15px] font-medium text-success py-6">Verified — signing you in…</p>
+        ) : status === 'expired' ? (
+          <div>
+            <p className="text-[15px] text-accent mb-6">Code expired.</p>
+            <button onClick={startFlow}
+              className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors">
+              Show new code
+            </button>
+          </div>
+        ) : status === 'error' ? (
+          <div>
+            <p className="text-[15px] text-danger mb-6">{errorMsg || 'Something went wrong.'}</p>
+            <button onClick={startFlow}
+              className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity">
+              Try again
+            </button>
+          </div>
+        ) : status !== 'scanning' ? (
+          <p className={`text-[15px] font-medium ${meta.color} py-6`}>{meta.label}</p>
+        ) : (
+          <>
+            {/* Method toggle — text tabs with amber underline */}
+            <div className="flex gap-6 border-b border-line mb-8">
+              {tabBtn('device', 'This device')}
+              {tabBtn('qr', 'Another device')}
+            </div>
+
+            {tab === 'device' ? (
+              <div>
+                <a
+                  href={deepLink}
+                  onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
+                  className="inline-flex items-center justify-center w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+                >
+                  Open kunji
+                </a>
+                {code && (
+                  <div className="mt-8">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Or type this code in kunji</p>
+                    <div className="font-mono text-4xl tracking-[0.2em] text-ink">
+                      {code.slice(0, 3)} {code.slice(3)}
+                    </div>
                   </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
+                  {qrUrl && <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px]" />}
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center">
-              {qrUrl && <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px] rounded-xl border-2 border-amber-500/40" />}
-              <p className="text-xs text-gray-500 mt-3">Scan with the kunji app on your phone</p>
-            </div>
-          )}
+                <p className="text-[13px] text-muted mt-4">Scan with the kunji app on your phone.</p>
+              </div>
+            )}
 
-          {secondsLeft > 0 && (
-            <p className="text-xs text-gray-400 mt-3">Expires in <span className="font-mono">{secondsLeft}s</span></p>
-          )}
-        </>
-      )}
-    </div>
+            {secondsLeft > 0 && (
+              <p className="text-[12px] text-faint mt-8">Expires in <span className="font-mono">{secondsLeft}s</span></p>
+            )}
+          </>
+        )}
+      </main>
+    </>
   );
 }

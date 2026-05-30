@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScanLine, Lock, Shield, Settings, Trash2 } from 'lucide-react';
+import { ScanLine, Lock, Shield, Settings } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps, lookupSessionByCode } from '../services/identity';
 import { completeLink } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
-import AppCard from './AppCard';
+import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import QRScannerOverlay from './QRScannerOverlay';
 import SecurityPanel from './SecurityPanel';
 import CodeEntryModal from './CodeEntryModal';
+import Sheet from './ui/Sheet';
+import { SectionLabel, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
 const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
@@ -158,68 +160,69 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   };
 
   return (
-    <div className="h-[100dvh] bg-[#f6f7f9] text-[#18181b] flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="flex items-center justify-between px-5 pt-10 pb-4 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <img src="/icons/icon.svg" alt="kunji" className="w-8 h-8 rounded-lg" />
-          <span className="text-xl font-bold tracking-tight">kunji</span>
+    <div className="h-[100dvh] bg-paper text-ink flex flex-col overflow-hidden">
+      {/* Header — wordmark + minimal glyph actions */}
+      <header className="flex items-center justify-between max-w-[34rem] w-full mx-auto px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-5 shrink-0">
+        <div className="flex items-center gap-2">
+          <img src="/icons/icon.svg" alt="" className="w-6 h-6" />
+          <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowSecurity(true)}
-            className="p-2 text-gray-500 hover:text-[#18181b] transition-colors rounded-lg hover:bg-[#eef0f2]"
-            title="Security"
-          >
-            <Settings size={16} />
+        <div className="flex items-center gap-1 -mr-2">
+          <button onClick={() => setShowScanner(true)} title="Scan a code"
+            className="p-2.5 text-muted hover:text-ink transition-colors">
+            <ScanLine size={18} />
           </button>
-          <button
-            onClick={onLock}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#18181b] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#eef0f2]"
-          >
-            <Lock size={13} /> Lock
+          <button onClick={() => setShowSecurity(true)} title="Security"
+            className="p-2.5 text-muted hover:text-ink transition-colors">
+            <Settings size={18} />
+          </button>
+          <button onClick={onLock} title="Lock"
+            className="p-2.5 text-muted hover:text-ink transition-colors">
+            <Lock size={18} />
           </button>
         </div>
       </header>
 
-      {/* App List (scrolls; the Scan QR action is pinned at the bottom) */}
-      <div className="flex-1 overflow-y-auto px-5 py-2">
-        {loading ? (
-          <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
-        ) : apps.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white border border-[#e6e8eb] flex items-center justify-center">
-              <Shield size={28} className="text-gray-400" />
+      {/* App list — hairline rows, no cards */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[34rem] w-full mx-auto px-6">
+          {loading ? (
+            <div className="flex items-center justify-center h-48 text-faint text-sm">Loading…</div>
+          ) : apps.length === 0 ? (
+            <div className="flex flex-col justify-center min-h-[55vh] max-w-sm">
+              <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight mb-3">No apps yet</h1>
+              <p className="text-[15px] text-muted leading-relaxed mb-6">
+                Scan an app's login code to sign in. It's added here automatically — one private identity per app.
+              </p>
+              <button onClick={() => setShowScanner(true)}
+                className="inline-flex items-center gap-2 text-accent hover:text-ink font-medium text-sm transition-colors w-fit">
+                <ScanLine size={16} /> Scan a code
+              </button>
             </div>
-            <div>
-              <p className="text-gray-600 font-medium">No apps yet</p>
-              <p className="text-gray-400 text-sm mt-1">Scan an app's login QR to sign in — it's added here automatically.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3 pb-8">
-            {apps.map(app => (
-              <AppCard
-                key={app.id}
-                app={app}
-                onDetails={() => setSelectedApp(app)}
-                onDelete={() => setPendingDelete(app)}
-                onEnterCode={() => setCodeApp(app)}
-              />
-            ))}
-          </div>
-        )}
+          ) : (
+            <>
+              <SectionLabel count={apps.length} className="pt-1 pb-1">Apps</SectionLabel>
+              <div className="divide-y divide-line">
+                {apps.map(app => (
+                  <AppRow key={app.id} app={app} onOpen={() => setSelectedApp(app)} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Pinned bottom action — primary action in the thumb zone */}
-      <div className="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[#e6e8eb] bg-[#f6f7f9]">
-        <button
-          onClick={() => setShowScanner(true)}
-          className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-3.5 rounded-2xl transition-all active:scale-[0.97]"
-        >
-          <ScanLine size={18} /> Scan QR
-        </button>
-      </div>
+      {/* Slim bottom action — hairline-topped, not a slab */}
+      {!loading && apps.length > 0 && (
+        <div className="shrink-0 border-t border-line">
+          <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <button onClick={() => setShowScanner(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 text-accent hover:text-ink font-medium text-sm transition-colors">
+              <ScanLine size={17} /> Scan a login code
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showScanner && (
@@ -244,6 +247,8 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           userId={user.uid}
           cryptoKey={cryptoKey}
           onClose={() => setSelectedApp(null)}
+          onEnterCode={() => { const a = selectedApp; setSelectedApp(null); setCodeApp(a); }}
+          onDelete={() => { const a = selectedApp; setSelectedApp(null); setPendingDelete(a); }}
         />
       )}
 
@@ -265,54 +270,37 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       )}
 
       {pendingDelete && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-9 h-9 bg-red-100 rounded-full flex items-center justify-center">
-                <Trash2 size={16} className="text-red-600" />
-              </div>
-              <h2 className="text-lg font-bold text-[#18181b]">Remove {pendingDelete.name}?</h2>
-            </div>
-            <p className="text-sm text-gray-600 mb-5">
-              It's removed from your list on all your devices. You can re-add it anytime by scanning its login QR — your identity for it stays the same.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPendingDelete(null)}
-                className="flex-1 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors"
-              >
-                Remove
-              </button>
-            </div>
+        <Sheet onClose={() => setPendingDelete(null)} z={60} labelledBy="remove-title">
+          <h2 id="remove-title" className="text-lg font-semibold tracking-tight mb-1">Remove {pendingDelete.name}?</h2>
+          <p className="text-[14px] text-muted leading-relaxed mb-6">
+            It's removed from your list on all your devices. You can re-add it anytime by scanning its login code —
+            your identity for it stays the same.
+          </p>
+          <div className="flex items-center justify-end gap-1">
+            <Btn variant="quiet" onClick={() => setPendingDelete(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={confirmDelete}>Remove</Btn>
           </div>
-        </div>
+        </Sheet>
       )}
 
       {returnInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6 text-center">
-            <div className="mx-auto w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mb-4">
-              <Shield size={26} className="text-green-600" />
-            </div>
-            <h2 className="text-lg font-bold text-[#18181b] mb-1">Signed in</h2>
-            <p className="text-sm text-gray-600 mb-5">You approved sign-in to <strong className="text-gray-900">{returnInfo.audience}</strong>.</p>
-            <a
-              href={returnInfo.returnUrl}
-              className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
-            >
-              Return to {returnInfo.audience}
-            </a>
-            <button onClick={() => setReturnInfo(null)} className="mt-2 w-full py-2.5 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] text-sm font-medium transition-colors">
-              Stay in kunji
-            </button>
+        <Sheet onClose={() => setReturnInfo(null)} labelledBy="signed-in-title">
+          <div className="flex items-center gap-2.5 mb-1">
+            <Shield size={18} className="text-success" />
+            <h2 id="signed-in-title" className="text-lg font-semibold tracking-tight">Signed in</h2>
           </div>
-        </div>
+          <p className="text-[14px] text-muted leading-relaxed mb-6">
+            You approved sign-in to <span className="font-mono text-ink">{returnInfo.audience}</span>.
+          </p>
+          <a href={returnInfo.returnUrl}
+            className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors">
+            Return to {returnInfo.audience}
+          </a>
+          <button onClick={() => setReturnInfo(null)}
+            className="mt-2 w-full text-center text-sm font-medium text-muted hover:text-ink py-2 transition-colors">
+            Stay in kunji
+          </button>
+        </Sheet>
       )}
     </div>
   );

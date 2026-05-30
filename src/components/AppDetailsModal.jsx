@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X, Copy, CheckCircle2, Fingerprint, Globe, Activity, Link as LinkIcon,
-  ShieldCheck, Unlink, Circle,
+  Copy, CheckCircle2, KeyRound, Trash2,
+  ShieldCheck, Link as LinkIcon, Unlink, Circle,
 } from 'lucide-react';
 import { deriveSubFromPublicKey } from '../services/identity';
 import { listenToActivityLog } from '../services/activityLog';
+import Sheet from './ui/Sheet';
+import { SectionLabel, Monogram } from './ui/primitives';
 
 const ACTIVITY_ICONS = { ShieldCheck, Link: LinkIcon, Unlink };
-const TYPE_COLOR = { success: 'text-green-600', danger: 'text-red-600', info: 'text-gray-600' };
+const TYPE_COLOR = { success: 'text-success', danger: 'text-danger', info: 'text-muted' };
 
 const relTime = (createdAt) => {
   const ms = createdAt?.toMillis ? createdAt.toMillis() : (createdAt?.seconds ? createdAt.seconds * 1000 : null);
@@ -19,7 +21,7 @@ const relTime = (createdAt) => {
   return `${Math.floor(s / 86400)}d ago`;
 };
 
-const AppDetailsModal = ({ app, userId, cryptoKey, onClose }) => {
+const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelete }) => {
   const [sub, setSub] = useState('');
   const [copiedSub, setCopiedSub] = useState(false);
   const [events, setEvents] = useState([]);
@@ -41,77 +43,65 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose }) => {
   const copySub = () => { navigator.clipboard.writeText(sub); setCopiedSub(true); setTimeout(() => setCopiedSub(false), 2000); };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-start justify-between mb-5">
-          <div className="flex items-center gap-3 min-w-0">
-            {app?.iconUrl ? (
-              <img src={app.iconUrl} alt="" className="w-10 h-10 rounded-xl object-cover flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
-            ) : (
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center flex-shrink-0">
-                <LinkIcon size={18} className="text-[#18181b]" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <h2 className="text-lg font-bold text-[#18181b] truncate">{app?.name}</h2>
-              <p className="text-xs text-gray-500 flex items-center gap-1 truncate"><Globe size={11} /> {app?.domain}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-[#18181b] hover:bg-[#eef0f2] transition-colors flex-shrink-0">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="space-y-5">
-          {/* Per-app subject ID */}
-          {sub && (
-            <div>
-              <p className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
-                <Fingerprint size={12} /> Your ID for this app
-              </p>
-              <div className="relative">
-                <code className="w-full p-2.5 pr-10 text-xs font-mono bg-[#f1f2f4] border border-[#e6e8eb] rounded-xl text-gray-700 break-all block">
-                  {sub}
-                </code>
-                <button onClick={copySub} className="absolute top-2 right-2 p-1.5 rounded-lg hover:bg-[#eef0f2] transition-colors" title="Copy ID">
-                  {copiedSub ? <CheckCircle2 size={14} className="text-green-600" /> : <Copy size={14} className="text-gray-500" />}
-                </button>
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
-                The stable identifier this app sees for you — unique to it, so apps can't link your accounts.
-              </p>
-            </div>
-          )}
-
-          {/* Recent activity for this app */}
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-              <Activity size={12} /> Recent activity
-            </p>
-            {events.length === 0 ? (
-              <p className="text-xs text-gray-400">No activity for this app on this device yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {events.map((e) => {
-                  const Icon = ACTIVITY_ICONS[e.icon] || Circle;
-                  return (
-                    <div key={e.id} className="flex items-center gap-3">
-                      <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-gray-600'} flex-shrink-0`} />
-                      <span className="text-xs text-gray-700 flex-1 truncate">{e.action}</span>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0">{relTime(e.createdAt)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <button onClick={onClose} className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors">
-            Done
-          </button>
+    <Sheet onClose={onClose} labelledBy="details-title">
+      {/* Header */}
+      <div className="flex items-center gap-3.5 mb-7">
+        <Monogram name={app?.name} src={app?.iconUrl} size="lg" />
+        <div className="min-w-0">
+          <h2 id="details-title" className="text-lg font-semibold tracking-tight truncate">{app?.name}</h2>
+          <p className="text-[13px] font-mono text-muted truncate">{app?.domain}</p>
         </div>
       </div>
-    </div>
+
+      {/* Per-app subject ID */}
+      {sub && (
+        <div className="mb-7">
+          <SectionLabel className="mb-2.5">Your ID for this app</SectionLabel>
+          <div className="flex items-start gap-3 border-y border-line py-3.5">
+            <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed">{sub}</code>
+            <button onClick={copySub} className="shrink-0 text-muted hover:text-ink transition-colors" title="Copy ID">
+              {copiedSub ? <CheckCircle2 size={15} className="text-success" /> : <Copy size={15} />}
+            </button>
+          </div>
+          <p className="text-[12px] text-faint mt-2 leading-relaxed">
+            The stable identifier this app sees for you — unique to it, so apps can't link your accounts.
+          </p>
+        </div>
+      )}
+
+      {/* Recent activity */}
+      <div className="mb-7">
+        <SectionLabel className="mb-2.5">Recent activity</SectionLabel>
+        {events.length === 0 ? (
+          <p className="text-[13px] text-faint py-2">No activity for this app on this device yet.</p>
+        ) : (
+          <div className="divide-y divide-line border-t border-line">
+            {events.map((e) => {
+              const Icon = ACTIVITY_ICONS[e.icon] || Circle;
+              return (
+                <div key={e.id} className="flex items-center gap-3 py-3">
+                  <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
+                  <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
+                  <span className="text-[11px] font-mono text-faint shrink-0">{relTime(e.createdAt)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="divide-y divide-line border-t border-line">
+        <button onClick={onEnterCode}
+          className="w-full flex items-center gap-3 py-4 text-left text-accent hover:text-ink transition-colors">
+          <KeyRound size={17} /> <span className="text-[15px] font-medium">Sign in with a code</span>
+        </button>
+        <button onClick={onDelete}
+          className="w-full flex items-center gap-3 py-4 text-left text-danger hover:opacity-70 transition-opacity">
+          <Trash2 size={17} /> <span className="text-[15px] font-medium">Remove app</span>
+        </button>
+      </div>
+    </Sheet>
   );
 };
 

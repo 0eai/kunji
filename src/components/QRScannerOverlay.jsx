@@ -67,8 +67,8 @@ const QRScannerOverlay = ({ onScan, onClose }) => {
         <div className="fixed inset-0 z-[200] bg-black flex flex-col">
             <div className="flex items-center justify-between p-4 text-white">
                 <div className="flex items-center gap-2">
-                    <ScanLine size={20} />
-                    <span className="font-medium">Scan Auth QR</span>
+                    <ScanLine size={18} />
+                    <span className="text-[15px] font-medium">Scan a code</span>
                 </div>
                 <button
                     onClick={onClose}

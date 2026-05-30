@@ -1,7 +1,27 @@
 @import "tailwindcss";
 
+/* Mirror of kunji's "Editorial / mono on warm paper" design tokens. */
+@theme {
+  --color-paper:   #faf9f6;
+  --color-surface: #ffffff;
+  --color-ink:     #1a1a18;
+  --color-muted:   #6b6b66;
+  --color-faint:   #a8a59c;
+  --color-line:    #e7e5e0;
+  --color-accent:  #d97706;
+  --color-accent-fill: #f59e0b;
+  --color-accent-soft: #fdf3e3;
+  --color-success: #16a34a;
+  --color-danger:  #dc2626;
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
 :root { color-scheme: light; }
 html, body {
-  background-color: #f6f7f9;
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }

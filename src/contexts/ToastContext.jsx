@@ -17,15 +17,14 @@ export const ToastProvider = ({ children }) => {
     return (
         <ToastContext.Provider value={{ showToast }}>
             {children}
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-2 pointer-events-none" style={{ width: 'max-content', maxWidth: '90vw' }}>
+            <div className="fixed top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-2 pointer-events-none" style={{ width: 'max-content', maxWidth: '90vw' }}>
                 {toasts.map(t => (
                     <div
                         key={t.id}
-                        className={`px-4 py-2 rounded-full shadow-lg text-sm font-medium text-white text-center
-                            ${t.type === 'error' ? 'bg-red-600' :
-                              t.type === 'warning' ? 'bg-amber-600' :
-                              t.type === 'info' ? 'bg-blue-600' :
-                              'bg-gray-800'}`}
+                        className={`px-4 py-2 rounded-full shadow-lg text-[13px] font-medium text-center animate-fade
+                            ${t.type === 'error' ? 'bg-danger text-white' :
+                              t.type === 'warning' ? 'bg-accent text-white' :
+                              'bg-ink text-paper'}`}
                     >
                         {t.message}
                     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { Lock, RotateCcw, ShieldAlert, Key, AlertTriangle } from 'lucide-react';
+import { Key, AlertTriangle, ArrowRight } from 'lucide-react';
 import { db } from '../lib/firebase';
 import {
   deriveKeyFromPasskey, deriveKeyArgon2id, generateSalt, encryptData, decryptData,
@@ -11,6 +11,8 @@ import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
 import LinkDeviceScreen from './LinkDeviceScreen';
 import InstallButton from './InstallButton';
+import Sheet from './ui/Sheet';
+import { Field, Btn } from './ui/primitives';
 
 const getDelay = (failCount) => {
   if (failCount <= 0) return 0;
@@ -27,10 +29,10 @@ const getStrength = (passkey) => {
   if (/[A-Z]/.test(passkey) && /[a-z]/.test(passkey)) score++;
   if (/[0-9]/.test(passkey)) score++;
   if (/[^A-Za-z0-9]/.test(passkey)) score++;
-  if (score <= 2) return { label: 'Weak', color: 'bg-red-500', width: '25%' };
-  if (score <= 3) return { label: 'Fair', color: 'bg-yellow-500', width: '50%' };
-  if (score <= 4) return { label: 'Strong', color: 'bg-amber-400', width: '75%' };
-  return { label: 'Very Strong', color: 'bg-green-500', width: '100%' };
+  if (score <= 2) return { label: 'Weak', color: 'bg-danger', width: '25%' };
+  if (score <= 3) return { label: 'Fair', color: 'bg-accent-fill', width: '50%' };
+  if (score <= 4) return { label: 'Strong', color: 'bg-accent', width: '75%' };
+  return { label: 'Very strong', color: 'bg-success', width: '100%' };
 };
 
 const MIN_PASSKEY_LENGTH = 8;
@@ -248,178 +250,163 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
     return <LinkDeviceScreen user={user} onUnlock={onUnlock} onCancel={() => setIsLinking(false)} />;
   }
 
-  return (
-    <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#f6f7f9] text-[#18181b] p-6">
-      <div className={`bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-[#e6e8eb] transition-transform ${errorShake ? 'animate-shake' : ''}`}>
-        <div className="mx-auto w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mb-6 shadow-[0_8px_24px_-8px_rgba(245,158,11,0.35)]">
-          <Lock size={32} className="text-black" />
-        </div>
-        <h2 className="text-2xl font-bold mb-1 text-center tracking-tight">
-          {isRecovering ? 'Vault Recovery' : isNewUser ? 'Create Vault' : 'Unlock Kunji'}
-        </h2>
-        <p className={`text-center mb-6 text-sm ${
-          status === 'Incorrect Passkey' || status.startsWith('Too many') ? 'text-red-600 font-bold'
-          : status === 'Wiping data...' ? 'text-red-600 animate-pulse'
-          : status.startsWith('Passkey must') || status.startsWith('New passkey') ? 'text-yellow-400'
-          : 'text-gray-600'
-        }`}>
-          {status || (isNewUser
-            ? `Choose a vault passkey (min ${MIN_PASSKEY_LENGTH} chars)`
-            : isRecovering ? 'Paste your recovery key and set a new passkey'
-            : 'Enter your passkey to decrypt your identity vault'
-          )}
-        </p>
+  const isError = status === 'Incorrect Passkey' || status.startsWith('Too many') || status === 'Wiping data...';
+  const isWarn = status.startsWith('Passkey must') || status.startsWith('New passkey') || status === 'Passkeys do not match';
+  const heading = isRecovering ? 'Vault recovery' : isNewUser ? 'Create your vault' : 'Welcome back';
+  const subtitle = status || (isNewUser
+    ? `Choose a passkey to encrypt your identity vault (min ${MIN_PASSKEY_LENGTH} characters).`
+    : isRecovering ? 'Paste your recovery key and set a new passkey.'
+    : 'Enter your passkey to unlock your identity vault.');
 
-        <form onSubmit={handleSubmit}>
+  return (
+    <div className="min-h-[100dvh] w-full flex flex-col bg-paper text-ink">
+      {/* wordmark */}
+      <header className="flex items-center gap-2 px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
+        <img src="/icons/icon.svg" alt="" className="w-6 h-6" />
+        <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
+      </header>
+
+      {/* focused unlock moment */}
+      <main className={`flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 ${errorShake ? 'animate-shake' : ''}`}>
+        <div className="mb-9">
+          <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
+            <Key size={22} className="text-accent" strokeWidth={2.25} />
+          </div>
+          <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">{heading}</h1>
+          <p className={`text-[15px] leading-relaxed ${isError ? 'text-danger' : isWarn ? 'text-accent' : 'text-muted'}`}>
+            {subtitle}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-1">
           {isRecovering && (
             <>
               <textarea
                 value={recoveryInput}
                 onChange={(e) => { setRecoveryInput(e.target.value); if (status) setStatus(''); }}
-                placeholder="Paste your recovery key..."
-                className="w-full h-24 p-3 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-mono text-xs resize-none"
+                placeholder="Paste your recovery key…"
+                className="w-full h-24 bg-transparent border-0 border-b border-line rounded-none px-0 py-3 text-ink placeholder:text-faint outline-none focus:border-accent font-mono text-xs resize-none transition-colors"
                 required
               />
               {recoveryInput.trim().startsWith('v2:') && (
-                <input
+                <Field
                   type="password"
                   value={recoveryPassphrase}
                   onChange={(e) => { setRecoveryPassphrase(e.target.value); if (status) setStatus(''); }}
-                  placeholder="Recovery key passphrase..."
-                  className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
+                  placeholder="Recovery key passphrase"
                   required
                 />
               )}
             </>
           )}
 
-          <input
+          <Field
             type="password"
             value={keyInput}
             onChange={(e) => { setKeyInput(e.target.value); if (status && status !== 'Wiping data...') setStatus(''); }}
             onKeyDown={handleKeyDown}
-            placeholder={isNewUser ? 'Choose a Passkey' : isRecovering ? 'New Passkey' : 'Enter Passkey'}
-            className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
+            placeholder={isNewUser ? 'Choose a passkey' : isRecovering ? 'New passkey' : 'Passkey'}
+            className="text-lg"
             autoFocus
           />
 
           {(isNewUser || isRecovering) && (
-            <input
+            <Field
               type="password"
               value={confirmKeyInput}
               onChange={(e) => { setConfirmKeyInput(e.target.value); if (status && status !== 'Wiping data...') setStatus(''); }}
               onKeyDown={handleKeyDown}
-              placeholder="Confirm Passkey"
-              className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
+              placeholder="Confirm passkey"
+              className="text-lg"
             />
           )}
 
           {strength && keyInput.length > 0 && (
-            <div className="mb-3">
-              <div className="h-1 bg-[#eef0f2] rounded-full overflow-hidden">
-                <div className={`h-full ${strength.color} rounded-full transition-all duration-300`} style={{ width: strength.width }} />
+            <div className="pt-3">
+              <div className="h-px bg-line overflow-hidden">
+                <div className={`h-full ${strength.color} transition-all duration-300`} style={{ width: strength.width }} />
               </div>
-              <div className="flex justify-between items-center mt-1.5">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider">{strength.label}</span>
-                <span className="text-[10px] text-gray-400">{keyInput.length} chars</span>
+              <div className="flex justify-between items-center mt-2">
+                <span className="text-[11px] text-muted uppercase tracking-[0.14em]">{strength.label}</span>
+                <span className="text-[11px] font-mono text-faint">{keyInput.length}</span>
               </div>
             </div>
           )}
 
           {!isNewUser && !isRecovering && keyInput.length > 0 && keyInput.length < MIN_PASSKEY_LENGTH && (
-            <div className="text-[10px] text-yellow-500/70 mb-2 text-right">{keyInput.length}/{MIN_PASSKEY_LENGTH} min</div>
+            <div className="text-[11px] font-mono text-faint text-right pt-2">{keyInput.length}/{MIN_PASSKEY_LENGTH}</div>
           )}
 
-          {cooldownRemaining > 0 && (
-            <div className="flex items-center justify-center gap-2 bg-red-50 text-red-600 text-xs font-bold py-2 px-3 rounded-lg mb-3 border border-red-200">
-              <ShieldAlert size={14} />
-              Locked for {cooldownRemaining}s
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isDeriving || cooldownRemaining > 0}
-            className="w-full py-4 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-wait text-black rounded-xl font-bold transition-all active:scale-[0.98]"
-          >
-            {isDeriving ? <span className="animate-pulse">Processing...</span>
-              : cooldownRemaining > 0 ? 'Locked'
-              : isNewUser ? 'Create Vault'
-              : isRecovering ? 'Recover & Unlock'
-              : 'Unlock Vault'}
-          </button>
+          <div className="pt-7">
+            <Btn type="submit" disabled={isDeriving || cooldownRemaining > 0} className="w-full">
+              {isDeriving ? 'Processing…'
+                : cooldownRemaining > 0 ? `Locked · ${cooldownRemaining}s`
+                : isNewUser ? 'Create vault'
+                : isRecovering ? 'Recover & unlock'
+                : <>Unlock <ArrowRight size={16} /></>}
+            </Btn>
+          </div>
         </form>
 
         {isNewUser && !isRecovering && (
           <button
             onClick={() => setIsLinking(true)}
-            className="mt-4 w-full py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] text-sm font-semibold transition-colors"
+            className="mt-5 w-full text-center text-sm font-medium text-accent hover:text-ink transition-colors"
           >
             Link from another device
           </button>
         )}
 
-        <div className="mt-4">
-          <InstallButton />
-        </div>
+        <div className="mt-5"><InstallButton /></div>
+      </main>
 
-        <div className="mt-8 flex justify-between items-center">
-          {!isNewUser && (
+      {/* quiet footer links */}
+      <footer className="max-w-[26rem] w-full mx-auto px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between border-t border-line pt-4 text-[12px]">
+          {!isNewUser ? (
             <button
               onClick={() => { setIsRecovering(!isRecovering); setStatus(''); setKeyInput(''); setConfirmKeyInput(''); setRecoveryInput(''); setRecoveryPassphrase(''); }}
-              className="text-[10px] uppercase tracking-widest text-amber-600 hover:text-amber-700 flex items-center gap-2 transition-colors font-semibold"
+              className="text-muted hover:text-accent transition-colors font-medium"
             >
-              <Key size={12} /> {isRecovering ? 'Cancel' : 'Forgot Passkey?'}
+              {isRecovering ? 'Cancel recovery' : 'Forgot passkey?'}
             </button>
-          )}
+          ) : <span />}
           <button
             onClick={() => { setResetConfirm(''); setShowReset(true); }}
-            className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-red-500 flex items-center gap-2 transition-colors font-semibold ml-auto"
+            className="text-faint hover:text-danger transition-colors font-medium"
           >
-            <RotateCcw size={12} /> Reset Vault
+            Reset vault
           </button>
         </div>
-      </div>
-      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-10px)}75%{transform:translateX(10px)}}.animate-shake{animation:shake .4s ease-in-out}`}</style>
+      </footer>
 
       {showReset && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-white border border-red-900/60 rounded-3xl w-full max-w-sm p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-9 h-9 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle size={16} className="text-red-600" />
-              </div>
-              <h2 className="text-lg font-bold text-[#18181b]">Reset this vault?</h2>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              This <strong className="text-gray-900">permanently erases this device's vault</strong>. Without your
-              recovery key or another linked device, your identity can't be recovered.
-            </p>
-            <label className="block text-xs text-gray-500 mb-1">Type <span className="font-mono text-gray-700">RESET</span> to confirm</label>
-            <input
-              autoFocus value={resetConfirm}
-              onChange={(e) => setResetConfirm(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleHardReset(); }}
-              placeholder="RESET"
-              className="w-full p-3 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] placeholder-gray-400 focus:ring-2 focus:ring-red-600 focus:border-transparent outline-none mb-4"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowReset(false)} disabled={isDeriving}
-                className="flex-1 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleHardReset}
-                disabled={isDeriving || resetConfirm.trim().toUpperCase() !== 'RESET'}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-              >
-                {isDeriving ? 'Wiping…' : 'Reset vault'}
-              </button>
-            </div>
+        <Sheet onClose={() => !isDeriving && setShowReset(false)} z={60} labelledBy="reset-title">
+          <div className="flex items-center gap-2.5 mb-3">
+            <AlertTriangle size={18} className="text-danger" />
+            <h2 id="reset-title" className="text-lg font-semibold tracking-tight">Reset this vault?</h2>
           </div>
-        </div>
+          <p className="text-[14px] text-muted leading-relaxed mb-5">
+            This <strong className="text-ink font-medium">permanently erases this device's vault</strong>. Without your
+            recovery key or another linked device, your identity can't be recovered.
+          </p>
+          <label className="block text-[11px] uppercase tracking-[0.14em] text-faint mb-1">
+            Type <span className="font-mono normal-case text-muted">RESET</span> to confirm
+          </label>
+          <Field
+            autoFocus value={resetConfirm} mono
+            onChange={(e) => setResetConfirm(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleHardReset(); }}
+            placeholder="RESET"
+            className="mb-6"
+          />
+          <div className="flex items-center justify-end gap-1">
+            <Btn variant="quiet" onClick={() => setShowReset(false)} disabled={isDeriving}>Cancel</Btn>
+            <Btn variant="danger" onClick={handleHardReset} disabled={isDeriving || resetConfirm.trim().toUpperCase() !== 'RESET'}>
+              {isDeriving ? 'Wiping…' : 'Reset vault'}
+            </Btn>
+          </div>
+        </Sheet>
       )}
     </div>
   );
