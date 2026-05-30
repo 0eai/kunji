@@ -8,6 +8,28 @@ export const generateEd25519KeyPair = () => {
     return { secretKey, publicKey };
 };
 
+// Deterministically derive a per-app Ed25519 keypair from the vault master key + app domain.
+// seed = HKDF-SHA256(rawMasterKey, info="kunji-app:"+domain). The same (masterKey, domain)
+// always yields the same keypair, so any device holding the master key reproduces every
+// app's identity — no keypair data needs to sync between devices.
+export const deriveAppKeyPair = async (masterKey, domain) => {
+    const raw = await window.crypto.subtle.exportKey('raw', masterKey);
+    const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+    const bits = await window.crypto.subtle.deriveBits(
+        {
+            name: 'HKDF',
+            hash: 'SHA-256',
+            salt: new TextEncoder().encode('kunji-app-key-v1'),
+            info: new TextEncoder().encode(`kunji-app:${domain}`),
+        },
+        ikm,
+        256,
+    );
+    const secretKey = new Uint8Array(bits);
+    const publicKey = ed25519.getPublicKey(secretKey);
+    return { secretKey, publicKey };
+};
+
 export const exportEd25519SecretKey = (secretKey) =>
     bufferToBase64(secretKey.buffer ?? secretKey);
 

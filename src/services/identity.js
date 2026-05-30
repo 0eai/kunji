@@ -1,14 +1,12 @@
 import {
-  collection, doc, addDoc, getDoc, getDocs, deleteDoc,
+  collection, doc, addDoc, getDocs, deleteDoc,
   onSnapshot, orderBy, query, serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { encryptData, decryptData } from '../lib/crypto';
 import {
-  generateEd25519KeyPair,
-  exportEd25519SecretKey,
+  deriveAppKeyPair,
   exportEd25519PublicKey,
-  importEd25519SecretKey,
   signWithEd25519,
 } from '../lib/crypto';
 import { logActivity } from './activityLog';
@@ -36,12 +34,13 @@ export const listenToApps = (userId, cryptoKey, callback) => {
 };
 
 export const registerApp = async (userId, cryptoKey, { name, domain, iconUrl = '' }) => {
-  const { secretKey, publicKey } = generateEd25519KeyPair();
-  const privKeyBase64 = exportEd25519SecretKey(secretKey);
+  // Per-app keypair is derived from the master key + domain (not stored).
+  const { publicKey } = await deriveAppKeyPair(cryptoKey, domain);
   const pubKeyBase64 = exportEd25519PublicKey(publicKey);
 
-  const encryptedPrivateKey = await encryptData({ key: privKeyBase64 }, cryptoKey);
-  const payload = await encryptData({ name, domain, iconUrl, encryptedPrivateKey }, cryptoKey);
+  // Only display metadata is persisted (encrypted at rest); the signing key is
+  // reproduced on demand from the master key, so it never needs to be stored.
+  const payload = await encryptData({ name, domain, iconUrl }, cryptoKey);
 
   const docRef = await addDoc(appsCol(userId), {
     ...payload,
@@ -56,15 +55,6 @@ export const registerApp = async (userId, cryptoKey, { name, domain, iconUrl = '
 export const deleteApp = async (userId, registeredAppId, appName, cryptoKey) => {
   await deleteDoc(appDoc(userId, registeredAppId));
   await logActivity(userId, `Removed app: ${appName}`, 'info', 'Unlink', cryptoKey);
-};
-
-const getDecryptedPrivateKey = async (userId, cryptoKey, registeredAppId) => {
-  const snap = await getDoc(appDoc(userId, registeredAppId));
-  if (!snap.exists()) throw new Error('App not found');
-  const raw = snap.data();
-  const decrypted = await decryptData(raw, cryptoKey);
-  const privKeyData = await decryptData(decrypted.encryptedPrivateKey, cryptoKey);
-  return importEd25519SecretKey(privKeyData.key);
 };
 
 /**
@@ -131,10 +121,11 @@ export const parseQRPayload = (rawValue) => {
  * to the relying party's callback URL. Kunji writes nothing to any shared store —
  * the only outbound effect is this single HTTPS POST to the app's own endpoint.
  */
-export const submitDiscoverableAssertion = async (userId, cryptoKey, app, qr) => {
-  const secretKey = await getDecryptedPrivateKey(userId, cryptoKey, app.registeredAppId);
-  const publicKey = app.publicKey;
-  const sub = await deriveSubFromPublicKey(publicKey);
+export const submitDiscoverableAssertion = async (userId, cryptoKey, qr) => {
+  // Reproduce the per-app keypair from the master key + audience domain.
+  const { secretKey, publicKey } = await deriveAppKeyPair(cryptoKey, qr.audience);
+  const publicKeyB64 = exportEd25519PublicKey(publicKey);
+  const sub = await deriveSubFromPublicKey(publicKeyB64);
 
   const signedPayload = {
     sessionId: qr.sessionId,
@@ -148,7 +139,7 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, app, qr) =>
   const resp = await fetch(qr.callbackUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ publicKey, signedPayload, signedToken }),
+    body: JSON.stringify({ publicKey: publicKeyB64, signedPayload, signedToken }),
   });
   if (!resp.ok) {
     const detail = await resp.text().catch(() => '');
