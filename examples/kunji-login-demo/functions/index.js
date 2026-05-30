@@ -63,7 +63,7 @@ export const lookupSession = onRequest({ cors: true }, async (req, res) => {
   if (s.status !== 'pending') return res.status(404).json({ error: 'invalid_code' });
   if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_code' });
 
-  res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: s.callbackUrl });
+  res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: s.callbackUrl, expiresAt: s.expiresAt });
 });
 
 // The wallet POSTs the signed assertion here (spec §5.2). Full §6 verification.

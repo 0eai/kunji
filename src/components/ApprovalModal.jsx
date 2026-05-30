@@ -70,17 +70,19 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
             </div>
           )}
 
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <Clock size={12} />
-            <span>Expires in {secondsLeft}s</span>
-          </div>
+          {!!session?.expiresAt && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Clock size={12} />
+              <span>Expires in {secondsLeft}s</span>
+            </div>
+          )}
 
           <div className="flex gap-3 w-full">
             <button onClick={handleDeny} disabled={loading}
               className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-red-950/60 hover:bg-red-900/60 border border-red-800 text-red-300 font-semibold transition-colors disabled:opacity-50">
               <ShieldX size={16} /> Deny
             </button>
-            <button onClick={handleApprove} disabled={loading || secondsLeft === 0}
+            <button onClick={handleApprove} disabled={loading || (!!session?.expiresAt && secondsLeft === 0)}
               className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-green-900/60 hover:bg-green-800/60 border border-green-700 text-green-300 font-semibold transition-colors disabled:opacity-50">
               <ShieldCheck size={16} /> {loading ? 'Signing in…' : 'Approve'}
             </button>
