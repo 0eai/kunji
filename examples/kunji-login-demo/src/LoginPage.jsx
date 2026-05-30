@@ -22,7 +22,7 @@ const STATUS = {
   scanning: { color: 'text-gray-400', label: 'Scan with the kunji app' },
   resuming: { color: 'text-amber-400', label: 'Finishing sign-in…' },
   approved: { color: 'text-green-400', label: 'Verified! Signing you in…' },
-  expired:  { color: 'text-amber-400', label: 'QR expired. Refreshing…' },
+  expired:  { color: 'text-amber-400', label: 'Code expired.' },
   error:    { color: 'text-red-400',   label: 'Something went wrong.' },
 };
 
@@ -77,13 +77,16 @@ export default function LoginPage({ onSuccess }) {
       setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(qrData)}`); // same-device: open kunji directly
       setStatus('scanning');
 
-      // Countdown
-      const tick = () => setSeconds(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
+      // Countdown — pauses while the tab is hidden; on expiry we stop and show a
+      // "Show new code" button (one cycle) instead of auto-reminting forever.
+      const tick = () => {
+        if (document.hidden) return; // pause when not looking
+        const left = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+        setSeconds(left);
+        if (left === 0) { stop(); setStatus('expired'); }
+      };
       tick();
-      timerRef.current = setInterval(() => {
-        tick();
-        if (Date.now() > expiresAt) { stop(); setStatus('expired'); setTimeout(startFlow, 1000); }
-      }, 1000);
+      timerRef.current = setInterval(tick, 1000);
 
       // 3. Listen to our session doc — flips to signed-in the instant the wallet approves.
       unsubRef.current = onSnapshot(doc(db, 'loginSessions', sessionId), (snap) => {
@@ -180,6 +183,15 @@ export default function LoginPage({ onSuccess }) {
           )}
           <p className="text-xs text-gray-600 mt-4">Or scan the QR from another device.</p>
         </>
+      )}
+
+      {status === 'expired' && (
+        <button
+          onClick={startFlow}
+          className="mt-4 w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
+        >
+          Show new code
+        </button>
       )}
     </div>
   );

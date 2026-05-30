@@ -1,6 +1,6 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 import { verifyAssertion } from './verify.js';
 
@@ -45,7 +45,10 @@ export const createSession = onRequest({ cors: true }, async (req, res) => {
   const challenge = hex(32);
   const code = await freshCode();
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  await sessionRef(sessionId).set({ challenge, audience, callbackUrl, code, status: 'pending', sub: null, expiresAt });
+  // `ttl` lets Firestore's TTL policy auto-delete the doc ~5 min after expiry,
+  // so loginSessions never grows unbounded.
+  const ttl = Timestamp.fromMillis(expiresAt + 5 * 60 * 1000);
+  await sessionRef(sessionId).set({ challenge, audience, callbackUrl, code, status: 'pending', sub: null, expiresAt, ttl });
   res.json({ sessionId, challenge, code, expiresAt });
 });
 
