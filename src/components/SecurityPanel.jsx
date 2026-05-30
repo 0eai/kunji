@@ -11,7 +11,7 @@ import { signOutDevice } from '../lib/firebase';
 import QRScannerOverlay from './QRScannerOverlay';
 import InstallButton from './InstallButton';
 import Sheet from './ui/Sheet';
-import { SectionLabel, Field, Btn } from './ui/primitives';
+import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
 const MIN_PASSPHRASE = 8;
@@ -34,10 +34,12 @@ const relTime = (createdAt) => {
 // Navigable hairline row that expands in place.
 const Row = ({ icon: Icon, title, open, onToggle, children }) => (
   <div>
-    <button onClick={onToggle} className="w-full flex items-center gap-3 py-4 text-left group">
-      <Icon size={17} className="text-muted shrink-0" />
+    <button onClick={onToggle}
+      className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left group transition-colors
+        hover:bg-line/40 active:bg-line/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+      <Icon size={17} strokeWidth={1.75} className="text-muted shrink-0" />
       <span className="flex-1 text-[15px] font-medium text-ink">{title}</span>
-      <ChevronRight size={17} className={`text-faint group-hover:text-muted transition-transform ${open ? 'rotate-90' : ''}`} />
+      <ChevronRight size={17} strokeWidth={1.75} className={`text-faint group-hover:text-muted transition-transform ${open ? 'rotate-90' : ''}`} />
     </button>
     {open && <div className="pb-5 -mt-1">{children}</div>}
   </div>
@@ -143,10 +145,10 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             A cold backup that restores your vault if you lose every device. Encrypted with a separate passphrase — store the key and passphrase apart.
           </p>
           {!recoveryKey ? (
-            <div className="space-y-1">
-              <Field type="password" value={passkey} onChange={e => setPasskey(e.target.value)} placeholder="Current passkey" />
-              <Field type="password" value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="Recovery passphrase (min 8)" />
-              <div className="pt-4">
+            <div className="space-y-4">
+              <PasswordField label="Current passkey" value={passkey} onChange={e => setPasskey(e.target.value)} />
+              <PasswordField label="Recovery passphrase (min 8)" value={passphrase} onChange={e => setPassphrase(e.target.value)} />
+              <div className="pt-1">
                 <Btn variant="primary" onClick={handleGenerate} disabled={busy} className="w-full">
                   {busy ? 'Generating…' : 'Generate recovery key'}
                 </Btn>
@@ -159,7 +161,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
                 <p>Save this now — it clears in 60s. You also need your recovery passphrase to use it. Store them separately.</p>
               </div>
               <div className="flex items-start gap-3 border-y border-line py-3.5">
-                <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed">{recoveryKey}</code>
+                <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed tabular">{recoveryKey}</code>
                 <button onClick={copyKey} className="shrink-0 text-muted hover:text-ink transition-colors" title="Copy">
                   {copied ? <CheckCircle2 size={15} className="text-success" /> : <Copy size={15} />}
                 </button>
@@ -180,7 +182,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
                   <div key={e.id} className="flex items-center gap-3 py-3">
                     <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
                     <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
-                    <span className="text-[11px] font-mono text-faint shrink-0">{relTime(e.createdAt)}</span>
+                    <span className="text-[11px] font-mono text-faint shrink-0 tabular">{relTime(e.createdAt)}</span>
                   </div>
                 );
               })}
@@ -195,13 +197,13 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         <InstallButton variant="row" />
         {onLock && (
           <button onClick={() => { onClose(); onLock(); }}
-            className="w-full flex items-center gap-3 py-4 text-left text-ink hover:text-accent transition-colors">
-            <Lock size={17} className="text-muted" /> <span className="text-[15px] font-medium">Lock now</span>
+            className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+            <Lock size={17} strokeWidth={1.75} className="text-muted" /> <span className="text-[15px] font-medium">Lock now</span>
           </button>
         )}
         <button onClick={() => { setConfirmText(''); setShowSignOut(true); }}
-          className="w-full flex items-center gap-3 py-4 text-left text-danger hover:opacity-70 transition-opacity">
-          <LogOut size={17} /> <span className="text-[15px] font-medium">Sign out of this device</span>
+          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-danger hover:bg-danger-soft active:opacity-80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30">
+          <LogOut size={17} strokeWidth={1.75} /> <span className="text-[15px] font-medium">Sign out of this device</span>
         </button>
       </div>
 

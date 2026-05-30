@@ -3,7 +3,7 @@
 /* ───────────────────────────────────────────────────────────────
    kunji design system — "Editorial / mono on warm paper"
    No cards. Hairline-separated rows. Mono for domains/keys/codes.
-   Generous negative space. One amber accent.
+   Generous negative space. One amber accent. Geist + Geist Mono.
    ─────────────────────────────────────────────────────────────── */
 @theme {
   --color-paper:        #faf9f6;
@@ -20,8 +20,8 @@
   --color-danger-soft:  #fdf0ef;
   --color-success:      #16a34a;
 
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans: 'Geist Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 :root { color-scheme: light; }
@@ -34,15 +34,44 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
-/* Sheet slide-up (mobile) + fade for the overlay scrim */
-@keyframes kunji-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes kunji-fade     { from { opacity: 0; } to { opacity: 1; } }
-@keyframes kunji-shake    { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-9px)} 75%{transform:translateX(9px)} }
+/* Lining tabular figures — keeps codes / keys / timers from shifting width. */
+.tabular { font-variant-numeric: tabular-nums; }
 
-.animate-sheet { animation: kunji-slide-up .26s cubic-bezier(0.22, 1, 0.36, 1); }
-.animate-fade  { animation: kunji-fade .18s ease-out; }
-.animate-shake { animation: kunji-shake .4s ease-in-out; }
+/* ── Motion ─────────────────────────────────────────────────── */
+@keyframes kunji-slide-up   { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes kunji-slide-down { from { transform: translateY(0); }    to { transform: translateY(100%); } }
+@keyframes kunji-fade       { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kunji-fade-out   { from { opacity: 1; } to { opacity: 0; } }
+@keyframes kunji-rise       { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes kunji-shake      { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-9px)} 75%{transform:translateX(9px)} }
+@keyframes kunji-spin       { to { transform: rotate(360deg); } }
+@keyframes kunji-shimmer    { 100% { background-position: -200% 0; } }
+
+.animate-fade      { animation: kunji-fade .18s ease-out; }
+.animate-fade-out  { animation: kunji-fade-out .2s ease-in forwards; }
+.animate-sheet     { animation: kunji-slide-up .26s cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-sheet-out { animation: kunji-slide-down .2s ease-in forwards; }
+.animate-rise      { animation: kunji-rise .22s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-shake     { animation: kunji-shake .4s ease-in-out; }
+.spin              { animation: kunji-spin .7s linear infinite; }
 
 @media (min-width: 640px) {
-  .animate-sheet { animation: kunji-fade .2s ease-out; }
+  .animate-sheet     { animation: kunji-fade .2s ease-out; }
+  .animate-sheet-out { animation: kunji-fade-out .18s ease-in forwards; }
+}
+
+/* Skeleton shimmer (loading rows) */
+.shimmer {
+  background: linear-gradient(90deg, var(--color-line) 25%, #efede8 50%, var(--color-line) 75%);
+  background-size: 200% 100%;
+  animation: kunji-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Respect reduced-motion: drop animation, keep final state. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade, .animate-fade-out, .animate-sheet, .animate-sheet-out,
+  .animate-rise, .animate-shake, .spin, .shimmer {
+    animation: none !important;
+  }
+  * { transition-duration: 0.01ms !important; }
 }

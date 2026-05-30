@@ -41,7 +41,7 @@ const CodeEntryModal = ({ app, onSubmit, onClose }) => {
         onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (error) setError(''); }}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
         placeholder="000000"
-        className="w-full bg-transparent border-0 border-b border-line rounded-none py-3 text-center text-4xl font-mono tracking-[0.3em] text-ink placeholder:text-faint outline-none focus:border-accent transition-colors"
+        className="w-full bg-transparent border-0 border-b border-line rounded-none py-3 text-center text-4xl font-mono tabular tracking-[0.3em] text-ink placeholder:text-faint outline-none focus:border-accent transition-colors"
       />
       {error && <p className="text-danger text-[13px] mt-3">{error}</p>}
 

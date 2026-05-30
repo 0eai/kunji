@@ -33,7 +33,7 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
     <Sheet onClose={onClose} labelledBy="approval-title">
       {/* Header — who is asking */}
       <div className="flex items-center gap-3.5 mb-7">
-        <Monogram name={session?.appName} src={session?.iconUrl} size="lg" />
+        <Monogram name={session?.appName} seed={session?.domain} src={session?.iconUrl} size="lg" />
         <div className="min-w-0">
           <h2 id="approval-title" className="text-lg font-semibold tracking-tight truncate">{session?.appName || 'Unknown app'}</h2>
           <p className="text-[13px] font-mono text-muted truncate">{session?.domain}</p>
@@ -49,7 +49,7 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
         {sub && (
           <div className="flex items-center justify-between gap-4 py-3.5">
             <span className="text-[13px] text-muted">Shared as</span>
-            <span className="text-[13px] font-mono text-ink">{sub.slice(0, 6)}…{sub.slice(-6)}</span>
+            <span className="text-[13px] font-mono text-ink tabular">{sub.slice(0, 6)}…{sub.slice(-6)}</span>
           </div>
         )}
         {session?.isNew && (
@@ -62,10 +62,14 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
         {!!session?.expiresAt && (
           <div className="flex items-center justify-between gap-4 py-3.5">
             <span className="text-[13px] text-muted">Expires in</span>
-            <span className="text-[13px] font-mono text-ink">{secondsLeft}s</span>
+            <span className="text-[13px] font-mono text-ink tabular">{secondsLeft}s</span>
           </div>
         )}
       </div>
+
+      <p className="text-[12px] text-faint leading-relaxed mb-6">
+        kunji shares only this ID — never your email, name, or which other apps you use.
+      </p>
 
       <div className="flex items-center justify-end gap-1">
         <Btn variant="quiet" onClick={handleDeny} disabled={loading}>Deny</Btn>

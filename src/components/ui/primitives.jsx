@@ -1,24 +1,59 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 
 /* Small quiet uppercase section label, optional trailing count. Editorial header. */
 export const SectionLabel = ({ children, count, className = '' }) => (
   <div className={`flex items-baseline gap-2 ${className}`}>
     <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-faint">{children}</span>
-    {count != null && <span className="text-[11px] font-mono text-faint">· {count}</span>}
+    {count != null && <span className="text-[11px] font-mono text-faint tabular">· {count}</span>}
   </div>
 );
 
-/* Underline input — no box. Amber underline on focus. */
-export const Field = React.forwardRef(({ className = '', mono = false, ...props }, ref) => (
-  <input
-    ref={ref}
-    {...props}
-    className={`w-full bg-transparent border-0 border-b border-line rounded-none px-0 py-3 text-ink
-      placeholder:text-faint outline-none transition-colors
-      focus:border-accent focus:ring-0 ${mono ? 'font-mono' : ''} ${className}`}
-  />
-));
+/* Persistent field label — keeps context after the placeholder disappears on type. */
+const FieldLabel = ({ children }) => (
+  <span className="block text-[11px] uppercase tracking-[0.14em] text-faint mb-1.5">{children}</span>
+);
+
+const FIELD_BASE =
+  'w-full bg-transparent border-0 border-b border-line rounded-none px-0 py-3 text-ink ' +
+  'placeholder:text-faint outline-none transition-colors focus:border-accent';
+
+/* Underline input — no box. Amber underline on focus. Optional label above. */
+export const Field = React.forwardRef(({ className = '', mono = false, label, ...props }, ref) => {
+  const input = (
+    <input ref={ref} {...props} className={`${FIELD_BASE} ${mono ? 'font-mono tabular' : ''} ${className}`} />
+  );
+  if (!label) return input;
+  return <label className="block"><FieldLabel>{label}</FieldLabel>{input}</label>;
+});
 Field.displayName = 'Field';
+
+/* Password underline input with a reveal toggle. */
+export const PasswordField = React.forwardRef(({ className = '', label, ...props }, ref) => {
+  const [show, setShow] = useState(false);
+  const field = (
+    <div className="relative">
+      <input
+        ref={ref}
+        {...props}
+        type={show ? 'text' : 'password'}
+        className={`${FIELD_BASE} pr-9 ${className}`}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? 'Hide passkey' : 'Show passkey'}
+        className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-faint hover:text-muted transition-colors"
+      >
+        {show ? <EyeOff size={16} strokeWidth={1.75} /> : <Eye size={16} strokeWidth={1.75} />}
+      </button>
+    </div>
+  );
+  if (!label) return field;
+  return <div><FieldLabel>{label}</FieldLabel>{field}</div>;
+});
+PasswordField.displayName = 'PasswordField';
 
 /*
  * Button. variants:
@@ -39,20 +74,40 @@ export const Btn = ({ variant = 'primary', className = '', children, ...props })
     {...props}
     className={`inline-flex items-center justify-center gap-2 px-5 py-3 text-sm
       transition-colors active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
       ${VARIANTS[variant]} ${className}`}
   >
     {children}
   </button>
 );
 
-/* Monogram chip — first letter of an app name on a soft amber tile. */
-export const Monogram = ({ name = '?', src, size = 'md' }) => {
+/* Inline spinner for in-button loading states. */
+export const Spinner = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className="spin" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+  </svg>
+);
+
+/* Deterministic hue from a string — stable color per app, no network request. */
+const hueOf = (s = '') => {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h % 360;
+};
+
+/* Monogram chip — first letter on a soft, app-deterministic colored tile. */
+export const Monogram = ({ name = '?', seed, src, size = 'md' }) => {
   const dim = size === 'sm' ? 'w-8 h-8 text-sm' : size === 'lg' ? 'w-12 h-12 text-lg' : 'w-10 h-10 text-base';
   if (src) {
     return <img src={src} alt="" className={`${dim} rounded-xl object-cover shrink-0`} onError={(e) => { e.currentTarget.style.display = 'none'; }} />;
   }
+  const h = hueOf(seed || name);
   return (
-    <span className={`${dim} rounded-xl bg-accent-soft text-accent font-semibold flex items-center justify-center shrink-0 select-none`}>
+    <span
+      className={`${dim} rounded-xl font-semibold flex items-center justify-center shrink-0 select-none`}
+      style={{ backgroundColor: `hsl(${h} 55% 94%)`, color: `hsl(${h} 42% 36%)` }}
+    >
       {(name || '?').trim().charAt(0).toUpperCase()}
     </span>
   );

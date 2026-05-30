@@ -167,18 +167,18 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           <img src="/icons/icon.svg" alt="" className="w-6 h-6" />
           <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
         </div>
-        <div className="flex items-center gap-1 -mr-2">
-          <button onClick={() => setShowScanner(true)} title="Scan a code"
-            className="p-2.5 text-muted hover:text-ink transition-colors">
-            <ScanLine size={18} />
+        <div className="flex items-center gap-0.5 -mr-2">
+          <button onClick={() => setShowScanner(true)} title="Scan a code" aria-label="Scan a code"
+            className="p-2.5 rounded-full text-muted hover:text-ink hover:bg-line/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+            <ScanLine size={18} strokeWidth={1.75} />
           </button>
-          <button onClick={() => setShowSecurity(true)} title="Security"
-            className="p-2.5 text-muted hover:text-ink transition-colors">
-            <Settings size={18} />
+          <button onClick={() => setShowSecurity(true)} title="Security" aria-label="Security"
+            className="p-2.5 rounded-full text-muted hover:text-ink hover:bg-line/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+            <Settings size={18} strokeWidth={1.75} />
           </button>
-          <button onClick={onLock} title="Lock"
-            className="p-2.5 text-muted hover:text-ink transition-colors">
-            <Lock size={18} />
+          <button onClick={onLock} title="Lock" aria-label="Lock"
+            className="p-2.5 rounded-full text-muted hover:text-ink hover:bg-line/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+            <Lock size={18} strokeWidth={1.75} />
           </button>
         </div>
       </header>
@@ -187,7 +187,19 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[34rem] w-full mx-auto px-6">
           {loading ? (
-            <div className="flex items-center justify-center h-48 text-faint text-sm">Loading…</div>
+            <div className="pt-7">
+              <div className="divide-y divide-line">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-4 py-4">
+                    <span className="w-10 h-10 rounded-xl shimmer shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <span className="block h-3 w-1/3 rounded shimmer" />
+                      <span className="block h-3 w-1/2 rounded shimmer" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : apps.length === 0 ? (
             <div className="flex flex-col justify-center min-h-[55vh] max-w-sm">
               <h1 className="text-[1.75rem] leading-tight font-semibold tracking-tight mb-3">No apps yet</h1>
@@ -202,7 +214,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           ) : (
             <>
               <SectionLabel count={apps.length} className="pt-1 pb-1">Apps</SectionLabel>
-              <div className="divide-y divide-line">
+              <div className="divide-y divide-line animate-rise">
                 {apps.map(app => (
                   <AppRow key={app.id} app={app} onOpen={() => setSelectedApp(app)} />
                 ))}

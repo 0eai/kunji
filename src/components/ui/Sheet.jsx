@@ -1,9 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+
+/* Ref-counted body scroll-lock so nested sheets don't fight over <body> overflow. */
+let lockCount = 0;
+let savedOverflow = '';
 
 /**
  * Bottom-sheet overlay (mobile) / centered panel (sm+). Replaces every centered
  * dialog card in the app. Hairline-bordered, warm-paper surface, grabber handle
- * on mobile, slide-up motion. Left-aligned content by default.
+ * on mobile, slide-up motion + animated dismiss. Left-aligned content by default.
  *
  * @param {() => void} [onClose]  - called on scrim click / Esc (omit for non-dismissable)
  * @param {string} [labelledBy]   - id of the sheet's heading for a11y
@@ -11,25 +15,44 @@ import React, { useEffect } from 'react';
  * @param {string} [className]    - extra classes on the sheet surface
  */
 export default function Sheet({ children, onClose, labelledBy, z = 50, className = '' }) {
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef(null);
+
+  useEffect(() => {
+    if (lockCount === 0) { savedOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+    lockCount += 1;
+    return () => {
+      lockCount -= 1;
+      if (lockCount === 0) document.body.style.overflow = savedOverflow;
+    };
+  }, []);
+
+  const requestClose = () => {
+    if (!onClose || closing) return;
+    setClosing(true);
+    closeTimer.current = setTimeout(onClose, 200); // let the exit animation play
+  };
+
   useEffect(() => {
     if (!onClose) return;
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape') requestClose(); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => { window.removeEventListener('keydown', onKey); clearTimeout(closeTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, closing]);
 
   return (
     <div
-      className="fixed inset-0 flex items-end sm:items-center justify-center bg-ink/25 backdrop-blur-[2px] animate-fade"
+      className={`fixed inset-0 flex items-end sm:items-center justify-center bg-ink/25 backdrop-blur-[2px] ${closing ? 'animate-fade-out' : 'animate-fade'}`}
       style={{ zIndex: z }}
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
         onClick={(e) => e.stopPropagation()}
-        className={`animate-sheet bg-surface w-full sm:max-w-[26rem] rounded-t-[1.75rem] sm:rounded-[1.5rem]
+        className={`${closing ? 'animate-sheet-out' : 'animate-sheet'} bg-surface w-full sm:max-w-[26rem] rounded-t-[1.75rem] sm:rounded-[1.5rem]
           max-h-[92vh] overflow-y-auto border-t sm:border border-line
           px-6 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-7 ${className}`}
       >

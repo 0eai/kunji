@@ -10,6 +10,8 @@
     "deploy": "vite build && firebase deploy --only functions,hosting:kunji-demo"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
     "firebase": "^12.6.0",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",

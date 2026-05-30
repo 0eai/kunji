@@ -5,7 +5,7 @@ import { startLink, listenForLinkedKey } from '../services/linking';
 import { provisionVaultFromMasterKey } from '../services/vault';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
-import { Field, Btn } from './ui/primitives';
+import { PasswordField, Btn, Spinner } from './ui/primitives';
 
 const MIN_PASSKEY_LENGTH = 8;
 
@@ -71,22 +71,20 @@ const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
         </button>
       </header>
 
-      <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6">
+      <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise">
         {phase === 'received' || phase === 'saving' ? (
           <>
             <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
-              <ShieldCheck size={22} className="text-success" strokeWidth={2.25} />
+              <ShieldCheck size={22} className="text-success" strokeWidth={2} />
             </div>
             <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">Identity received</h1>
             <p className="text-[15px] text-muted leading-relaxed mb-9">Set a passkey to lock kunji on this device.</p>
-            <form onSubmit={handleSave} className="space-y-1">
-              <Field type="password" autoFocus value={passkey} onChange={e => setPasskey(e.target.value)}
-                placeholder="Choose a passkey" className="text-lg" />
-              <Field type="password" value={confirmKey} onChange={e => setConfirmKey(e.target.value)}
-                placeholder="Confirm passkey" className="text-lg" />
-              <div className="pt-7">
+            <form onSubmit={handleSave} className="space-y-4">
+              <PasswordField label="Choose a passkey" autoFocus value={passkey} onChange={e => setPasskey(e.target.value)} className="text-lg" />
+              <PasswordField label="Confirm passkey" value={confirmKey} onChange={e => setConfirmKey(e.target.value)} className="text-lg" />
+              <div className="pt-5">
                 <Btn type="submit" disabled={phase === 'saving'} className="w-full">
-                  {phase === 'saving' ? 'Saving…' : 'Unlock on this device'}
+                  {phase === 'saving' ? <><Spinner /> Saving…</> : 'Unlock on this device'}
                 </Btn>
               </div>
             </form>

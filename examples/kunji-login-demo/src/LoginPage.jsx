@@ -142,7 +142,7 @@ export default function LoginPage({ onSuccess }) {
   const tabBtn = (id, label) =>
     <button
       onClick={() => setTab(id)}
-      className={`pb-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+      className={`pb-2 text-sm font-medium border-b-2 -mb-px transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
         tab === id ? 'border-accent text-ink' : 'border-transparent text-faint hover:text-muted'
       }`}
     >{label}</button>;
@@ -153,7 +153,7 @@ export default function LoginPage({ onSuccess }) {
         <span className="text-[15px] font-medium text-faint">Kunji Demo</span>
       </header>
 
-      <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6">
+      <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise">
         <div className="mb-9">
           <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Sign in</h1>
           <p className="text-[15px] text-muted mt-1">with kunji — no password, no account.</p>
@@ -199,7 +199,7 @@ export default function LoginPage({ onSuccess }) {
                 {code && (
                   <div className="mt-8">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Or type this code in kunji</p>
-                    <div className="font-mono text-4xl tracking-[0.2em] text-ink">
+                    <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
                       {code.slice(0, 3)} {code.slice(3)}
                     </div>
                   </div>
@@ -215,7 +215,7 @@ export default function LoginPage({ onSuccess }) {
             )}
 
             {secondsLeft > 0 && (
-              <p className="text-[12px] text-faint mt-8">Expires in <span className="font-mono">{secondsLeft}s</span></p>
+              <p className="text-[12px] text-faint mt-8">Expires in <span className="font-mono tabular">{secondsLeft}s</span></p>
             )}
           </>
         )}

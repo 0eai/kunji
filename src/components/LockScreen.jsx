@@ -12,7 +12,7 @@ import { useToast } from '../contexts/ToastContext';
 import LinkDeviceScreen from './LinkDeviceScreen';
 import InstallButton from './InstallButton';
 import Sheet from './ui/Sheet';
-import { Field, Btn } from './ui/primitives';
+import { Field, PasswordField, Btn, Spinner } from './ui/primitives';
 
 const getDelay = (failCount) => {
   if (failCount <= 0) return 0;
@@ -267,7 +267,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
       </header>
 
       {/* focused unlock moment */}
-      <main className={`flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 ${errorShake ? 'animate-shake' : ''}`}>
+      <main className={`flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise ${errorShake ? 'animate-shake' : ''}`}>
         <div className="mb-9">
           <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
             <Key size={22} className="text-accent" strokeWidth={2.25} />
@@ -278,7 +278,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-1">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {isRecovering && (
             <>
               <textarea
@@ -289,34 +289,31 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                 required
               />
               {recoveryInput.trim().startsWith('v2:') && (
-                <Field
-                  type="password"
+                <PasswordField
+                  label="Recovery key passphrase"
                   value={recoveryPassphrase}
                   onChange={(e) => { setRecoveryPassphrase(e.target.value); if (status) setStatus(''); }}
-                  placeholder="Recovery key passphrase"
                   required
                 />
               )}
             </>
           )}
 
-          <Field
-            type="password"
+          <PasswordField
+            label={isNewUser ? 'Choose a passkey' : isRecovering ? 'New passkey' : 'Passkey'}
             value={keyInput}
             onChange={(e) => { setKeyInput(e.target.value); if (status && status !== 'Wiping data...') setStatus(''); }}
             onKeyDown={handleKeyDown}
-            placeholder={isNewUser ? 'Choose a passkey' : isRecovering ? 'New passkey' : 'Passkey'}
             className="text-lg"
             autoFocus
           />
 
           {(isNewUser || isRecovering) && (
-            <Field
-              type="password"
+            <PasswordField
+              label="Confirm passkey"
               value={confirmKeyInput}
               onChange={(e) => { setConfirmKeyInput(e.target.value); if (status && status !== 'Wiping data...') setStatus(''); }}
               onKeyDown={handleKeyDown}
-              placeholder="Confirm passkey"
               className="text-lg"
             />
           )}
@@ -337,13 +334,13 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             <div className="text-[11px] font-mono text-faint text-right pt-2">{keyInput.length}/{MIN_PASSKEY_LENGTH}</div>
           )}
 
-          <div className="pt-7">
+          <div className="pt-5">
             <Btn type="submit" disabled={isDeriving || cooldownRemaining > 0} className="w-full">
-              {isDeriving ? 'Processing…'
-                : cooldownRemaining > 0 ? `Locked · ${cooldownRemaining}s`
+              {isDeriving ? <><Spinner /> {isNewUser ? 'Creating…' : isRecovering ? 'Recovering…' : 'Unlocking…'}</>
+                : cooldownRemaining > 0 ? <span className="tabular">Locked · {cooldownRemaining}s</span>
                 : isNewUser ? 'Create vault'
                 : isRecovering ? 'Recover & unlock'
-                : <>Unlock <ArrowRight size={16} /></>}
+                : <>Unlock <ArrowRight size={16} strokeWidth={1.75} /></>}
             </Btn>
           </div>
         </form>

@@ -46,7 +46,7 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
     <Sheet onClose={onClose} labelledBy="details-title">
       {/* Header */}
       <div className="flex items-center gap-3.5 mb-7">
-        <Monogram name={app?.name} src={app?.iconUrl} size="lg" />
+        <Monogram name={app?.name} seed={app?.domain} src={app?.iconUrl} size="lg" />
         <div className="min-w-0">
           <h2 id="details-title" className="text-lg font-semibold tracking-tight truncate">{app?.name}</h2>
           <p className="text-[13px] font-mono text-muted truncate">{app?.domain}</p>
@@ -58,7 +58,7 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
         <div className="mb-7">
           <SectionLabel className="mb-2.5">Your ID for this app</SectionLabel>
           <div className="flex items-start gap-3 border-y border-line py-3.5">
-            <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed">{sub}</code>
+            <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed tabular">{sub}</code>
             <button onClick={copySub} className="shrink-0 text-muted hover:text-ink transition-colors" title="Copy ID">
               {copiedSub ? <CheckCircle2 size={15} className="text-success" /> : <Copy size={15} />}
             </button>
@@ -82,7 +82,7 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
                 <div key={e.id} className="flex items-center gap-3 py-3">
                   <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
                   <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
-                  <span className="text-[11px] font-mono text-faint shrink-0">{relTime(e.createdAt)}</span>
+                  <span className="text-[11px] font-mono text-faint shrink-0 tabular">{relTime(e.createdAt)}</span>
                 </div>
               );
             })}
@@ -93,12 +93,12 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
       {/* Actions */}
       <div className="divide-y divide-line border-t border-line">
         <button onClick={onEnterCode}
-          className="w-full flex items-center gap-3 py-4 text-left text-accent hover:text-ink transition-colors">
-          <KeyRound size={17} /> <span className="text-[15px] font-medium">Sign in with a code</span>
+          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-accent hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+          <KeyRound size={17} strokeWidth={1.75} /> <span className="text-[15px] font-medium">Sign in with a code</span>
         </button>
         <button onClick={onDelete}
-          className="w-full flex items-center gap-3 py-4 text-left text-danger hover:opacity-70 transition-opacity">
-          <Trash2 size={17} /> <span className="text-[15px] font-medium">Remove app</span>
+          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-danger hover:bg-danger-soft active:opacity-80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30">
+          <Trash2 size={17} strokeWidth={1.75} /> <span className="text-[15px] font-medium">Remove app</span>
         </button>
       </div>
     </Sheet>
