@@ -26,17 +26,17 @@ const CodeEntryModal = ({ app, onSubmit, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6">
+      <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <KeyRound size={16} className="text-amber-400" /> Enter login code
+          <h2 className="text-lg font-bold text-[#18181b] flex items-center gap-2">
+            <KeyRound size={16} className="text-amber-600" /> Enter login code
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-[#27272a] transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-[#18181b] hover:bg-[#eef0f2] transition-colors">
             <X size={18} />
           </button>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          Type the 6-digit code shown on <strong className="text-gray-300">{app.domain}</strong>.
+          Type the 6-digit code shown on <strong className="text-gray-700">{app.domain}</strong>.
         </p>
 
         <input
@@ -48,13 +48,13 @@ const CodeEntryModal = ({ app, onSubmit, onClose }) => {
           onChange={(e) => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (error) setError(''); }}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           placeholder="000000"
-          className="w-full p-4 rounded-xl bg-black border border-[#27272a] text-white text-center text-2xl font-mono tracking-[0.4em] placeholder-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+          className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] text-center text-2xl font-mono tracking-[0.4em] placeholder-gray-400 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
         />
-        {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+        {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
 
         <div className="flex gap-2 mt-4">
           <button onClick={onClose} disabled={busy}
-            className="flex-1 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-medium transition-colors">
+            className="flex-1 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-medium transition-colors">
             Cancel
           </button>
           <button onClick={submit} disabled={busy || code.length !== 6}

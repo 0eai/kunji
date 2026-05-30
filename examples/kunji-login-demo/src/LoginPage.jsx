@@ -18,12 +18,12 @@ const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=
 const RESUME_KEY = 'kunji_demo_pending';
 
 const STATUS = {
-  loading:  { color: 'text-amber-400', label: 'Generating QR…' },
-  scanning: { color: 'text-gray-400', label: 'Scan with the kunji app' },
-  resuming: { color: 'text-amber-400', label: 'Finishing sign-in…' },
-  approved: { color: 'text-green-400', label: 'Verified! Signing you in…' },
-  expired:  { color: 'text-amber-400', label: 'Code expired.' },
-  error:    { color: 'text-red-400',   label: 'Something went wrong.' },
+  loading:  { color: 'text-amber-600', label: 'Generating QR…' },
+  scanning: { color: 'text-gray-600', label: 'Scan with the kunji app' },
+  resuming: { color: 'text-amber-600', label: 'Finishing sign-in…' },
+  approved: { color: 'text-green-600', label: 'Verified! Signing you in…' },
+  expired:  { color: 'text-amber-600', label: 'Code expired.' },
+  error:    { color: 'text-red-600',   label: 'Something went wrong.' },
 };
 
 export default function LoginPage({ onSuccess }) {
@@ -142,11 +142,11 @@ export default function LoginPage({ onSuccess }) {
   const tabBtn = (id, label) =>
     <button
       onClick={() => setTab(id)}
-      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-amber-500 text-black' : 'text-gray-400 hover:text-white'}`}
+      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-amber-500 text-black' : 'text-gray-600 hover:text-[#18181b]'}`}
     >{label}</button>;
 
   return (
-    <div className="bg-[#18140c] border border-[#2a2316] rounded-3xl p-6 max-w-sm w-full text-center">
+    <div className="bg-white border border-[#e6e8eb] rounded-3xl p-6 max-w-sm w-full text-center">
       <div className="mb-4">
         <img src="/icon.svg" alt="kunji" className="w-11 h-11 rounded-xl mx-auto mb-2" />
         <h1 className="text-xl font-bold">Sign in with kunji</h1>
@@ -154,29 +154,29 @@ export default function LoginPage({ onSuccess }) {
 
       {status === 'approved' ? (
         <div className="flex flex-col items-center gap-2 py-6">
-          <div className="w-14 h-14 bg-green-500/15 rounded-full flex items-center justify-center">
-            <svg className="w-8 h-8 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
+            <svg className="w-8 h-8 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7"/></svg>
           </div>
-          <p className="text-sm font-medium text-green-400">Signing you in…</p>
+          <p className="text-sm font-medium text-green-600">Signing you in…</p>
         </div>
       ) : status === 'expired' ? (
         <div className="py-4">
-          <p className="text-sm text-amber-400 mb-4">Code expired.</p>
+          <p className="text-sm text-amber-600 mb-4">Code expired.</p>
           <button onClick={startFlow} className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors">
             Show new code
           </button>
         </div>
       ) : status === 'error' ? (
         <div className="py-4">
-          <p className="text-sm text-red-400">{errorMsg || 'Something went wrong.'}</p>
-          <button onClick={startFlow} className="mt-4 w-full py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-semibold transition-colors">Try again</button>
+          <p className="text-sm text-red-600">{errorMsg || 'Something went wrong.'}</p>
+          <button onClick={startFlow} className="mt-4 w-full py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-[#18181b] font-semibold transition-colors">Try again</button>
         </div>
       ) : status !== 'scanning' ? (
         <p className={`text-sm font-medium ${meta.color} py-8`}>{meta.label}</p>
       ) : (
         <>
           {/* Method toggle */}
-          <div className="flex gap-1 p-1 rounded-xl bg-black/40 border border-[#2a2316] mb-4">
+          <div className="flex gap-1 p-1 rounded-xl bg-[#eef0f2] border border-[#e6e8eb] mb-4">
             {tabBtn('device', 'This device')}
             {tabBtn('qr', 'Another device')}
           </div>
@@ -193,7 +193,7 @@ export default function LoginPage({ onSuccess }) {
               {code && (
                 <div className="mt-4">
                   <p className="text-xs text-gray-500 mb-1">Or type this code in kunji</p>
-                  <div className="font-mono text-3xl tracking-[0.25em] text-amber-300 font-bold">
+                  <div className="font-mono text-3xl tracking-[0.25em] text-amber-700 font-bold">
                     {code.slice(0, 3)} {code.slice(3)}
                   </div>
                 </div>
@@ -207,7 +207,7 @@ export default function LoginPage({ onSuccess }) {
           )}
 
           {secondsLeft > 0 && (
-            <p className="text-xs text-gray-600 mt-3">Expires in <span className="font-mono">{secondsLeft}s</span></p>
+            <p className="text-xs text-gray-400 mt-3">Expires in <span className="font-mono">{secondsLeft}s</span></p>
           )}
         </>
       )}

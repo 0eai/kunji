@@ -249,19 +249,19 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   }
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#09090b] text-white p-6">
-      <div className={`bg-[#18181b] p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-[#27272a] transition-transform ${errorShake ? 'animate-shake' : ''}`}>
-        <div className="mx-auto w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mb-6 shadow-[0_0_30px_-5px_rgba(245,158,11,0.5)]">
+    <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#f6f7f9] text-[#18181b] p-6">
+      <div className={`bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full border border-[#e6e8eb] transition-transform ${errorShake ? 'animate-shake' : ''}`}>
+        <div className="mx-auto w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mb-6 shadow-[0_8px_24px_-8px_rgba(245,158,11,0.35)]">
           <Lock size={32} className="text-black" />
         </div>
         <h2 className="text-2xl font-bold mb-1 text-center tracking-tight">
           {isRecovering ? 'Vault Recovery' : isNewUser ? 'Create Vault' : 'Unlock Kunji'}
         </h2>
         <p className={`text-center mb-6 text-sm ${
-          status === 'Incorrect Passkey' || status.startsWith('Too many') ? 'text-red-400 font-bold'
-          : status === 'Wiping data...' ? 'text-red-400 animate-pulse'
+          status === 'Incorrect Passkey' || status.startsWith('Too many') ? 'text-red-600 font-bold'
+          : status === 'Wiping data...' ? 'text-red-600 animate-pulse'
           : status.startsWith('Passkey must') || status.startsWith('New passkey') ? 'text-yellow-400'
-          : 'text-gray-400'
+          : 'text-gray-600'
         }`}>
           {status || (isNewUser
             ? `Choose a vault passkey (min ${MIN_PASSKEY_LENGTH} chars)`
@@ -277,7 +277,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                 value={recoveryInput}
                 onChange={(e) => { setRecoveryInput(e.target.value); if (status) setStatus(''); }}
                 placeholder="Paste your recovery key..."
-                className="w-full h-24 p-3 rounded-xl bg-black border border-[#27272a] text-white mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-600 font-mono text-xs resize-none"
+                className="w-full h-24 p-3 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-mono text-xs resize-none"
                 required
               />
               {recoveryInput.trim().startsWith('v2:') && (
@@ -286,7 +286,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                   value={recoveryPassphrase}
                   onChange={(e) => { setRecoveryPassphrase(e.target.value); if (status) setStatus(''); }}
                   placeholder="Recovery key passphrase..."
-                  className="w-full p-4 rounded-xl bg-black border border-[#27272a] text-white mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-600 font-medium tracking-wide"
+                  className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
                   required
                 />
               )}
@@ -299,7 +299,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             onChange={(e) => { setKeyInput(e.target.value); if (status && status !== 'Wiping data...') setStatus(''); }}
             onKeyDown={handleKeyDown}
             placeholder={isNewUser ? 'Choose a Passkey' : isRecovering ? 'New Passkey' : 'Enter Passkey'}
-            className="w-full p-4 rounded-xl bg-black border border-[#27272a] text-white mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-600 font-medium tracking-wide"
+            className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
             autoFocus
           />
 
@@ -310,18 +310,18 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
               onChange={(e) => { setConfirmKeyInput(e.target.value); if (status && status !== 'Wiping data...') setStatus(''); }}
               onKeyDown={handleKeyDown}
               placeholder="Confirm Passkey"
-              className="w-full p-4 rounded-xl bg-black border border-[#27272a] text-white mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-600 font-medium tracking-wide"
+              className="w-full p-4 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] mb-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none placeholder-gray-400 font-medium tracking-wide"
             />
           )}
 
           {strength && keyInput.length > 0 && (
             <div className="mb-3">
-              <div className="h-1 bg-[#27272a] rounded-full overflow-hidden">
+              <div className="h-1 bg-[#eef0f2] rounded-full overflow-hidden">
                 <div className={`h-full ${strength.color} rounded-full transition-all duration-300`} style={{ width: strength.width }} />
               </div>
               <div className="flex justify-between items-center mt-1.5">
                 <span className="text-[10px] text-gray-500 uppercase tracking-wider">{strength.label}</span>
-                <span className="text-[10px] text-gray-600">{keyInput.length} chars</span>
+                <span className="text-[10px] text-gray-400">{keyInput.length} chars</span>
               </div>
             </div>
           )}
@@ -331,7 +331,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           )}
 
           {cooldownRemaining > 0 && (
-            <div className="flex items-center justify-center gap-2 bg-red-950/50 text-red-400 text-xs font-bold py-2 px-3 rounded-lg mb-3 border border-red-900/50">
+            <div className="flex items-center justify-center gap-2 bg-red-50 text-red-600 text-xs font-bold py-2 px-3 rounded-lg mb-3 border border-red-200">
               <ShieldAlert size={14} />
               Locked for {cooldownRemaining}s
             </div>
@@ -353,7 +353,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         {isNewUser && !isRecovering && (
           <button
             onClick={() => setIsLinking(true)}
-            className="mt-4 w-full py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white text-sm font-semibold transition-colors"
+            className="mt-4 w-full py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] text-sm font-semibold transition-colors"
           >
             Link from another device
           </button>
@@ -367,14 +367,14 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           {!isNewUser && (
             <button
               onClick={() => { setIsRecovering(!isRecovering); setStatus(''); setKeyInput(''); setConfirmKeyInput(''); setRecoveryInput(''); setRecoveryPassphrase(''); }}
-              className="text-[10px] uppercase tracking-widest text-amber-400 hover:text-amber-300 flex items-center gap-2 transition-colors font-semibold"
+              className="text-[10px] uppercase tracking-widest text-amber-600 hover:text-amber-700 flex items-center gap-2 transition-colors font-semibold"
             >
               <Key size={12} /> {isRecovering ? 'Cancel' : 'Forgot Passkey?'}
             </button>
           )}
           <button
             onClick={() => { setResetConfirm(''); setShowReset(true); }}
-            className="text-[10px] uppercase tracking-widest text-gray-600 hover:text-red-500 flex items-center gap-2 transition-colors font-semibold ml-auto"
+            className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-red-500 flex items-center gap-2 transition-colors font-semibold ml-auto"
           >
             <RotateCcw size={12} /> Reset Vault
           </button>
@@ -384,29 +384,29 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
 
       {showReset && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-[#18181b] border border-red-900/60 rounded-3xl w-full max-w-sm p-6">
+          <div className="bg-white border border-red-900/60 rounded-3xl w-full max-w-sm p-6">
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-9 h-9 bg-red-500/15 rounded-full flex items-center justify-center">
-                <AlertTriangle size={16} className="text-red-400" />
+              <div className="w-9 h-9 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertTriangle size={16} className="text-red-600" />
               </div>
-              <h2 className="text-lg font-bold text-white">Reset this vault?</h2>
+              <h2 className="text-lg font-bold text-[#18181b]">Reset this vault?</h2>
             </div>
-            <p className="text-sm text-gray-400 mb-4">
-              This <strong className="text-gray-200">permanently erases this device's vault</strong>. Without your
+            <p className="text-sm text-gray-600 mb-4">
+              This <strong className="text-gray-900">permanently erases this device's vault</strong>. Without your
               recovery key or another linked device, your identity can't be recovered.
             </p>
-            <label className="block text-xs text-gray-500 mb-1">Type <span className="font-mono text-gray-300">RESET</span> to confirm</label>
+            <label className="block text-xs text-gray-500 mb-1">Type <span className="font-mono text-gray-700">RESET</span> to confirm</label>
             <input
               autoFocus value={resetConfirm}
               onChange={(e) => setResetConfirm(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleHardReset(); }}
               placeholder="RESET"
-              className="w-full p-3 rounded-xl bg-black border border-[#27272a] text-white placeholder-gray-700 focus:ring-2 focus:ring-red-600 focus:border-transparent outline-none mb-4"
+              className="w-full p-3 rounded-xl bg-[#f1f2f4] border border-[#e6e8eb] text-[#18181b] placeholder-gray-400 focus:ring-2 focus:ring-red-600 focus:border-transparent outline-none mb-4"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => setShowReset(false)} disabled={isDeriving}
-                className="flex-1 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-medium transition-colors"
+                className="flex-1 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-medium transition-colors"
               >
                 Cancel
               </button>

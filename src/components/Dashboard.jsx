@@ -158,7 +158,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   };
 
   return (
-    <div className="h-[100dvh] bg-[#09090b] text-white flex flex-col overflow-hidden">
+    <div className="h-[100dvh] bg-[#f6f7f9] text-[#18181b] flex flex-col overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-5 pt-10 pb-4 shrink-0">
         <div className="flex items-center gap-2.5">
@@ -168,14 +168,14 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowSecurity(true)}
-            className="p-2 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-[#27272a]"
+            className="p-2 text-gray-500 hover:text-[#18181b] transition-colors rounded-lg hover:bg-[#eef0f2]"
             title="Security"
           >
             <Settings size={16} />
           </button>
           <button
             onClick={onLock}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-[#27272a]"
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#18181b] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#eef0f2]"
           >
             <Lock size={13} /> Lock
           </button>
@@ -185,15 +185,15 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       {/* App List (scrolls; the Scan QR action is pinned at the bottom) */}
       <div className="flex-1 overflow-y-auto px-5 py-2">
         {loading ? (
-          <div className="flex items-center justify-center h-48 text-gray-600">Loading...</div>
+          <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
         ) : apps.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-[#18181b] border border-[#27272a] flex items-center justify-center">
-              <Shield size={28} className="text-gray-600" />
+            <div className="w-16 h-16 rounded-2xl bg-white border border-[#e6e8eb] flex items-center justify-center">
+              <Shield size={28} className="text-gray-400" />
             </div>
             <div>
-              <p className="text-gray-400 font-medium">No apps yet</p>
-              <p className="text-gray-600 text-sm mt-1">Scan an app's login QR to sign in — it's added here automatically.</p>
+              <p className="text-gray-600 font-medium">No apps yet</p>
+              <p className="text-gray-400 text-sm mt-1">Scan an app's login QR to sign in — it's added here automatically.</p>
             </div>
           </div>
         ) : (
@@ -212,7 +212,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       </div>
 
       {/* Pinned bottom action — primary action in the thumb zone */}
-      <div className="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[#18181b] bg-[#09090b]">
+      <div className="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-[#e6e8eb] bg-[#f6f7f9]">
         <button
           onClick={() => setShowScanner(true)}
           className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold py-3.5 rounded-2xl transition-all active:scale-[0.97]"
@@ -266,20 +266,20 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
 
       {pendingDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6">
+          <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6">
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-9 h-9 bg-red-500/15 rounded-full flex items-center justify-center">
-                <Trash2 size={16} className="text-red-400" />
+              <div className="w-9 h-9 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 size={16} className="text-red-600" />
               </div>
-              <h2 className="text-lg font-bold text-white">Remove {pendingDelete.name}?</h2>
+              <h2 className="text-lg font-bold text-[#18181b]">Remove {pendingDelete.name}?</h2>
             </div>
-            <p className="text-sm text-gray-400 mb-5">
+            <p className="text-sm text-gray-600 mb-5">
               It's removed from your list on all your devices. You can re-add it anytime by scanning its login QR — your identity for it stays the same.
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setPendingDelete(null)}
-                className="flex-1 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-medium transition-colors"
+                className="flex-1 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-medium transition-colors"
               >
                 Cancel
               </button>
@@ -296,19 +296,19 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
 
       {returnInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6 text-center">
-            <div className="mx-auto w-14 h-14 bg-green-500/15 rounded-full flex items-center justify-center mb-4">
-              <Shield size={26} className="text-green-400" />
+          <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6 text-center">
+            <div className="mx-auto w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <Shield size={26} className="text-green-600" />
             </div>
-            <h2 className="text-lg font-bold text-white mb-1">Signed in</h2>
-            <p className="text-sm text-gray-400 mb-5">You approved sign-in to <strong className="text-gray-200">{returnInfo.audience}</strong>.</p>
+            <h2 className="text-lg font-bold text-[#18181b] mb-1">Signed in</h2>
+            <p className="text-sm text-gray-600 mb-5">You approved sign-in to <strong className="text-gray-900">{returnInfo.audience}</strong>.</p>
             <a
               href={returnInfo.returnUrl}
               className="block w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-semibold transition-colors"
             >
               Return to {returnInfo.audience}
             </a>
-            <button onClick={() => setReturnInfo(null)} className="mt-2 w-full py-2.5 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white text-sm font-medium transition-colors">
+            <button onClick={() => setReturnInfo(null)} className="mt-2 w-full py-2.5 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] text-sm font-medium transition-colors">
               Stay in kunji
             </button>
           </div>

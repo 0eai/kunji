@@ -17,8 +17,8 @@ const InstallButton = ({ variant = 'block' }) => {
   const onClick = () => { if (canPrompt) promptInstall(); else setShowIOS(true); };
 
   const btnClass = variant === 'row'
-    ? 'w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white font-semibold transition-colors'
-    : 'w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white text-sm font-semibold transition-colors';
+    ? 'w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] font-semibold transition-colors'
+    : 'w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#eef0f2] hover:bg-[#e2e5e9] text-[#18181b] text-sm font-semibold transition-colors';
 
   return (
     <>
@@ -28,22 +28,22 @@ const InstallButton = ({ variant = 'block' }) => {
 
       {showIOS && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setShowIOS(false)}>
-          <div className="bg-[#18181b] border border-[#27272a] rounded-3xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white border border-[#e6e8eb] rounded-3xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white">Install kunji</h2>
-              <button onClick={() => setShowIOS(false)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-[#27272a] transition-colors">
+              <h2 className="text-lg font-bold text-[#18181b]">Install kunji</h2>
+              <button onClick={() => setShowIOS(false)} className="p-1.5 rounded-lg text-gray-500 hover:text-[#18181b] hover:bg-[#eef0f2] transition-colors">
                 <X size={18} />
               </button>
             </div>
-            <p className="text-sm text-gray-400 mb-4">Add kunji to your home screen for an app-like experience:</p>
-            <ol className="space-y-3 text-sm text-gray-300">
+            <p className="text-sm text-gray-600 mb-4">Add kunji to your home screen for an app-like experience:</p>
+            <ol className="space-y-3 text-sm text-gray-700">
               <li className="flex items-center gap-3">
                 <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
-                Tap the <Share size={15} className="text-amber-400 inline-block" /> <strong>Share</strong> icon in Safari.
+                Tap the <Share size={15} className="text-amber-600 inline-block" /> <strong>Share</strong> icon in Safari.
               </li>
               <li className="flex items-center gap-3">
                 <span className="w-6 h-6 rounded-full bg-amber-500 text-black text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
-                Choose <Plus size={15} className="text-amber-400 inline-block" /> <strong>Add to Home Screen</strong>.
+                Choose <Plus size={15} className="text-amber-600 inline-block" /> <strong>Add to Home Screen</strong>.
               </li>
             </ol>
           </div>
