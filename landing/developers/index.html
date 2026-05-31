@@ -27,7 +27,8 @@
         <span>kunji</span>
       </a>
       <nav class="nav">
-        <a class="navlink" href="/">Home</a>
+        <a class="navlink" href="/developers/firebase">Firebase</a>
+        <a class="navlink" href="/developers/try">Try it</a>
         <a class="btn-sm" href="https://app.kunji.cc">
           Open kunji
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -44,6 +45,28 @@
         backend in the login path:</b> you create a session, show a code, and verify a signed assertion the
         wallet posts straight to your own callback.
       </p>
+
+      <!-- Fastest path: the widget -->
+      <section class="sec">
+        <div class="sec-label">Fastest path — the drop-in button</div>
+        <p>Include the widget and drop in a button. It renders the official "Sign in with kunji" button, opens the QR / OTP modal, and reports success — entirely client-side, talking only to your own endpoints.</p>
+        <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
+
+&lt;div data-kunji-signin
+     data-app-name="Your App"
+     data-audience="yourapp.com"
+     data-session-url="https://yourapp.com/kunji/session"
+     data-callback-url="https://yourapp.com/kunji/callback"
+     data-poll-url="https://yourapp.com/kunji/status"
+     data-redirect="/dashboard"&gt;&lt;/div&gt;</code></pre>
+        <p class="note">
+          Pin <code class="k">rp.v1.js</code> in production. For SPAs, drop <code class="k">data-redirect</code> and
+          listen for <code class="k">kunji:success</code> (<code class="k">e.detail.sub</code>). On Firebase?
+          <a class="back" href="/developers/firebase">Use the Firebase guide →</a> ·
+          <a class="back" href="/developers/try">try the button →</a>
+        </p>
+        <p class="note">You still implement the three endpoints below (session · callback · status) and verify server-side — the widget is UI + orchestration only.</p>
+      </section>
 
       <!-- How it works -->
       <section class="sec">
@@ -167,6 +190,7 @@ const token = await admin.auth().createCustomToken(session.sub, {
   kunjiPub: publicKey,            // optional claim
 });
 // frontend: signInWithCustomToken(token) → request.auth.uid === sub</code></pre>
+          <p class="note">Using the drop-in widget? Also expose a read-only <code class="k">GET /kunji/status?sessionId=</code> → <code class="k">{ status, sub }</code> that the widget polls until <code class="k">approved</code>.</p>
         </div>
       </section>
 
@@ -245,7 +269,9 @@ const token = await admin.auth().createCustomToken(session.sub, {
     <footer>
       <span>A zero-knowledge identity wallet</span>
       <span class="sep">·</span>
-      <a href="/">Home</a>
+      <a href="/developers/firebase">Firebase</a>
+      <span class="sep">·</span>
+      <a href="/developers/try">Try it</a>
       <span class="sep">·</span>
       <a href="https://app.kunji.cc">app.kunji.cc</a>
     </footer>

@@ -6,6 +6,7 @@
     "rewrites": [
       { "source": "/api/session", "function": { "functionId": "createSession", "region": "us-central1" } },
       { "source": "/kunji/session", "function": { "functionId": "lookupSession", "region": "us-central1" } },
+      { "source": "/kunji/status", "function": { "functionId": "getSessionStatus", "region": "us-central1" } },
       { "source": "/kunji/callback", "function": { "functionId": "kunjiCallback", "region": "us-central1" } },
       { "source": "**", "destination": "/index.html" }
     ],

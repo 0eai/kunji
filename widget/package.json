@@ -1,0 +1,15 @@
+{
+  "name": "kunji-rp-widget",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --format=iife --platform=browser --minify --legal-comments=none --outfile=../landing/rp.js && cp ../landing/rp.js ../landing/rp.v1.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

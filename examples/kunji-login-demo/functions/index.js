@@ -69,6 +69,17 @@ export const lookupSession = onRequest({ cors: true }, async (req, res) => {
   res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: s.callbackUrl, expiresAt: s.expiresAt });
 });
 
+// Poll endpoint for the drop-in widget (rp.js): resolve a sessionId to its status.
+// Read-only; the doc holds no secrets (just status + the per-app sub).
+export const getSessionStatus = onRequest({ cors: true }, async (req, res) => {
+  const sessionId = String(req.query.sessionId || '');
+  if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+  const snap = await sessionRef(sessionId).get();
+  if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
+  const s = snap.data();
+  res.json({ status: s.status, sub: s.sub || null });
+});
+
 // The wallet POSTs the signed assertion here (spec §5.2). Full §6 verification.
 export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });

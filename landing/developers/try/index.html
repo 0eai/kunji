@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Try the Sign in with kunji button</title>
+  <meta name="theme-color" content="#faf9f6" />
+  <meta name="color-scheme" content="light" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="/">
+        <img src="/icon.svg" alt="" />
+        <span>kunji</span>
+      </a>
+      <nav class="nav">
+        <a class="navlink" href="/developers">Developers</a>
+        <a class="navlink" href="/developers/firebase">Firebase</a>
+      </nav>
+    </header>
+
+    <main class="guide">
+      <p class="kicker">LIVE DEMO</p>
+      <h1>Try the button</h1>
+      <p class="lead">
+        This page includes the real <code class="k">rp.js</code> widget, wired to the kunji demo's own
+        endpoints. Click the button, approve in the kunji app, and watch the success event fire.
+      </p>
+
+      <div class="sec">
+        <div data-kunji-signin
+             data-app-name="Kunji Demo"
+             data-audience="kunji-demo.web.app"
+             data-session-url="https://kunji-demo.web.app/api/session"
+             data-callback-url="https://kunji-demo.web.app/kunji/callback"
+             data-poll-url="https://kunji-demo.web.app/kunji/status"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-label">Event log</div>
+        <pre><code id="log">waiting for sign-in…</code></pre>
+        <a class="back" href="/developers/firebase">← Firebase integration guide</a>
+      </div>
+    </main>
+
+    <footer>
+      <span>A zero-knowledge identity wallet</span>
+      <span class="sep">·</span>
+      <a href="/developers">Developers</a>
+    </footer>
+  </div>
+
+  <script src="/rp.js"></script>
+  <script>
+    document.addEventListener('kunji:success', (e) => {
+      document.getElementById('log').textContent =
+        'kunji:success → ' + JSON.stringify(e.detail, null, 2);
+    });
+  </script>
+</body>
+
+</html>

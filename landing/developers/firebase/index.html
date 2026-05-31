@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in with kunji on Firebase — developer guide</title>
+  <meta name="description" content="Add Sign in with kunji to a Firebase app: drop-in button widget, plus copy-paste Cloud Functions, Firestore rules, and the custom-token bridge." />
+  <meta name="theme-color" content="#faf9f6" />
+  <meta name="color-scheme" content="light" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+
+  <meta property="og:title" content="Sign in with kunji on Firebase" />
+  <meta property="og:description" content="Drop-in button + copy-paste Cloud Functions, rules, and custom-token bridge." />
+  <meta property="og:image" content="/icon-512.png" />
+  <meta property="og:type" content="website" />
+
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="/">
+        <img src="/icon.svg" alt="" />
+        <span>kunji</span>
+      </a>
+      <nav class="nav">
+        <a class="navlink" href="/developers">Protocol</a>
+        <a class="navlink" href="/developers/try">Try it</a>
+        <a class="btn-sm" href="https://app.kunji.cc">
+          Open kunji
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </nav>
+    </header>
+
+    <main class="guide">
+      <p class="kicker">FIREBASE</p>
+      <h1>Sign in with kunji on Firebase</h1>
+      <p class="lead">
+        The exact stack kunji's own demo runs: <b>Cloud Functions + Firestore + Hosting</b>. Drop in the
+        button widget, add three small functions, and your users sign in with keys they hold — no passwords,
+        no Google. <b>kunji shares no database and runs no backend in this flow;</b> the wallet posts the
+        signed assertion straight to your callback.
+      </p>
+
+      <!-- Quickstart: the widget -->
+      <section class="sec">
+        <div class="sec-label">Fastest path — the drop-in button</div>
+        <h2>1 · Add the button</h2>
+        <p>Include the widget and drop in a button element pointing at your Cloud Function URLs. It renders the official button, opens the QR / OTP modal, and reports success — all client-side.</p>
+        <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
+
+&lt;div data-kunji-signin
+     data-app-name="Your App"
+     data-audience="yourapp.com"
+     data-session-url="https://yourapp.com/kunji/session"
+     data-callback-url="https://yourapp.com/kunji/callback"
+     data-poll-url="https://yourapp.com/kunji/status"
+     data-redirect="/dashboard"&gt;&lt;/div&gt;</code></pre>
+        <p class="note">
+          Pin a version in production: <code class="k">https://kunji.cc/rp.v1.js</code> (optionally with an SRI hash).
+          For SPAs, omit <code class="k">data-redirect</code> and listen for the
+          <code class="k">kunji:success</code> event — <code class="k">e.detail.sub</code> is the user's stable id.
+          The widget talks only to <em>your</em> endpoints; it never calls a kunji server.
+          <a class="back" href="/developers/try">See it running →</a>
+        </p>
+      </section>
+
+      <!-- Backend -->
+      <section class="sec">
+        <div class="sec-label">The backend you implement</div>
+
+        <div class="step">
+          <div class="n">STEP 2</div>
+          <h3>Wire endpoints same-site (firebase.json)</h3>
+          <p>Hosting rewrites make your functions resolve on your own domain — so <code class="k">callbackUrl</code> is same-site as <code class="k">audience</code>, which kunji requires.</p>
+          <pre><code>{
+  "hosting": {
+    "rewrites": [
+      { "source": "/kunji/session",  "function": { "functionId": "createSession",    "region": "us-central1" } },
+      { "source": "/kunji/status",   "function": { "functionId": "getSessionStatus",  "region": "us-central1" } },
+      { "source": "/kunji/callback", "function": { "functionId": "kunjiCallback",     "region": "us-central1" } },
+      { "source": "**", "destination": "/index.html" }
+    ]
+  },
+  "functions": { "source": "functions" }
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <div class="n">STEP 3</div>
+          <h3>createSession — mint a challenge</h3>
+          <p>A random <code class="k">sessionId</code> + <code class="k">challenge</code> with a short TTL, stored in <em>your</em> Firestore. The <code class="k">ttl</code> field lets a Firestore TTL policy auto-delete old sessions. Return a 6-digit <code class="k">code</code> too if you want the OTP tab.</p>
+          <pre><code>import { onRequest } from 'firebase-functions/v2/https';
+import { initializeApp } from 'firebase-admin/app';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { randomBytes } from 'node:crypto';
+
+initializeApp();
+const db = getFirestore();
+const hex = (n) => randomBytes(n).toString('hex');
+
+export const createSession = onRequest({ cors: true }, async (req, res) => {
+  const audience    = 'yourapp.com';                        // hardcode your domain
+  const callbackUrl = 'https://yourapp.com/kunji/callback'; // same-site as audience
+  const sessionId = hex(16);
+  const challenge = hex(32);
+  const expiresAt = Date.now() + 2 * 60_000;                // 2-minute TTL
+
+  await db.collection('loginSessions').doc(sessionId).set({
+    challenge, audience, callbackUrl, status: 'pending', sub: null, expiresAt,
+    ttl: Timestamp.fromMillis(expiresAt + 5 * 60_000),      // for the TTL policy
+  });
+
+  res.json({ sessionId, challenge, expiresAt });
+});</code></pre>
+        </div>
+
+        <div class="step">
+          <div class="n">STEP 4</div>
+          <h3>verify.js — the assertion checks</h3>
+          <p>Canonical JSON + Ed25519, identical to kunji's signer. Enforces every rule in the checklist below.</p>
+          <pre><code>import { createHash } from 'node:crypto';
+import { ed25519 } from '@noble/curves/ed25519.js';
+
+const canonicalJson = (o) =>
+  (o === null || typeof o !== 'object' || Array.isArray(o))
+    ? JSON.stringify(o)
+    : JSON.stringify(Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]])));
+
+const b64   = (s) => Buffer.from(s, 'base64');
+const subOf = (pk) => createHash('sha256').update(pk, 'utf8').digest('hex');
+
+export function verifyAssertion({ assertion, session, audience, now = Date.now() }) {
+  const { publicKey, signedPayload, signedToken } = assertion || {};
+  if (!publicKey || !signedPayload || !signedToken)  return { ok: false, error: 'malformed' };
+  if (!session || session.status !== 'pending')      return { ok: false, error: 'bad_session' };
+  if (now > session.expiresAt)                       return { ok: false, error: 'expired' };
+  if (signedPayload.challenge !== session.challenge) return { ok: false, error: 'challenge' };
+  if (signedPayload.audience  !== audience)          return { ok: false, error: 'audience' };
+  if (signedPayload.sub       !== subOf(publicKey))  return { ok: false, error: 'sub' };
+  if (Math.abs(now - signedPayload.timestamp) > 120_000) return { ok: false, error: 'stale' };
+
+  const ok = ed25519.verify(b64(signedToken),
+    new TextEncoder().encode(canonicalJson(signedPayload)), b64(publicKey));
+  return ok ? { ok: true, sub: signedPayload.sub } : { ok: false, error: 'signature' };
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <div class="n">STEP 5</div>
+          <h3>kunjiCallback — receive &amp; verify</h3>
+          <p>The wallet POSTs the signed assertion here. On success, mark the session approved and (for real auth) mint a custom token so <code class="k">request.auth.uid === sub</code> and your existing rules keep working.</p>
+          <pre><code>import { getAuth } from 'firebase-admin/auth';
+import { verifyAssertion } from './verify.js';
+
+export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
+  const assertion = req.body || {};
+  const ref = db.collection('loginSessions').doc(assertion?.signedPayload?.sessionId || '_');
+  const session = (await ref.get()).data();
+
+  const result = verifyAssertion({ assertion, session, audience: session?.audience });
+  if (!result.ok) return res.status(400).json({ error: result.error });
+
+  // first-seen sub = new account; returning sub = existing user
+  const customToken = await getAuth().createCustomToken(result.sub, { kunjiPub: assertion.publicKey });
+  await ref.update({ status: 'approved', sub: result.sub, customToken });
+
+  res.json({ status: 'ok' });   // single-use: status is now 'approved'
+});</code></pre>
+        </div>
+
+        <div class="step">
+          <div class="n">STEP 6</div>
+          <h3>getSessionStatus — the widget's poll</h3>
+          <p>The widget polls this read-only endpoint until the session is approved, then fires success.</p>
+          <pre><code>export const getSessionStatus = onRequest({ cors: true }, async (req, res) => {
+  const snap = await db.collection('loginSessions').doc(String(req.query.sessionId || '_')).get();
+  if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
+  const s = snap.data();
+  res.json({ status: s.status, sub: s.sub || null, customToken: s.customToken || null });
+});</code></pre>
+        </div>
+
+        <div class="step">
+          <div class="n">STEP 7</div>
+          <h3>Firestore rules + TTL</h3>
+          <p>Writes are server-only (Admin SDK bypasses rules). The frontend reads its own session by random id; the doc holds no secrets. Add a Firestore TTL policy on the <code class="k">ttl</code> field so sessions self-delete.</p>
+          <pre><code>match /loginSessions/{sessionId} {
+  allow get: if true;     // read your own session by id; no client writes
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <div class="n">STEP 8</div>
+          <h3>Finish the sign-in (frontend)</h3>
+          <p>With the widget, listen for success and exchange the custom token for a real Firebase session keyed by <code class="k">sub</code>.</p>
+          <pre><code>import { getAuth, signInWithCustomToken } from 'firebase/auth';
+
+// the widget's success event carries the RP poll payload, incl. customToken
+document.addEventListener('kunji:success', async ({ detail }) => {
+  await signInWithCustomToken(getAuth(), detail.customToken);  // request.auth.uid === sub
+});</code></pre>
+        </div>
+      </section>
+
+      <!-- Checklist -->
+      <section class="sec">
+        <div class="sec-label">Verification checklist (server-side)</div>
+        <ul class="checklist">
+          <li><span>Session known, not expired, <code class="k">status === 'pending'</code>.</span></li>
+          <li><span><code class="k">challenge</code> matches the stored challenge.</span></li>
+          <li><span><code class="k">audience</code> equals your own domain.</span></li>
+          <li><span>Signature verifies over <code class="k">canonicalJson(signedPayload)</code>.</span></li>
+          <li><span><code class="k">sub === SHA-256(publicKey)</code>, recomputed server-side.</span></li>
+          <li><span><code class="k">timestamp</code> within ±2 minutes.</span></li>
+          <li><span>Session marked consumed — reject re-submission.</span></li>
+        </ul>
+      </section>
+
+      <section class="sec">
+        <div class="sec-label">Reference</div>
+        <p class="note">
+          A complete working copy lives in the kunji repo under <code class="k">examples/kunji-login-demo</code>
+          (these snippets are adapted from it). See the
+          <a class="back" href="/developers">stack-agnostic protocol guide</a> for message formats and the trust model.
+        </p>
+        <div class="cta-row" style="margin-top:20px;">
+          <a class="cta" href="/developers/try">
+            Try the button
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="ghost" href="/">← Back to home</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>A zero-knowledge identity wallet</span>
+      <span class="sep">·</span>
+      <a href="/developers">Protocol guide</a>
+      <span class="sep">·</span>
+      <a href="https://app.kunji.cc">app.kunji.cc</a>
+    </footer>
+  </div>
+</body>
+
+</html>

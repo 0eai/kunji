@@ -17,6 +17,18 @@ const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=
 // session id so we can resume (not restart) it when the user returns.
 const RESUME_KEY = 'kunji_demo_pending';
 
+// The kunji key mark, for the official "Sign in with kunji" button.
+const KeyMark = () => (
+  <svg viewBox="0 0 512 512" width="17" height="17" aria-hidden="true">
+    <g transform="rotate(-40 256 256)" fill="currentColor">
+      <path fillRule="evenodd" d="M 282,256 A 86,86 0 0,1 110,256 A 86,86 0 0,1 282,256 Z M 244,256 A 48,48 0 0,0 148,256 A 48,48 0 0,0 244,256 Z" />
+      <rect x="196" y="238" width="200" height="36" rx="18" />
+      <rect x="356" y="274" width="28" height="48" rx="8" />
+      <rect x="314" y="274" width="28" height="36" rx="8" />
+    </g>
+  </svg>
+);
+
 const STATUS = {
   loading:  { color: 'text-accent',  label: 'Generating code…' },
   scanning: { color: 'text-muted',   label: 'Scan with the kunji app' },
@@ -34,7 +46,7 @@ export default function LoginPage({ onSuccess }) {
   const [code, setCode] = useState('');
   const [qrUrl, setQrUrl] = useState('');
   // Show one method at a time; default to the one that fits the device.
-  const [tab, setTab] = useState(() => (window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'device'));
+  const [tab, setTab] = useState(() => (window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'otp'));
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
   const fallbackRef = useRef(null);
@@ -184,40 +196,45 @@ export default function LoginPage({ onSuccess }) {
         ) : (
           <>
             {/* Method toggle — text tabs with amber underline */}
-            <div className="flex gap-6 border-b border-line mb-8">
-              {tabBtn('device', 'This device')}
-              {tabBtn('qr', 'Another device')}
+            <div className="flex gap-6 border-b border-line mb-7">
+              {tabBtn('qr', 'QR')}
+              {code && tabBtn('otp', 'OTP')}
             </div>
 
-            {tab === 'device' ? (
-              <div>
-                <a
-                  href={deepLink}
-                  onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
-                  className="inline-flex items-center justify-center w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
-                >
-                  Open kunji
-                </a>
-                {code && (
-                  <div className="mt-8">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Or type this code in kunji</p>
-                    <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
-                      {code.slice(0, 3)} {code.slice(3)}
-                    </div>
+            {/* fixed-height panel so switching QR↔OTP never resizes the page */}
+            <div className="min-h-[17rem]">
+              {tab === 'otp' && code ? (
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Type this code into kunji</p>
+                  <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
+                    {code.slice(0, 3)} {code.slice(3)}
                   </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
-                  {qrUrl && <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px]" />}
+                  <p className="text-[13px] text-muted mt-3">Open kunji → enter this code.</p>
                 </div>
-                <p className="text-[13px] text-muted mt-4">Scan with the kunji app on your phone.</p>
-              </div>
-            )}
+              ) : (
+                <div>
+                  <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
+                    {qrUrl && <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px]" />}
+                  </div>
+                  <p className="text-[13px] text-muted mt-4">Scan with the kunji app on your phone.</p>
+                </div>
+              )}
+            </div>
+
+            {/* same-device action — the canonical branded button, available under both tabs */}
+            <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.14em] text-faint my-5">
+              <span className="flex-1 h-px bg-line" /> on this device <span className="flex-1 h-px bg-line" />
+            </div>
+            <a
+              href={deepLink}
+              onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
+              className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+            >
+              <KeyMark /> Sign in with kunji
+            </a>
 
             {secondsLeft > 0 && (
-              <p className="text-[12px] text-faint mt-8">Expires in <span className="font-mono tabular">{secondsLeft}s</span></p>
+              <p className="text-[12px] text-faint mt-6 text-center">Expires in <span className="font-mono tabular">{secondsLeft}s</span></p>
             )}
           </>
         )}
