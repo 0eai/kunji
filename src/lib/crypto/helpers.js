@@ -20,3 +20,9 @@ export const base64ToBuffer = (base64) => {
     }
     return bytes.buffer;
 };
+
+// Canonicalize a domain/audience so per-app identity derivation is stable: lowercase,
+// trim, drop a trailing dot and a default :80/:443 port. Applied at the derivation
+// boundary so "Example.com", "example.com." and "example.com:443" map to one identity.
+export const normalizeDomain = (domain) =>
+    String(domain || '').trim().toLowerCase().replace(/\.$/, '').replace(/:(80|443)$/, '');

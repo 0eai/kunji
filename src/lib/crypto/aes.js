@@ -85,14 +85,31 @@ export const deriveVaultId = async (masterKey) => {
     return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-export const deriveKeyArgon2id = async (passkey, saltString) => {
+// Argon2id work factor. V2 is the current target; LEGACY is the original hardcoded
+// config used by vaults wrapped before per-user params were stored. Params are
+// persisted per-user (the `argon2` field), so each vault carries the params needed
+// to unlock it — strength can be raised later without locking out existing vaults.
+export const ARGON2_DEFAULTS = { memorySize: 262144, iterations: 4, parallelism: 1 }; // 256 MB
+export const ARGON2_LEGACY  = { memorySize: 65536,  iterations: 3, parallelism: 1 }; // 64 MB
+
+// Map a stored user doc → Argon2id params (legacy if the doc predates the `argon2` field).
+export const argon2ParamsFromDoc = (data) => {
+    const a = data?.argon2;
+    if (!a) return ARGON2_LEGACY;
+    return { memorySize: a.m, iterations: a.t, parallelism: a.p };
+};
+
+// Map params → the compact `argon2` doc field shape.
+export const argon2DocFields = (params) => ({ m: params.memorySize, t: params.iterations, p: params.parallelism });
+
+export const deriveKeyArgon2id = async (passkey, saltString, params = ARGON2_DEFAULTS) => {
     const salt = new TextEncoder().encode(saltString);
     const hash = await argon2id({
         password: passkey,
         salt: salt,
-        iterations: 3,
-        memorySize: 65536, // 64 MB
-        parallelism: 1,
+        iterations: params.iterations,
+        memorySize: params.memorySize,
+        parallelism: params.parallelism,
         hashLength: 32,    // 256-bit key
         outputType: 'binary',
     });

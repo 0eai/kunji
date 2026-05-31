@@ -1,7 +1,7 @@
 // lib/crypto/ed25519.js — Ed25519 signing for Connected Apps passwordless auth
 
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { bufferToBase64, base64ToBuffer } from './helpers';
+import { bufferToBase64, base64ToBuffer, normalizeDomain } from './helpers';
 
 export const generateEd25519KeyPair = () => {
     const { secretKey, publicKey } = ed25519.keygen();
@@ -13,6 +13,8 @@ export const generateEd25519KeyPair = () => {
 // always yields the same keypair, so any device holding the master key reproduces every
 // app's identity — no keypair data needs to sync between devices.
 export const deriveAppKeyPair = async (masterKey, domain) => {
+    // Normalize the domain so casing/trailing-dot/default-port variants map to one identity.
+    const normalized = normalizeDomain(domain);
     const raw = await window.crypto.subtle.exportKey('raw', masterKey);
     const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
     const bits = await window.crypto.subtle.deriveBits(
@@ -20,7 +22,7 @@ export const deriveAppKeyPair = async (masterKey, domain) => {
             name: 'HKDF',
             hash: 'SHA-256',
             salt: new TextEncoder().encode('kunji-app-key-v1'),
-            info: new TextEncoder().encode(`kunji-app:${domain}`),
+            info: new TextEncoder().encode(`kunji-app:${normalized}`),
         },
         ikm,
         256,

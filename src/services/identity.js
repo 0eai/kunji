@@ -9,6 +9,7 @@ import {
   exportEd25519PublicKey,
   signWithEd25519,
 } from '../lib/crypto';
+import { normalizeDomain } from '../lib/crypto/helpers';
 import { logActivity } from './activityLog';
 
 // Apps are keyed by the master-key-derived vaultId so the list syncs across every
@@ -17,9 +18,10 @@ const appsCol = (vaultId) => collection(db, 'vaults', vaultId, 'apps');
 const appDoc = (vaultId, appId) => doc(db, 'vaults', vaultId, 'apps', appId);
 
 // Deterministic doc id per domain, so a domain maps to exactly one app entry
-// (same id across devices and logins — registration is idempotent).
+// (same id across devices and logins — registration is idempotent). Normalized so
+// casing variants of the same domain collapse to one entry.
 const appIdForDomain = async (domain) => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(domain));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizeDomain(domain)));
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
@@ -56,7 +58,7 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
   const existed = (await getDoc(ref)).exists();
 
   if (!existed) {
-    const payload = await encryptData({ name, domain, iconUrl }, cryptoKey);
+    const payload = await encryptData({ name, domain: normalizeDomain(domain), iconUrl }, cryptoKey);
     await setDoc(ref, { ...payload, publicKey: pubKeyBase64, createdAt: serverTimestamp() });
     if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, { domain });
   }

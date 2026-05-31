@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import {
   deriveKeyFromPasskey, deriveKeyArgon2id, generateSalt, encryptData, decryptData,
   generateMasterKey, exportKey, importMasterKey,
+  ARGON2_DEFAULTS, ARGON2_LEGACY, argon2ParamsFromDoc, argon2DocFields,
 } from '../lib/crypto';
 import { resetUserVault } from '../services/vault';
 import { logActivity } from '../services/activityLog';
@@ -40,7 +41,7 @@ const getStrength = (passkey) => {
   return { label: 'Very strong', color: 'bg-success', width: '100%' };
 };
 
-const MIN_PASSKEY_LENGTH = 8;
+const MIN_PASSKEY_LENGTH = 10;
 
 const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const { showToast } = useToast();
@@ -142,10 +143,24 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           setIsDeriving(false);
           return;
         }
+        if (getStrength(keyInput).label === 'Weak') {
+          setStatus('Choose a stronger passkey');
+          setErrorShake(true);
+          setTimeout(() => setErrorShake(false), 500);
+          setIsDeriving(false);
+          return;
+        }
         setStatus('Creating vault...');
         const newSalt = generateSalt();
         const masterKey = await generateMasterKey();
-        const wrapperKey = await deriveKeyArgon2id(keyInput, newSalt);
+        let wrapperKey;
+        try {
+          wrapperKey = await deriveKeyArgon2id(keyInput, newSalt); // V2
+        } catch {
+          setStatus('This device ran low on memory creating the vault. Try another device.');
+          setIsDeriving(false);
+          return;
+        }
         const masterKeyJWK = await exportKey(masterKey);
         const encryptedMasterKey = await encryptData(masterKeyJWK, wrapperKey);
         const validationPayload = await encryptData({ check: 'VALID' }, masterKey);
@@ -154,6 +169,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           encryptedMasterKey,
           encryptedValidator: validationPayload,
           kdf: 'argon2id',
+          argon2: argon2DocFields(ARGON2_DEFAULTS),
         }, { merge: true });
         setFailCount(0);
         onUnlock(masterKey);
@@ -168,13 +184,22 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           setIsDeriving(false);
           return;
         }
+        if (getStrength(keyInput).label === 'Weak') {
+          setStatus('Choose a stronger passkey');
+          setErrorShake(true);
+          setTimeout(() => setErrorShake(false), 500);
+          setIsDeriving(false);
+          return;
+        }
         let masterKeyJWK;
         try {
           const trimmed = recoveryInput.trim();
           if (trimmed.startsWith('v2:')) {
             const payload = JSON.parse(atob(trimmed.slice(3)));
-            const { salt: rSalt, ...encryptedJWK } = payload;
-            const recoveryWrapperKey = await deriveKeyArgon2id(recoveryPassphrase, rSalt);
+            // Recovery blobs carry their own Argon2id params (legacy if absent).
+            const { salt: rSalt, argon2: rArgon, ...encryptedJWK } = payload;
+            const rParams = rArgon ? { memorySize: rArgon.m, iterations: rArgon.t, parallelism: rArgon.p } : ARGON2_LEGACY;
+            const recoveryWrapperKey = await deriveKeyArgon2id(recoveryPassphrase, rSalt, rParams);
             masterKeyJWK = await decryptData(encryptedJWK, recoveryWrapperKey);
             if (!masterKeyJWK) throw new Error('INVALID_RECOVERY_PASSPHRASE');
           } else {
@@ -191,12 +216,13 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         }
         setStatus('Securing with new passkey...');
         const newSalt = generateSalt();
-        const newWrapperKey = await deriveKeyArgon2id(keyInput, newSalt);
+        const newWrapperKey = await deriveKeyArgon2id(keyInput, newSalt); // V2
         const newEncryptedMasterKey = await encryptData(masterKeyJWK, newWrapperKey);
         await setDoc(userDocRef, {
           encryptionSalt: newSalt,
           encryptedMasterKey: newEncryptedMasterKey,
           kdf: 'argon2id',
+          argon2: argon2DocFields(ARGON2_DEFAULTS),
           failedAttempts: 0,
           lockoutUntil: 0,
         }, { merge: true });
@@ -207,8 +233,9 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
       else {
         setStatus('Unlocking...');
         const kdf = userData.kdf || 'pbkdf2';
+        const params = argon2ParamsFromDoc(userData); // legacy params if no `argon2` field
         const wrapperKey = kdf === 'argon2id'
-          ? await deriveKeyArgon2id(keyInput, salt)
+          ? await deriveKeyArgon2id(keyInput, salt, params)
           : await deriveKeyFromPasskey(keyInput, salt, userData.iterations);
         const masterKeyJWK = await decryptData(encryptedBlob, wrapperKey);
         if (!masterKeyJWK) throw new Error('WRONG_PASSWORD');
@@ -217,11 +244,22 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           const check = await decryptData(userData.encryptedValidator, masterKey);
           if (!check || check.check !== 'VALID') throw new Error('INTEGRITY_FAIL');
         }
-        // Migrate PBKDF2 → Argon2id
-        if (kdf !== 'argon2id') {
-          const newWrapperKey = await deriveKeyArgon2id(keyInput, salt);
-          const newEncryptedMasterKey = await encryptData(masterKeyJWK, newWrapperKey);
-          await setDoc(userDocRef, { encryptedMasterKey: newEncryptedMasterKey, kdf: 'argon2id' }, { merge: true });
+        // Migrate to the current KDF strength (pbkdf2 → argon2id, or legacy argon2 → V2).
+        // Best-effort: if this device can't derive the stronger key (e.g. 256MB OOM),
+        // leave the vault on its current params — it still unlocks. Never half-migrate.
+        const needsUpgrade = kdf !== 'argon2id'
+          || params.memorySize < ARGON2_DEFAULTS.memorySize
+          || params.iterations < ARGON2_DEFAULTS.iterations;
+        if (needsUpgrade) {
+          try {
+            const newWrapperKey = await deriveKeyArgon2id(keyInput, salt, ARGON2_DEFAULTS);
+            const newEncryptedMasterKey = await encryptData(masterKeyJWK, newWrapperKey);
+            await setDoc(userDocRef, {
+              encryptedMasterKey: newEncryptedMasterKey,
+              kdf: 'argon2id',
+              argon2: argon2DocFields(ARGON2_DEFAULTS),
+            }, { merge: true });
+          } catch { /* device can't do V2 — stay on current params, already unlocked */ }
         }
         if (userData.failedAttempts > 0) {
           await setDoc(userDocRef, { failedAttempts: 0, lockoutUntil: 0 }, { merge: true });
