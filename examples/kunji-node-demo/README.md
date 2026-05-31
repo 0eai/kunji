@@ -17,11 +17,101 @@ npm start                 # → http://localhost:3000
 
 Open it and you'll see the official **Sign in with kunji** button (the drop-in `rp.js` widget).
 
-> ⚠️ A real wallet (your phone, or app.kunji.cc) must reach your `callbackUrl` over **HTTPS**, so a
-> phone can't talk to `localhost`. To test with a real wallet, deploy this anywhere with a public
-> HTTPS URL, or expose it with a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`) and
-> open the tunnel URL. The server derives its `audience`/`callbackUrl` from the request host (honors
-> `x-forwarded-*`), so it just works behind a tunnel.
+The server binds **all interfaces** (`0.0.0.0`) by default, so it's already reachable on your
+machine's LAN IP — not just `localhost`.
+
+## Reaching it from another device (LAN IP) — and the HTTPS catch
+
+Find your IP and open it from any device on the same network:
+
+```bash
+# macOS:    ipconfig getifaddr en0
+# Linux:    hostname -I        # first address
+# Windows:  ipconfig           # IPv4 Address
+# → e.g. open  http://192.168.1.50:3000   (restrict the bind with  HOST=127.0.0.1 npm start)
+```
+
+Over a LAN IP, the **wallet simulator works as-is** (it doesn't require TLS):
+
+```bash
+BASE=http://192.168.1.50:3000 npm run wallet
+```
+
+But a **real kunji wallet (your phone, app.kunji.cc) will refuse an `http://<ip>` callback.** The
+wallet requires **HTTPS** for any host that isn't `localhost`/`127.0.0.1` — a deliberate anti-MITM
+rule, so a bare LAN IP over http can't complete a real sign-in. For real-wallet testing you need a
+public **HTTPS** URL:
+
+```bash
+cloudflared tunnel --url http://localhost:3000      # → https://something.trycloudflare.com
+# or: ngrok http 3000
+```
+
+Open the tunnel's HTTPS URL on your phone. The server reads `x-forwarded-proto`/`x-forwarded-host`,
+so it derives the correct `https://…` audience + callback automatically. Behind a proxy that doesn't
+set those, pin it explicitly: `PUBLIC_ORIGIN=https://demo.example.com npm start`.
+
+> TL;DR — **LAN IP + simulator:** works over http. **LAN IP + real phone wallet:** needs HTTPS (use
+> a tunnel). `localhost` is the only http host the wallet trusts, and a phone can't reach your
+> `localhost`.
+
+## Serving HTTPS yourself (certificates)
+
+The server serves HTTPS when you give it a key + cert — but you must **generate them first** (the
+`TLS_KEY`/`TLS_CERT` vars just point at existing files):
+
+```bash
+# Option A — device-trusted, works with a real wallet (replace the IP with yours):
+mkcert -cert-file cert.pem -key-file key.pem 192.168.1.50 localhost
+# Option B — self-signed, simulator only (a real phone wallet will reject it):
+openssl req -x509 -newkey rsa:2048 -nodes -days 7 -keyout key.pem -out cert.pem \
+  -subj "/CN=localhost" -addext "subjectAltName=IP:192.168.1.50,DNS:localhost"
+
+# then start over HTTPS:
+TLS_KEY=./key.pem TLS_CERT=./cert.pem PORT=8443 npm start
+```
+
+**The catch with a self-signed cert:** it will _not_ work with a real wallet. The wallet runs in a
+browser (app.kunji.cc) and `fetch()`es your callback — browsers hard-reject untrusted certs with no
+programmatic override, and public CAs (Let's Encrypt) don't issue for bare LAN IPs. The cert must be
+**trusted by the connecting device.** Two ways that actually work:
+
+- **[mkcert](https://github.com/FiloSottile/mkcert) on your LAN** — a real phone scanning the QR,
+  no tunnel. See the recipe just below.
+- **A tunnel** (simplest, no cert wrangling) — `cloudflared tunnel --url http://localhost:3000`
+  gives a publicly-trusted HTTPS URL that works on any device, no CA install.
+
+### Real phone over your LAN, no tunnel (mkcert)
+
+1. **Make a local CA + a cert for your LAN IP** (replace the IP with yours):
+   ```bash
+   mkcert -install                                   # creates a local CA on your laptop
+   mkcert -cert-file cert.pem -key-file key.pem 192.168.1.50 localhost
+   TLS_KEY=./key.pem TLS_CERT=./cert.pem PORT=8443 npm start
+   ```
+2. **Trust that CA on the phone** — the step everyone misses. Copy `rootCA.pem` from
+   `$(mkcert -CAROOT)` to the phone (AirDrop / email / download) and install it:
+   - **iOS:** open it → Settings → _Profile Downloaded_ → Install. Then **mandatory**: Settings →
+     General → About → _Certificate Trust Settings_ → enable full trust for the mkcert CA.
+   - **Android:** Settings → Security → _Encryption & credentials_ → _Install a certificate_ → _CA
+     certificate_ → pick `rootCA.pem`.
+3. **Same Wi-Fi, reachable:** phone + laptop on the same network with **no AP/client isolation**
+   (common on guest Wi-Fi), and the laptop firewall must allow inbound on the port (e.g. 8443).
+   Sanity check: open `https://192.168.1.50:8443` on the phone — it should load with no warning.
+4. **Sign in:** open the demo on your laptop, _Sign in with kunji_, and **scan the QR with the kunji
+   app on the phone**. The wallet POSTs to `https://192.168.1.50:8443/kunji/callback` over trusted
+   HTTPS; the server already returns the **Private Network Access** header so Chrome doesn't block
+   the public→private request.
+
+Cert warning on the phone → the CA isn't trusted (redo step 2; on iOS the trust toggle is required).
+Request hangs → it's almost always AP isolation or the laptop firewall (step 3).
+
+The **simulator** accepts self-signed/mkcert certs automatically (it's a test tool):
+`BASE=https://192.168.1.50:8443 npm run wallet`.
+
+> Two more things the demo already handles for real-wallet use: the callback sends **CORS** headers
+> (the wallet POSTs cross-origin), and the scheme is derived from the TLS socket / `x-forwarded-proto`
+> so the signed `audience` + `callbackUrl` come out as `https://…`.
 
 ## Test the whole flow locally — no phone needed
 

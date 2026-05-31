@@ -20,6 +20,11 @@ import { deriveHandle } from '../../src/lib/kunjiHandle.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const wantClaims = process.argv.includes('--claims');
+
+// This is a local testing tool, so accept self-signed / mkcert HTTPS certs when BASE is
+// https (Node's fetch verifies TLS by default). A REAL browser wallet does NOT do this —
+// it requires a device-trusted cert. Never copy this into production code.
+if (BASE.startsWith('https:')) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const b64 = (u8) => Buffer.from(u8).toString('base64');
 
 const main = async () => {
