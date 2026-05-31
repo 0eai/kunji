@@ -1,7 +1,7 @@
 // Light / Dark / System theme control. Mirrors the no-flash boot script in
 // index.html so runtime changes match what's applied on first paint.
 const KEY = 'kunji_theme';
-const PAPER = { light: '#faf9f6', dark: '#181714' };
+const PAPER = { light: '#faf9f6', dark: '#121110' };
 
 const systemDark = () =>
   window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;

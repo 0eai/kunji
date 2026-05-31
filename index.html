@@ -39,9 +39,9 @@
         var dark = pref === 'dark' || (pref === 'system' &&
           window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
-        document.documentElement.style.background = dark ? '#181714' : '#faf9f6';
+        document.documentElement.style.background = dark ? '#121110' : '#faf9f6';
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', dark ? '#181714' : '#faf9f6');
+        if (m) m.setAttribute('content', dark ? '#121110' : '#faf9f6');
       } catch (e) {}
     })();
   </script>
