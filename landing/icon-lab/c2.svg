@@ -3,7 +3,7 @@
   <g transform="rotate(-40 256 256)" fill="none" stroke="#1c1606" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="240" cy="172" r="56"/>
     <path d="M240 172 V398"/>
-    <path d="M240 334 L330 304"/>
-    <path d="M240 334 L330 372"/>
+    <path d="M240 334 L326 316"/>
+    <path d="M240 334 L326 354"/>
   </g>
 </svg>
