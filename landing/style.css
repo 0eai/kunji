@@ -60,6 +60,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 }
 .btn-sm:hover { background: var(--accent); }
 .btn-sm svg { width: 15px; height: 15px; }
+.navlink.gh { display: inline-flex; align-items: center; }
+.navlink.gh svg { width: 19px; height: 19px; display: block; }
 
 main { flex: 1; padding: 56px 0; }
 main.center { display: flex; flex-direction: column; justify-content: center; }
