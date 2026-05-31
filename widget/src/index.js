@@ -195,10 +195,14 @@ function openModal(opts, sourceEl) {
       returnUrl: location.href,
     };
     const qrData = JSON.stringify(payload);
-    const deepLink = `${opts.appUrl}/?approve=${b64url(qrData)}`;
+    // Only ever build the deep link against an https wallet URL — reject
+    // javascript:/data:/http: so a hostile data-app-url can't inject a scheme.
+    const safeAppUrl = /^https:\/\//i.test(opts.appUrl) ? opts.appUrl : APP_URL_DEFAULT;
+    const deepLink = `${safeAppUrl}/?approve=${b64url(qrData)}`;
     let qrImg = '';
     try { qrImg = await QRCode.toDataURL(qrData, { width: 196, margin: 1, color: { dark: '#1a1a18', light: '#ffffff' } }); } catch {}
-    const code = session.code || '';
+    // Accept the OTP only if it's strictly digits, so it can never carry markup.
+    const code = /^\d{4,10}$/.test(session.code) ? session.code : '';
 
     // Everything expired together — replace the panel with one clear action so a
     // stale QR / code / deep link is never left looking usable.

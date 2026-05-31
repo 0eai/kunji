@@ -1,25 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Copy, CheckCircle2, KeyRound, Trash2,
-  ShieldCheck, Link as LinkIcon, Unlink, Circle,
-} from 'lucide-react';
+import { Copy, CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
 import { deriveSubFromPublicKey } from '../services/identity';
 import { listenToActivityLog } from '../services/activityLog';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Monogram } from './ui/primitives';
-
-const ACTIVITY_ICONS = { ShieldCheck, Link: LinkIcon, Unlink };
-const TYPE_COLOR = { success: 'text-success', danger: 'text-danger', info: 'text-muted' };
-
-const relTime = (createdAt) => {
-  const ms = createdAt?.toMillis ? createdAt.toMillis() : (createdAt?.seconds ? createdAt.seconds * 1000 : null);
-  if (!ms) return '';
-  const s = Math.floor((Date.now() - ms) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-};
+import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 
 const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelete }) => {
   const [sub, setSub] = useState('');
@@ -77,7 +62,7 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
         ) : (
           <div className="divide-y divide-line border-t border-line">
             {events.map((e) => {
-              const Icon = ACTIVITY_ICONS[e.icon] || Circle;
+              const Icon = activityIcon(e.icon);
               return (
                 <div key={e.id} className="flex items-center gap-3 py-3">
                   <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />

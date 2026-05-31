@@ -5,3 +5,6 @@ dist
 .DS_Store
 *.log
 .firebase/
+
+# Internal audit reports — not committed
+reports/

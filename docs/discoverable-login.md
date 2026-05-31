@@ -232,6 +232,8 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 
 ## 11. What the Relying Party (cloq) Must Implement
 
+> **MUST:** the RP **hardcodes its own `audience` and `callbackUrl` server-side** in `createSession` and ignores any client-supplied values. The demo reads them from the request body for convenience only — accepting them from the client in production lets a caller mint sessions claiming an arbitrary domain. The RP **MUST** also consume each session atomically (verify + mark `approved` in one transaction) and cap failed code lookups (per-IP limiting alone is `X-Forwarded-For`-spoofable).
+
 - `createSession` + `pollSession` endpoints over **cloq's own** session store.
 - `/kunji/callback` endpoint implementing the §6 verification.
 - The §7 custom-token mint.

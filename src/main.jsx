@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import { VaultProvider } from './context/VaultContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { watchSystem } from './lib/theme';
@@ -21,10 +22,12 @@ window.addEventListener('beforeinstallprompt', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <VaultProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
-    </VaultProvider>
+    <ErrorBoundary>
+      <VaultProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </VaultProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

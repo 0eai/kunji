@@ -21,6 +21,7 @@
     media-src 'self' blob:;
     worker-src 'self' blob:;
     frame-src 'none';
+    frame-ancestors 'none';
     object-src 'none';
     base-uri 'self';
   " />
@@ -31,20 +32,8 @@
   <meta name="color-scheme" content="light dark" />
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
-  <!-- Apply the saved theme before paint to avoid a flash of the wrong mode. -->
-  <script>
-    (function () {
-      try {
-        var pref = localStorage.getItem('kunji_theme') || 'system';
-        var dark = pref === 'dark' || (pref === 'system' &&
-          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.classList.toggle('dark', dark);
-        document.documentElement.style.background = dark ? '#121110' : '#faf9f6';
-        var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', dark ? '#121110' : '#faf9f6');
-      } catch (e) {}
-    })();
-  </script>
+  <!-- Apply the saved theme before paint (external so it satisfies CSP script-src 'self'). -->
+  <script src="/theme-init.js"></script>
 
   <!-- Home Screen -->
   <meta name="mobile-web-app-capable" content="yes" />

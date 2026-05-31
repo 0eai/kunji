@@ -14,6 +14,11 @@ import InstallButton from './InstallButton';
 import Sheet from './ui/Sheet';
 import { Field, PasswordField, Btn, Spinner } from './ui/primitives';
 
+// NOTE: this failed-attempt backoff is a soft UX throttle only — the lockout fields
+// live in the user's own (client-writable) Firestore doc and can be reset by the user,
+// and an offline attacker with the encrypted blob never touches this code. The real
+// brute-force defense is the Argon2id KDF cost (see deriveKeyArgon2id). Do not treat
+// this as a security control.
 const getDelay = (failCount) => {
   if (failCount <= 0) return 0;
   const delays = [5, 10, 30, 60, 300, 600, 1800, 3600, 14400, 86400];

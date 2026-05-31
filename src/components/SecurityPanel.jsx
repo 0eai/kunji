@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   KeyRound, Copy, CheckCircle2, AlertTriangle, Smartphone, ScanLine,
-  Lock, LogOut, Activity, Unlock, ShieldCheck, ShieldX, RotateCcw,
-  Link as LinkIcon, Unlink, Circle, ChevronRight,
+  Lock, LogOut, Activity, ChevronRight,
 } from 'lucide-react';
 import { exportRecoveryKey, resetUserVault } from '../services/vault';
 import { completeLink } from '../services/linking';
 import { listenToActivityLog } from '../services/activityLog';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
+import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 import QRScannerOverlay from './QRScannerOverlay';
 import InstallButton from './InstallButton';
 import Sheet from './ui/Sheet';
@@ -18,19 +18,6 @@ import { useToast } from '../contexts/ToastContext';
 const MIN_PASSPHRASE = 8;
 const CLEAR_MS = 60000;
 const SIGNOUT_CONFIRM = 'SIGN OUT';
-
-const ACTIVITY_ICONS = { Unlock, Lock, ShieldCheck, ShieldX, AlertTriangle, Smartphone, Link: LinkIcon, Unlink, RotateCcw, CheckCircle: CheckCircle2 };
-const TYPE_COLOR = { success: 'text-success', danger: 'text-danger', info: 'text-muted' };
-
-const relTime = (createdAt) => {
-  const ms = createdAt?.toMillis ? createdAt.toMillis() : (createdAt?.seconds ? createdAt.seconds * 1000 : null);
-  if (!ms) return '';
-  const s = Math.floor((Date.now() - ms) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-};
 
 // Navigable hairline row that expands in place.
 const Row = ({ icon: Icon, title, open, onToggle, children }) => (
@@ -114,7 +101,8 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleLinkScan = async (raw) => {
+  // useCallback so QRScannerOverlay's [onScan] effect doesn't restart the camera on re-render.
+  const handleLinkScan = useCallback(async (raw) => {
     setShowScanner(false);
     try {
       await completeLink(raw, cryptoKey);
@@ -126,7 +114,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         : 'Linking failed: ' + e.message;
       showToast(msg, 'error');
     }
-  };
+  }, [cryptoKey, showToast]);
 
   return (
     <Sheet onClose={onClose} labelledBy="security-title">
@@ -180,7 +168,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           ) : (
             <div className="divide-y divide-line border-t border-line max-h-64 overflow-y-auto">
               {events.map((e) => {
-                const Icon = ACTIVITY_ICONS[e.icon] || Circle;
+                const Icon = activityIcon(e.icon);
                 return (
                   <div key={e.id} className="flex items-center gap-3 py-3">
                     <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />

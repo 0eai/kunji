@@ -5,7 +5,6 @@
 // sub-modules for clarity:
 //
 //   import { encryptData, decryptData } from '../../lib/crypto/aes';
-//   import { generateRSAKeyPair }       from '../../lib/crypto/rsa';
 //   import { deriveECDHSharedSecret }   from '../../lib/crypto/ecdh';
 
 export {
@@ -23,17 +22,6 @@ export {
     keyToUrlString,
     keyFromUrlString,
 } from './aes';
-
-export {
-    // RSA-4096-OAEP
-    generateRSAKeyPair,
-    exportRSAPublicKey,
-    exportRSAPrivateKey,
-    importRSAPublicKey,
-    importRSAPrivateKey,
-    encryptRSA,
-    decryptRSA,
-} from './rsa';
 
 export {
     // ECDH P-256

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ScanLine, Lock, Shield, Settings } from 'lucide-react';
-import { listenToApps, deleteApp, registerApp, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps, lookupSessionByCode } from '../services/identity';
+import { listenToApps, deleteApp, registerApp, deriveAppIdentity, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps, lookupSessionByCode, isSafeReturnUrl } from '../services/identity';
 import { completeLink } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
@@ -61,7 +61,9 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, incomingApproval]);
 
-  const handleQRScan = async (rawValue) => {
+  // useCallback so QRScannerOverlay's [onScan] effect doesn't tear down the camera
+  // on every parent re-render.
+  const handleQRScan = useCallback(async (rawValue) => {
     setShowScanner(false);
 
     // A device-link QR ({kunjiLink:'v1'}) — transfer the master key to the new device.
@@ -84,13 +86,9 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     try {
       const qr = parseQRPayload(rawValue);
 
-      // Idempotent register (one entry per domain). isNew reflects first-ever use,
-      // independent of whether the in-memory app list has loaded yet.
-      const { registeredAppId, publicKey, isNew } = await registerApp(vaultId, cryptoKey, {
-        name: qr.appName || qr.audience,
-        domain: qr.audience,
-        iconUrl: qr.iconUrl || '',
-      }, user.uid);
+      // Derive the per-app identity for the approval screen WITHOUT writing to the
+      // vault — registration is persisted only after the user approves (handleApprove).
+      const { registeredAppId, publicKey, isNew } = await deriveAppIdentity(vaultId, cryptoKey, qr.audience);
 
       const sub = await deriveSubFromPublicKey(publicKey);
       setPendingSession({
@@ -108,15 +106,18 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         : 'Invalid QR code.';
       showToast(msg, 'error');
     }
-  };
+  }, [vaultId, cryptoKey, user.uid, showToast]);
 
   const handleApprove = async () => {
     if (!pendingSession) return;
-    const { audience, returnUrl } = pendingSession;
+    const { audience, returnUrl, appName, domain, iconUrl } = pendingSession;
     try {
+      // Persist the app to the vault only now that the user has consented (idempotent).
+      await registerApp(vaultId, cryptoKey, { name: appName, domain, iconUrl: iconUrl || '' }, user.uid);
       await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession);
       showToast(`Signed in to ${audience}`);
-      if (returnUrl) setReturnInfo({ audience, returnUrl });
+      // Only offer the "Return to …" link if it's https + same-site as the audience.
+      setReturnInfo({ audience, returnUrl: isSafeReturnUrl(returnUrl, audience) ? returnUrl : null });
     } catch (e) {
       showToast('Login failed: ' + e.message, 'error');
     } finally {
@@ -304,13 +305,15 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           <p className="text-[14px] text-muted leading-relaxed mb-6">
             You approved sign-in to <span className="font-mono text-ink">{returnInfo.audience}</span>.
           </p>
-          <a href={returnInfo.returnUrl}
-            className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors">
-            Return to {returnInfo.audience}
-          </a>
+          {returnInfo.returnUrl && (
+            <a href={returnInfo.returnUrl}
+              className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors">
+              Return to {returnInfo.audience}
+            </a>
+          )}
           <button onClick={() => setReturnInfo(null)}
             className="mt-2 w-full text-center text-sm font-medium text-muted hover:text-ink py-2 transition-colors">
-            Stay in kunji
+            {returnInfo.returnUrl ? 'Stay in kunji' : 'Done'}
           </button>
         </Sheet>
       )}

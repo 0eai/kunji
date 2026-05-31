@@ -130,15 +130,66 @@ export const parseQRPayload = (rawValue) => {
   return parsed;
 };
 
+// Bare public suffixes / TLDs that must never be accepted as an `audience` — otherwise
+// `host.endsWith('.'+audience)` would match unrelated sites (e.g. audience:"com" →
+// "evil.com"). Not exhaustive (a full PSL is the proper long-term fix); covers the
+// common cases that break the same-site guarantee.
+const PUBLIC_SUFFIXES = new Set([
+  'com', 'org', 'net', 'io', 'co', 'dev', 'app', 'xyz', 'cc', 'info', 'biz', 'me', 'ai', 'gg',
+  'co.uk', 'org.uk', 'gov.uk', 'ac.uk', 'com.au', 'net.au', 'org.au', 'co.in', 'co.jp',
+  'com.br', 'co.nz', 'co.za', 'com.mx', 'com.sg', 'com.hk',
+]);
+
+const normalizeHost = (h) => String(h || '').toLowerCase().replace(/\.$/, '');
+
+const isRegistrableDomain = (aud) => aud.includes('.') && !PUBLIC_SUFFIXES.has(aud);
+
 // The callback must be same-site as the audience and HTTPS (HTTP only for localhost).
+// The audience must be a plausible registrable domain — a bare TLD/public suffix is
+// rejected so it can't be abused to relay assertions to an unrelated host.
 const assertSameSiteCallback = (audience, callbackUrl) => {
   let cbUrl;
   try { cbUrl = new URL(callbackUrl); } catch { throw new Error('untrusted_callback'); }
-  const host = cbUrl.hostname;
+  const host = normalizeHost(cbUrl.hostname);
+  const aud = normalizeHost(audience);
   const isLocal = host === 'localhost' || host === '127.0.0.1';
-  const sameSite = host === audience || host.endsWith('.' + audience);
   const secure = cbUrl.protocol === 'https:' || (isLocal && cbUrl.protocol === 'http:');
+  if (isLocal) { if (!secure) throw new Error('untrusted_callback'); return; }
+  if (!isRegistrableDomain(aud)) throw new Error('untrusted_callback');
+  const sameSite = host === aud || host.endsWith('.' + aud);
   if (!sameSite || !secure) throw new Error('untrusted_callback');
+};
+
+/**
+ * Is `returnUrl` safe to render as a clickable link after sign-in? Must be HTTPS and
+ * same-site as the audience (localhost allowed in dev). `returnUrl` is attacker-
+ * controllable via the QR / deep link and is NOT part of the signed payload, so an
+ * unvalidated link is an open-redirect / phishing amplifier inside the trusted wallet.
+ */
+export const isSafeReturnUrl = (returnUrl, audience) => {
+  if (!returnUrl) return false;
+  let u;
+  try { u = new URL(returnUrl); } catch { return false; }
+  const host = normalizeHost(u.hostname);
+  const aud = normalizeHost(audience);
+  const isLocal = host === 'localhost' || host === '127.0.0.1';
+  if (isLocal) return u.protocol === 'http:' || u.protocol === 'https:';
+  if (u.protocol !== 'https:') return false;
+  if (!isRegistrableDomain(aud)) return false;
+  return host === aud || host.endsWith('.' + aud);
+};
+
+/**
+ * Derive the per-app identity (public key + sub + whether it's new) WITHOUT writing
+ * anything to the vault. Used to populate the approval screen before the user consents;
+ * the actual `registerApp` write happens only on approval.
+ */
+export const deriveAppIdentity = async (vaultId, cryptoKey, domain) => {
+  const { publicKey } = await deriveAppKeyPair(cryptoKey, domain);
+  const pubKeyBase64 = exportEd25519PublicKey(publicKey);
+  const id = await appIdForDomain(domain);
+  const existed = (await getDoc(appDoc(vaultId, id))).exists();
+  return { registeredAppId: id, publicKey: pubKeyBase64, isNew: !existed };
 };
 
 /**

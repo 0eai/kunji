@@ -34,8 +34,31 @@ const rateLimited = async (ip, max = 10, windowMs = 60 * 1000) => {
   });
 };
 
-// Create a login session. The frontend supplies the audience + callbackUrl it will
-// encode into the QR. (A production RP would hardcode its own domain server-side.)
+// Global cap on FAILED code lookups — defense-in-depth against distributed code
+// brute-force (per-IP limiting is XFF-spoofable). Only failures count, so legitimate
+// valid-code lookups never trip it.
+const GLOBAL_FAIL_REF = () => db.collection('rateLimits').doc('global_code_failures');
+const globalFailuresExceeded = async (max = 60, windowMs = 60 * 1000) => {
+  const snap = await GLOBAL_FAIL_REF().get();
+  const d = snap.exists ? snap.data() : null;
+  return !!d && (Date.now() - d.start <= windowMs) && d.count >= max;
+};
+const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
+  const ref = GLOBAL_FAIL_REF();
+  const now = Date.now();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : null;
+    if (!d || now - d.start > windowMs) tx.set(ref, { start: now, count: 1 });
+    else tx.update(ref, { count: d.count + 1 });
+  });
+};
+
+// Create a login session.
+// ⚠️ DEMO ONLY: this reads audience + callbackUrl from the request body so the demo
+// frontend can supply them. A PRODUCTION relying party MUST hardcode its own audience
+// and callbackUrl server-side and ignore the body — otherwise a caller can mint
+// sessions claiming an arbitrary domain.
 export const createSession = onRequest({ cors: true }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const { audience, callbackUrl } = req.body || {};
@@ -56,14 +79,15 @@ export const createSession = onRequest({ cors: true }, async (req, res) => {
 // can sign the challenge. Returns the challenge/callback (NOT an approval).
 export const lookupSession = onRequest({ cors: true }, async (req, res) => {
   if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
+  if (await globalFailuresExceeded()) return res.status(429).json({ error: 'rate_limited' });
+
   const code = String(req.query.code || '');
   if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'bad_code' });
 
   const q = await db.collection('loginSessions').where('code', '==', code).limit(1).get();
   const doc = q.docs[0];
-  if (!doc) return res.status(404).json({ error: 'invalid_code' });
-  const s = doc.data();
-  if (s.status !== 'pending') return res.status(404).json({ error: 'invalid_code' });
+  const s = doc?.data();
+  if (!doc || s.status !== 'pending') { await bumpGlobalFailure(); return res.status(404).json({ error: 'invalid_code' }); }
   if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_code' });
 
   res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: s.callbackUrl, expiresAt: s.expiresAt });
@@ -85,13 +109,24 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const assertion = req.body || {};
   const sessionId = assertion?.signedPayload?.sessionId;
-  const ref = sessionId ? sessionRef(sessionId) : null;
-  const snap = ref ? await ref.get() : null;
-  const session = snap?.exists ? snap.data() : null;
+  if (!sessionId) return res.status(400).json({ error: 'malformed_assertion' });
+  const ref = sessionRef(sessionId);
 
-  const result = verifyAssertion({ assertion, session, audience: session?.audience });
-  if (!result.ok) return res.status(400).json({ error: result.error });
-
-  await ref.update({ status: 'approved', sub: result.sub });
-  res.json({ status: 'ok' });
+  try {
+    // Verify + consume atomically so a captured/duplicated assertion can't approve
+    // the same session twice (single-use, spec §6.7).
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const session = snap.exists ? snap.data() : null;
+      const r = verifyAssertion({ assertion, session, audience: session?.audience });
+      if (!r.ok) return r;
+      if (session.status !== 'pending') return { ok: false, error: 'session_consumed' };
+      tx.update(ref, { status: 'approved', sub: r.sub });
+      return r;
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ status: 'ok' });
+  } catch {
+    res.status(500).json({ error: 'callback_failed' });
+  }
 });

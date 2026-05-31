@@ -2,7 +2,7 @@ import { doc, getDoc, setDoc, deleteField } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
   deriveKeyFromPasskey, deriveKeyArgon2id, generateSalt, generateMasterKey,
-  exportKey, importMasterKey, encryptData, decryptData
+  exportKey, importMasterKey, encryptData, decryptData, getDefaultIterations
 } from '../lib/crypto';
 
 export const attemptVaultUnlock = async (userId, password) => {
@@ -105,7 +105,7 @@ export const exportRecoveryKey = async (userId, passkey, recoveryPassphrase) => 
 
   const wrapperKey = kdf === 'argon2id'
     ? await deriveKeyArgon2id(passkey, encryptionSalt)
-    : await deriveKeyFromPasskey(passkey, encryptionSalt, iterations || 100000);
+    : await deriveKeyFromPasskey(passkey, encryptionSalt, iterations || getDefaultIterations());
 
   const masterKeyJWK = await decryptData(encryptedMasterKey, wrapperKey);
   if (!masterKeyJWK) throw new Error('Current passkey is incorrect.');

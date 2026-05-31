@@ -23,23 +23,35 @@ function readIncomingApproval() {
 export default function App() {
   const { user, cryptoKey, loading, lockReason, setAuthUser, unlockVault, lockVault } = useVault();
   const [incomingApproval] = useState(readIncomingApproval);
+  const [authError, setAuthError] = useState(false);
 
   // Sign in anonymously on first load, persist session
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setAuthUser(firebaseUser);
+        setAuthError(false);
       } else {
         try {
           const anonUser = await ensureAnonymousAuth();
           setAuthUser(anonUser);
+          setAuthError(false);
         } catch (e) {
           console.error('Anonymous auth failed:', e);
+          setAuthError(true);
         }
       }
     });
     return unsub;
   }, [setAuthUser]);
+
+  // If no session is established within a few seconds (blocked storage, offline,
+  // private mode), surface an actionable error instead of a perpetual "Connecting…".
+  useEffect(() => {
+    if (user) return;
+    const t = setTimeout(() => setAuthError(true), 8000);
+    return () => clearTimeout(t);
+  }, [user]);
 
   // Auto-lock on inactivity (default 20 hours, stored in localStorage as kunji_autolock minutes)
   useEffect(() => {
@@ -84,15 +96,29 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="h-[100dvh] w-full flex items-center justify-center bg-[#09090b]">
-        <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+      <div className="h-[100dvh] w-full flex items-center justify-center bg-paper">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!user) {
+    if (authError) {
+      return (
+        <div className="h-[100dvh] w-full flex flex-col items-center justify-center gap-4 bg-paper text-ink px-6 text-center">
+          <p className="text-[15px] font-medium">Couldn't connect</p>
+          <p className="text-[14px] text-muted max-w-xs leading-relaxed">
+            kunji needs storage and network access. Check your connection, and if you're in private mode or have strict tracking protection on, allow this site.
+          </p>
+          <button onClick={() => window.location.reload()}
+            className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors">
+            Try again
+          </button>
+        </div>
+      );
+    }
     return (
-      <div className="h-[100dvh] w-full flex items-center justify-center bg-[#09090b] text-gray-500 text-sm">
+      <div className="h-[100dvh] w-full flex items-center justify-center bg-paper text-faint text-sm">
         Connecting…
       </div>
     );
