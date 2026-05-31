@@ -1,8 +1,8 @@
 # Kunji Discoverable Login — Protocol Design
 
-**Status:** Draft v0.1
-**Scope:** How a multi-user app (e.g. cloq) replaces Google sign-in with "Sign in with kunji",
-without kunji sharing any database with the app.
+**Status:** Implemented (v2 discoverable) — shipped in the kunji wallet, the `rp.js` drop-in widget, and a working demo relying party. See §13 for where the code lives.
+**Scope:** How any multi-user app replaces Google / password sign-in with "Sign in with kunji",
+without kunji sharing any database with the app. ("cloq" is used throughout as the example relying party; it stands in for any RP.)
 
 ---
 
@@ -141,7 +141,7 @@ Rules:
 }
 ```
 
-- `sub = SHA-256(publicKey)` — self-contained, no kunji UID involved. Stable per (user, app), different across apps.
+- `sub = hex( SHA-256( utf8(publicKeyBase64) ) )` — the SHA-256 of the base64 public-key *string*, hex-encoded. Self-contained, no kunji UID involved. Stable per (user, app), different across apps. (Implemented as `deriveSubFromPublicKey` in `src/services/identity.js`; the RP recomputes it via `subFromPublicKey` in `examples/kunji-login-demo/functions/verify.js`.)
 - Signature uses the existing `signWithEd25519` canonical-JSON scheme already in `src/lib/crypto`.
 
 ### 5.3 Callback response (cloq → wallet)
@@ -235,8 +235,9 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 - `createSession` + `pollSession` endpoints over **cloq's own** session store.
 - `/kunji/callback` endpoint implementing the §6 verification.
 - The §7 custom-token mint.
+- A read-only **status/poll** endpoint (`GET ?sessionId=` → `{ status, sub, customToken? }`) the frontend/widget polls until `approved`.
 - Frontend: render the v2 QR, poll, `signInWithCustomToken`, then proceed to existing vault unlock.
-- (Optional) ship a thin `kunji-rp-sdk.js` wrapping createSession/poll/QR so other apps integrate in a few lines.
+- A drop-in widget is **shipped** so RPs don't have to build the UI: `<script src="https://kunji.cc/rp.js">` renders the button, opens the QR / OTP modal, and polls the status endpoint — see §13.
 
 ---
 
@@ -250,4 +251,27 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 - Kunji provisioning the app's encryption key → single-passphrase UX (collapses the §9.2 two-passphrase seam).
 - Local/LAN app login (loopback or same-device `postMessage` channel).
 - Optional self-asserted profile (name/avatar) shared per-app via OAuth-style consent scopes.
-```
+
+---
+
+## 13. Implementation & reference (where the code lives)
+
+**Wallet — the kunji PWA (this repo):**
+- v2 QR parsing, idempotent per-domain key registration, the assertion signer + POST, and `deriveSubFromPublicKey` → `src/services/identity.js`.
+- Approval UI (app + domain + truncated `sub`, "first time here", expiry) → `src/components/ApprovalModal.jsx`.
+- Crypto (Argon2id, AES-GCM, Ed25519, canonical-JSON signer) → `src/lib/crypto/`.
+
+**Relying-party reference — `examples/kunji-login-demo/`:**
+- `functions/index.js` — `createSession` (challenge + TTL + 6-digit code), `lookupSession` (resolve a typed code, rate-limited), `getSessionStatus` (read-only poll → `{ status, sub }`), `kunjiCallback` (the wallet POSTs the signed assertion here).
+- `functions/verify.js` — `canonicalJson`, `subFromPublicKey`, and `verifyAssertion` enforcing all of §6.
+- `firebase.json` — Hosting rewrites mapping `/kunji/session`, `/kunji/status`, `/kunji/callback` to those functions (so the callback is same-site as the audience).
+- Firestore rule for `loginSessions` (get-only; writes are server-only via Admin) → root `firestore.rules`.
+
+**Drop-in widget — `rp.js`:**
+- Source `widget/src/index.js`, bundled to `landing/rp.js` (+ pinned `rp.v1.js`), served at `https://kunji.cc/rp.js`.
+- Renders the official "Sign in with kunji" button in a shadow root, opens the QR / OTP modal + same-device deep link, and polls the RP's own status endpoint — then fires `kunji:success` (`{ sub, customToken? }`) or redirects. Pure client: it talks only to the RP's endpoints, never to a kunji server.
+
+**Developer guides (live):**
+- `https://kunji.cc/developers` — stack-agnostic protocol guide.
+- `https://kunji.cc/developers/firebase` — end-to-end Firebase guide (widget-first, then the functions/rules above).
+- `https://kunji.cc/developers/try` — the widget running live against the demo's endpoints.
