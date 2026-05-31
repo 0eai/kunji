@@ -6,6 +6,7 @@
    Generous negative space. One amber accent. Geist + Geist Mono.
    ─────────────────────────────────────────────────────────────── */
 @theme {
+  /* --color-paper: keep in sync with public/theme-init.js, src/lib/theme.js, manifest.json */
   --color-paper:        #faf9f6;
   --color-surface:      #ffffff;
   --color-ink:          #1a1a18;

@@ -4,7 +4,7 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
-import { VaultProvider } from './context/VaultContext';
+import { VaultProvider } from './contexts/VaultContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { watchSystem } from './lib/theme';
 import './index.css';

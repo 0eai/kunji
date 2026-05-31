@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import {
   KeyRound, Copy, CheckCircle2, AlertTriangle, Smartphone, ScanLine,
   Lock, LogOut, Activity, ChevronRight,
@@ -9,11 +9,13 @@ import { listenToActivityLog } from '../services/activityLog';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
-import QRScannerOverlay from './QRScannerOverlay';
 import InstallButton from './InstallButton';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
+
+// Lazy: the camera scanner (jsqr) loads only when opened.
+const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
 const MIN_PASSPHRASE = 8;
 const CLEAR_MS = 60000;
@@ -216,7 +218,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
       </div>
 
       {showScanner && (
-        <QRScannerOverlay onScan={handleLinkScan} onClose={() => setShowScanner(false)} />
+        <Suspense fallback={<div className="fixed inset-0 z-[200] bg-black" />}>
+          <QRScannerOverlay onScan={handleLinkScan} onClose={() => setShowScanner(false)} />
+        </Suspense>
       )}
 
       {linkConfirm && (

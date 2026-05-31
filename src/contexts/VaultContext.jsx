@@ -1,4 +1,4 @@
-// src/context/VaultContext.jsx
+// src/contexts/VaultContext.jsx
 // Single Source of Truth for authentication and vault encryption state.
 // Auto-lock logic lives in App.jsx (configurable timer + lock-on-hidden).
 // This context only holds state; it does NOT manage timers or side-effects.

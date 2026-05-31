@@ -4,6 +4,17 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
 
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          crypto: ['@noble/curves/ed25519.js', 'hash-wasm'],
+        },
+      },
+    },
+  },
+
   server: {
     host: true,
     strictPort: true,

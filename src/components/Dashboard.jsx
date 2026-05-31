@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { ScanLine, Lock, Shield, Settings } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, deriveAppIdentity, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps, lookupSessionByCode, isSafeReturnUrl } from '../services/identity';
 import { completeLink, vaultFingerprint } from '../services/linking';
@@ -6,12 +6,14 @@ import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
-import QRScannerOverlay from './QRScannerOverlay';
 import SecurityPanel from './SecurityPanel';
 import CodeEntryModal from './CodeEntryModal';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
+
+// Lazy: the camera scanner (jsqr) loads only when opened.
+const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
 const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const { showToast } = useToast();
@@ -240,10 +242,12 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
 
       {/* Modals */}
       {showScanner && (
-        <QRScannerOverlay
-          onScan={handleQRScan}
-          onClose={() => setShowScanner(false)}
-        />
+        <Suspense fallback={<div className="fixed inset-0 z-[200] bg-black" />}>
+          <QRScannerOverlay
+            onScan={handleQRScan}
+            onClose={() => setShowScanner(false)}
+          />
+        </Suspense>
       )}
 
       {pendingSession && (

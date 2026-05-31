@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Key, AlertTriangle, ArrowRight } from 'lucide-react';
 import { db } from '../lib/firebase';
@@ -10,8 +10,14 @@ import {
 import { resetUserVault } from '../services/vault';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
-import LinkDeviceScreen from './LinkDeviceScreen';
 import InstallButton from './InstallButton';
+// Lazy: pulls in the qrcode lib + linking flow only when the user links a device.
+const LinkDeviceScreen = lazy(() => import('./LinkDeviceScreen'));
+const LazyFallback = () => (
+  <div className="h-[100dvh] w-full flex items-center justify-center bg-paper">
+    <div className="w-7 h-7 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 import Sheet from './ui/Sheet';
 import { Field, PasswordField, Btn, Spinner } from './ui/primitives';
 
@@ -290,7 +296,11 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const strength = (isNewUser || isRecovering) ? getStrength(keyInput) : null;
 
   if (isLinking) {
-    return <LinkDeviceScreen user={user} onUnlock={onUnlock} onCancel={() => setIsLinking(false)} />;
+    return (
+      <Suspense fallback={<LazyFallback />}>
+        <LinkDeviceScreen user={user} onUnlock={onUnlock} onCancel={() => setIsLinking(false)} />
+      </Suspense>
+    );
   }
 
   const isError = status === 'Incorrect Passkey' || status.startsWith('Too many') || status === 'Wiping data...';

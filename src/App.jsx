@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useVault } from './context/VaultContext';
+import { useVault } from './contexts/VaultContext';
 import { auth, ensureAnonymousAuth, onAuthStateChanged } from './lib/firebase';
 import { logActivity } from './services/activityLog';
 import LockScreen from './components/LockScreen';
 import Dashboard from './components/Dashboard';
+
+// Default auto-lock timeout in minutes (20 hours) when the user hasn't set one.
+const AUTO_LOCK_DEFAULT_MIN = 1200;
 
 // Same-device deep link: an RP opens app.kunji.cc/?approve=<base64url(JSON payload)>.
 // Decode it once at startup so the Dashboard can show the approval without scanning.
@@ -58,7 +61,7 @@ export default function App() {
     if (!cryptoKey || !user) return;
     const getTimeout = () => {
       const saved = localStorage.getItem('kunji_autolock');
-      const minutes = saved ? parseInt(saved) : 1200;
+      const minutes = saved ? parseInt(saved) : AUTO_LOCK_DEFAULT_MIN;
       return minutes === 0 ? null : minutes * 60000;
     };
     let timer = null;
