@@ -18,7 +18,9 @@ const canonicalJson = (o) =>
     : JSON.stringify(Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]])));
 
 const b64 = (s) => Buffer.from(s, 'base64');
-const HEX64 = /^[0-9a-f]{64}$/i;        // vaultId + appId are 64-hex (SHA-256 / 256-bit)
+const HEX64 = /^[0-9a-f]{64}$/i;          // vaultId is the 64-hex master-key-derived id
+const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // a Firestore-doc-id-safe appId (64-hex for new
+                                          // apps; legacy apps may have random ~20-char ids)
 const MAX_DOC_BYTES = 16 * 1024;
 
 export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
@@ -26,7 +28,7 @@ export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
   const { vaultId, op, appId, doc: docPayload, publicKey, signedToken, timestamp } = req.body || {};
 
   // 1. shape
-  if (!HEX64.test(vaultId || '') || !HEX64.test(appId || '') ||
+  if (!HEX64.test(vaultId || '') || !SAFE_ID.test(appId || '') ||
       (op !== 'set' && op !== 'delete') ||
       !publicKey || !signedToken || typeof timestamp !== 'number') {
     return res.status(400).json({ error: 'bad_request' });
