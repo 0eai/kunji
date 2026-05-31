@@ -89,6 +89,11 @@ h1 { font-size: clamp(40px, 9vw, 68px); font-weight: 600; letter-spacing: -0.035
 .feature .idx { font-family: var(--mono); font-size: 13px; color: var(--faint); padding-top: 2px; }
 .feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 5px; letter-spacing: -0.01em; }
 .feature p { font-size: 14.5px; color: var(--muted); line-height: 1.6; }
+a.feature { text-decoration: none; color: inherit; transition: background .15s ease; }
+a.feature:hover { background: #f4f2ee; }
+a.feature h3 { display: inline-flex; align-items: center; gap: 6px; }
+a.feature h3::after { content: '→'; color: var(--accent); opacity: 0; transform: translateX(-4px); transition: all .15s ease; }
+a.feature:hover h3::after { opacity: 1; transform: translateX(0); }
 
 footer { padding: 28px 0; color: var(--faint); font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 footer a { color: var(--muted); text-decoration: none; font-family: var(--mono); transition: color .15s ease; }
