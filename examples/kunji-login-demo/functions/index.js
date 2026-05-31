@@ -125,7 +125,8 @@ export const getSessionStatus = onRequest({ cors: true }, async (req, res) => {
   const snap = await sessionRef(sessionId).get();
   if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
   const s = snap.data();
-  res.json({ status: s.status, sub: s.sub || null });
+  // `claims` is the optional, self-asserted profile the user chose to share (or null).
+  res.json({ status: s.status, sub: s.sub || null, claims: s.claims || null });
 });
 
 // The wallet POSTs the signed assertion here (spec §5.2). Full §6 verification.
@@ -145,7 +146,7 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
       const r = verifyAssertion({ assertion, session, audience: session?.audience });
       if (!r.ok) return r;
       if (session.status !== 'pending') return { ok: false, error: 'session_consumed' };
-      tx.update(ref, { status: 'approved', sub: r.sub });
+      tx.update(ref, { status: 'approved', sub: r.sub, claims: r.claims || null });
       return r;
     });
     if (!result.ok) return res.status(400).json({ error: result.error });

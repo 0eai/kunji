@@ -63,11 +63,24 @@ kunji app. Tap **Approve** → the page signs you in and shows your `sub`.
     "challenge": "...",
     "audience": "kunji-demo.web.app",
     "sub": "<hex>",
-    "timestamp": 0
+    "timestamp": 0,
+    "claims": { "name": "Ada Lovelace", "picture": "data:…" }
   },
   "signedToken": "<base64 Ed25519 signature over canonical-JSON(signedPayload)>"
 }
 ```
+
+## Showing the user (default identity + claims)
+
+This demo requests `scope: ['profile']`, so the wallet offers to share a custom name/photo. After
+verification the demo renders the resolved identity (`src/Dashboard.jsx`):
+
+- **`claims` present** (user consented) → show `claims.name` / `claims.picture`. These are signed but
+  **self-asserted and unverified** — the demo treats them as untrusted (React escapes the name; the
+  picture is an `<img>`, never server-fetched).
+- **no `claims`** → fall back to the deterministic default identity from `sub` via
+  `deriveHandle(sub)` (`src/lib/kunjiHandle.js`) — a friendly name + kunji identicon, stable and
+  unlinkable. A third-party RP would use `kunji.handle(sub)` from `rp.js` instead.
 
 ## Going to production
 

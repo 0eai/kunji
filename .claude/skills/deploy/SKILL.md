@@ -18,8 +18,11 @@ Firebase project **`kunji-cc`**. Always deploy with an **explicit `--only` targe
 | `functions:app` | — | `/vault/write` rewrite | `functions/` (codebase `app`, Node 20, us-central1) |
 | `firestore:rules` | — | — | `firestore.rules` |
 
-The **demo** (`examples/kunji-login-demo/`) is a **separate Firebase project** with its own
-`.firebaserc`. It is NEVER deployed from here — `cd` into it and deploy on its own config.
+The **demo** (`examples/kunji-login-demo/`) is in the **same project** `kunji-cc` but has its own
+`firebase.json` — `cd` into it and deploy from there. It serves Hosting site **`kunji-demo`** and its
+four functions live in the **default** Functions codebase, isolated from the app's `app` codebase
+(deploying one never prunes the other). Build it first (`npm run build`), then:
+`firebase deploy --only "hosting:kunji-demo,functions"`.
 
 ## Pre-flight (always)
 

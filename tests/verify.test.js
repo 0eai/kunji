@@ -20,6 +20,7 @@ async function buildAssertion({
   sub,
   timestamp = Date.now(),
   tamper = false,
+  claims,
 } = {}) {
   const { secretKey, publicKey } = await deriveAppKeyPair(await generateMasterKey(), AUD);
   const publicKeyB64 = exportEd25519PublicKey(publicKey);
@@ -30,6 +31,7 @@ async function buildAssertion({
     sub: sub ?? subFromPublicKey(publicKeyB64),
     timestamp,
   };
+  if (claims) signedPayload.claims = claims; // optional self-asserted profile
   // tamper = a valid signature over a *different* payload → fails verification against signedPayload.
   const signedToken = tamper
     ? signWithEd25519({ ...signedPayload, sessionId: sessionId + '_x' }, secretKey)
@@ -55,6 +57,24 @@ describe('verifyAssertion', () => {
     const r = verifyAssertion({ assertion, session: session(), audience: AUD });
     expect(r.ok).toBe(true);
     expect(r.sub).toBe(assertion.signedPayload.sub);
+    expect(r.claims).toBeNull(); // no profile shared
+  });
+
+  it('returns consented profile claims when present', async () => {
+    const claims = { name: 'Ada Lovelace', picture: 'data:image/svg+xml,<svg/>' };
+    const r = verifyAssertion({
+      assertion: await buildAssertion({ claims }),
+      session: session(),
+      audience: AUD,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.claims).toEqual(claims);
+  });
+
+  it('rejects an assertion whose claims were tampered after signing', async () => {
+    const assertion = await buildAssertion({ claims: { name: 'Ada' } });
+    assertion.signedPayload.claims.name = 'Mallory'; // mutate after signing
+    expectErr(verifyAssertion({ assertion, session: session(), audience: AUD }), 'bad_signature');
   });
 
   it('rejects malformed', () => {

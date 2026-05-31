@@ -3,12 +3,12 @@ import LoginPage from './LoginPage.jsx';
 import Dashboard from './Dashboard.jsx';
 
 export default function App() {
-  const [auth, setAuth] = useState(null); // { sub }
+  const [auth, setAuth] = useState(null); // { sub, claims }
 
   return (
     <div className="min-h-[100dvh] bg-paper text-ink flex flex-col">
       {auth ? (
-        <Dashboard sub={auth.sub} onLogout={() => setAuth(null)} />
+        <Dashboard sub={auth.sub} claims={auth.claims} onLogout={() => setAuth(null)} />
       ) : (
         <LoginPage onSuccess={setAuth} />
       )}

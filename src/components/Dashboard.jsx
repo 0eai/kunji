@@ -11,7 +11,9 @@ import {
   migrateLegacyApps,
   lookupSessionByCode,
   isSafeReturnUrl,
+  requestsProfile,
 } from '../services/identity';
+import { loadProfile } from '../services/profile';
 import { completeLink, vaultFingerprint } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
@@ -31,6 +33,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [vaultId, setVaultId] = useState(null);
+  const [profile, setProfile] = useState(null); // user's optional custom profile (Layer 2)
 
   const [showScanner, setShowScanner] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
@@ -56,6 +59,14 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       setLoading(false);
     });
     return unsub;
+  }, [vaultId, cryptoKey]);
+
+  // Load the optional custom profile so the approval screen can offer to share it.
+  useEffect(() => {
+    if (!vaultId) return;
+    loadProfile(vaultId, cryptoKey)
+      .then(setProfile)
+      .catch(() => setProfile(null));
   }, [vaultId, cryptoKey]);
 
   // One-time: bring forward apps registered before the move to vaultId storage.
@@ -128,6 +139,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           domain: qr.audience,
           sub,
           isNew,
+          requestProfile: requestsProfile(qr),
         });
       } catch (err) {
         const msg =
@@ -142,7 +154,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     [vaultId, cryptoKey, user.uid, showToast],
   );
 
-  const handleApprove = async () => {
+  const handleApprove = async (shareProfile) => {
     if (!pendingSession) return;
     const { audience, returnUrl, appName, domain, iconUrl } = pendingSession;
     try {
@@ -153,7 +165,12 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         { name: appName, domain, iconUrl: iconUrl || '' },
         user.uid,
       );
-      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession);
+      // Share the custom profile only if the user toggled it on for this login.
+      const claims =
+        shareProfile && profile
+          ? { name: profile.displayName, picture: profile.avatar }
+          : undefined;
+      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims);
       showToast(`Signed in to ${audience}`);
       // Only offer the "Return to …" link if it's https + same-site as the audience.
       setReturnInfo({
@@ -310,6 +327,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       {pendingSession && (
         <ApprovalModal
           session={pendingSession}
+          profile={profile}
           onApprove={handleApprove}
           onDeny={handleDeny}
           onClose={() => setPendingSession(null)}

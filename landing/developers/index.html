@@ -267,8 +267,14 @@ const token = await admin.auth().createCustomToken(session.sub, {
   "audience": "yourapp.com",
   "callbackUrl": "https://yourapp.com/kunji/callback",
   "appName": "Your App",
-  "expiresAt": 1750000000000
+  "expiresAt": 1750000000000,
+  "scope": ["profile"]
 }</code></pre>
+          <p class="note">
+            <code class="k">scope</code> is optional. Add <code class="k">["profile"]</code> (widget:
+            <code class="k">data-scope="profile"</code>) to ask the wallet to <em>offer</em> sharing a
+            custom name/photo. The user may decline, so always fall back to the default identity.
+          </p>
           <h2 style="font-size: 16px; margin: 24px 0 6px">
             Signed assertion — wallet → your callback
           </h2>
@@ -279,10 +285,39 @@ const token = await admin.auth().createCustomToken(session.sub, {
     "challenge": "64-hex-byte nonce (echoed back)",
     "audience": "yourapp.com",
     "sub": "hex SHA-256 of the base64 publicKey",
-    "timestamp": 1750000000123
+    "timestamp": 1750000000123,
+    "claims": { "name": "Ada Lovelace", "picture": "data:image/webp;base64,…" }
   },
   "signedToken": "base64 Ed25519 signature over canonicalJson(signedPayload)"
 }</code></pre>
+          <p class="note">
+            <code class="k">claims</code> appears only if the user consented (§ scope). It's signed
+            (tamper-evident) but <b>self-asserted and never verified</b> — treat it as untrusted.
+          </p>
+        </section>
+
+        <!-- Showing the user -->
+        <section class="sec">
+          <div class="sec-label">Showing the user — name &amp; avatar</div>
+          <p>
+            kunji authenticates; <b>your app owns the profile.</b> You get a stable, anonymous
+            <code class="k">sub</code> — not a Google-style verified name/email/photo. So you never
+            show a blank avatar, every <code class="k">sub</code> maps to a friendly
+            <b>default name + identicon</b>, derived right from the <code class="k">sub</code> you
+            already have (distinct per app, stable, unlinkable — no PII, no extra call):
+          </p>
+          <pre><code>// rp.js exposes the helper — no assertion change needed
+const { name, avatarDataUri } = kunji.handle(sub);
+profileEl.textContent = name;          // e.g. "Wandering Fox 42"
+imgEl.src = avatarDataUri;             // kunji-themed identicon</code></pre>
+          <p class="note">
+            If the user shared a custom profile, prefer <code class="k">claims</code> — but render it
+            as untrusted: HTML-escape <code class="k">name</code>, show <code class="k">picture</code>
+            only as a client-side <code class="k">&lt;img&gt;</code> (never server-fetch it), and
+            never use claims for auth. Store your profile keyed by <code class="k">sub</code>; for a
+            multi-app suite, use one consistent <code class="k">audience</code> for one shared
+            identity. Need a contact email? Ask the user directly — kunji doesn't provide one.
+          </p>
         </section>
 
         <!-- Verification checklist -->
@@ -323,6 +358,13 @@ const token = await admin.auth().createCustomToken(session.sub, {
               <span><code class="k">timestamp</code> is within ±2 minutes of server time.</span>
             </li>
             <li><span>Mark the session consumed — reject any re-submission (single-use).</span></li>
+            <li>
+              <span
+                >If <code class="k">claims</code> is present, treat it as <b>untrusted</b>:
+                HTML-escape the name, render the picture client-side only, never use it for
+                authorization.</span
+              >
+            </li>
           </ul>
         </section>
 
@@ -344,9 +386,11 @@ const token = await admin.auth().createCustomToken(session.sub, {
         <section class="sec">
           <div class="sec-label">Reference</div>
           <p class="note">
-            A complete, working relying-party — <code class="k">createSession</code>, the QR/code
-            frontend, and the full <code class="k">verifyAssertion</code> — lives in the kunji repo
-            under <code class="k">examples/kunji-login-demo</code>. Try it live:
+            Two complete, working relying parties live in the kunji repo —
+            <code class="k">examples/kunji-login-demo</code> (Firebase) and
+            <code class="k">examples/kunji-node-demo</code> (plain Node — no Firebase, no framework,
+            with a wallet simulator so you can run the whole flow locally). Both implement the full
+            <code class="k">verifyAssertion</code>. Try the hosted one live:
           </p>
           <div class="cta-row" style="margin-top: 20px">
             <a class="cta" href="https://kunji-demo.web.app">

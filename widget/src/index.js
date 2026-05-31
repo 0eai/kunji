@@ -16,6 +16,7 @@
  *        data-redirect="/dashboard"></div>      (optional; else listen for 'kunji:success')
  */
 import QRCode from 'qrcode';
+import { deriveHandle } from '../../src/lib/kunjiHandle.js';
 
 const APP_URL_DEFAULT = 'https://app.kunji.cc';
 const POLL_MS = 2000;
@@ -123,8 +124,17 @@ function readOpts(node, override = {}) {
     appUrl: override.appUrl || d.appUrl || APP_URL_DEFAULT,
     theme: override.theme || d.theme || 'light',
     label: override.label || d.label || 'Sign in with kunji',
+    // Optional OAuth-style scopes, e.g. data-scope="profile". The wallet only ever
+    // SHOWS a consent toggle for these — claims are self-asserted and may be absent.
+    scope: override.scope || d.scope || '',
   };
 }
+
+// Parse a "profile" / "profile,email" scope string into a clean array of tokens.
+const parseScope = (raw) =>
+  String(raw || '')
+    .split(/[\s,]+/)
+    .filter(Boolean);
 
 // ── the modal / flow ────────────────────────────────────────────
 function openModal(opts, sourceEl) {
@@ -213,6 +223,8 @@ function openModal(opts, sourceEl) {
       expiresAt: session.expiresAt,
       returnUrl: location.href,
     };
+    const scope = parseScope(opts.scope);
+    if (scope.length) payload.scope = scope;
     const qrData = JSON.stringify(payload);
     // Only ever build the deep link against an https wallet URL — reject
     // javascript:/data:/http: so a hostile data-app-url can't inject a scheme.
@@ -352,4 +364,8 @@ window.kunji = {
     render(typeof elOrSel === 'string' ? document.querySelector(elOrSel) : elOrSel, opts),
   signIn: (opts) => openModal(readOpts(null, opts || {}), null),
   init,
+  // Render the default pseudonymous identity (name + identicon) for a `sub` you
+  // received. Returns { name, avatarSvg, avatarDataUri }. Deterministic + offline —
+  // use it when the user has not shared a custom profile (no `claims`).
+  handle: (sub) => deriveHandle(sub),
 };

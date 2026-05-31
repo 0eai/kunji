@@ -10,6 +10,7 @@ import {
   LogOut,
   Activity,
   ChevronRight,
+  UserCircle,
 } from 'lucide-react';
 import { exportRecoveryKey, resetUserVault } from '../services/vault';
 import { completeLink, vaultFingerprint } from '../services/linking';
@@ -18,6 +19,7 @@ import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 import InstallButton from './InstallButton';
+import ProfileSettings from './ProfileSettings';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
@@ -52,7 +54,12 @@ const Row = ({ icon: Icon, title, open, onToggle, children }) => (
 const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   const { showToast } = useToast();
 
-  const [open, setOpen] = useState({ link: false, recovery: false, activity: false });
+  const [open, setOpen] = useState({
+    profile: false,
+    link: false,
+    recovery: false,
+    activity: false,
+  });
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   const [theme, setTheme] = useState(getThemePref());
@@ -148,6 +155,15 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
       <SectionLabel className="mb-1">Identity</SectionLabel>
       <div className="divide-y divide-line border-y border-line">
+        <Row
+          icon={UserCircle}
+          title="Profile"
+          open={open.profile}
+          onToggle={() => toggle('profile')}
+        >
+          <ProfileSettings userId={userId} cryptoKey={cryptoKey} />
+        </Row>
+
         <Row
           icon={Smartphone}
           title="Link a device"

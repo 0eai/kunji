@@ -74,11 +74,11 @@ export default function LoginPage({ onSuccess }) {
     }
   };
 
-  const succeed = (sub) => {
+  const succeed = (sub, claims) => {
     stop();
     localStorage.removeItem(RESUME_KEY);
     setStatus('approved');
-    setTimeout(() => onSuccess({ sub }), 700);
+    setTimeout(() => onSuccess({ sub, claims: claims || null }), 700);
   };
 
   // Poll our own backend for approval. loginSessions is server-only (the demo no
@@ -91,7 +91,7 @@ export default function LoginPage({ onSuccess }) {
         const r = await fetch(`/kunji/status?sessionId=${encodeURIComponent(sessionId)}`);
         if (!r.ok) return;
         const s = await r.json();
-        if (s.status === 'approved') succeed(s.sub);
+        if (s.status === 'approved') succeed(s.sub, s.claims);
       } catch {
         /* transient */
       }
@@ -128,6 +128,9 @@ export default function LoginPage({ onSuccess }) {
         appName: APP_NAME,
         expiresAt,
         returnUrl: window.location.href,
+        // Ask kunji to OFFER sharing a profile. The user may decline — claims are
+        // optional, so we always fall back to the default identity derived from `sub`.
+        scope: ['profile'],
       };
       const qrData = JSON.stringify(payload);
       setQrUrl(

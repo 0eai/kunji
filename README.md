@@ -22,6 +22,8 @@ The plain-language + verifiable version of all this lives at **[kunji.cc/securit
 
 kunji shares **no database** with your app and runs **no backend in the login path**. You create a session, show a QR / 6-digit code, and verify a signed assertion the wallet POSTs straight to your own callback.
 
+**kunji authenticates; your app owns the profile.** You get a stable, anonymous per-app `sub` — not a verified name/email/photo. To avoid blank avatars, every `sub` maps to a friendly default name + identicon via `kunji.handle(sub)`; the user can optionally share a custom (self-asserted, unverified) profile per app. See [§8 of the protocol doc](docs/discoverable-login.md).
+
 Fastest path — the drop-in widget:
 
 ```html
@@ -39,7 +41,7 @@ Fastest path — the drop-in widget:
 
 - **Protocol & message formats:** [`docs/discoverable-login.md`](docs/discoverable-login.md)
 - **Guides:** [kunji.cc/developers](https://kunji.cc/developers) · [Firebase end-to-end](https://kunji.cc/developers/firebase) · [try it live](https://kunji.cc/developers/try)
-- **Working reference RP:** [`examples/kunji-login-demo/`](examples/kunji-login-demo)
+- **Working reference RPs:** [`examples/kunji-login-demo/`](examples/kunji-login-demo) (Firebase) · [`examples/kunji-node-demo/`](examples/kunji-node-demo) (plain Node — no Firebase, no framework)
 
 ## Repository layout
 

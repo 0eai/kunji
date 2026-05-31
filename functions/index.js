@@ -28,15 +28,30 @@ const HEX64 = /^[0-9a-f]{64}$/i; // vaultId is the 64-hex master-key-derived id
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // a Firestore-doc-id-safe appId (64-hex for new
 // apps; legacy apps may have random ~20-char ids)
 const MAX_DOC_BYTES = 16 * 1024;
+const MAX_PROFILE_BYTES = 64 * 1024; // profile may carry a small encrypted avatar
 
 export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-  const { vaultId, op, appId, doc: docPayload, publicKey, signedToken, timestamp } = req.body || {};
+  const {
+    vaultId,
+    op,
+    appId,
+    kind,
+    doc: docPayload,
+    publicKey,
+    signedToken,
+    timestamp,
+  } = req.body || {};
+
+  // `kind` selects the target collection: undefined/'app' → apps/{appId} (back-compat,
+  // existing clients omit it), 'profile' → profile/self (the user's custom profile).
+  const isProfile = kind === 'profile';
 
   // 1. shape
   if (
     !HEX64.test(vaultId || '') ||
     !SAFE_ID.test(appId || '') ||
+    (kind !== undefined && kind !== 'app' && kind !== 'profile') ||
     (op !== 'set' && op !== 'delete') ||
     !publicKey ||
     !signedToken ||
@@ -48,12 +63,15 @@ export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
   if (op === 'set') {
     if (!docPayload || typeof docPayload !== 'object' || Array.isArray(docPayload))
       return res.status(400).json({ error: 'bad_doc' });
-    if (Buffer.byteLength(JSON.stringify(docPayload)) > MAX_DOC_BYTES)
+    if (Buffer.byteLength(JSON.stringify(docPayload)) > (isProfile ? MAX_PROFILE_BYTES : MAX_DOC_BYTES))
       return res.status(400).json({ error: 'too_large' });
   }
 
-  // 2. signature over the canonical request (excludes signedToken)
+  // 2. signature over the canonical request (excludes signedToken). `kind` is included
+  // only when sent, so legacy app writes (no kind) stay byte-identical and an attacker
+  // cannot re-target a captured write by flipping kind.
   const payload = { appId, doc: docPayload ?? null, op, publicKey, timestamp, vaultId };
+  if (kind !== undefined) payload.kind = kind;
   let sigOk = false;
   try {
     sigOk = ed25519.verify(
@@ -68,11 +86,13 @@ export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
 
   // 3. TOFU-bound write via Admin
   const vaultRef = db.collection('vaults').doc(vaultId);
-  const appRef = vaultRef.collection('apps').doc(appId);
+  const targetRef = isProfile
+    ? vaultRef.collection('profile').doc('self')
+    : vaultRef.collection('apps').doc(appId);
   try {
     await db.runTransaction(async (tx) => {
       const meta = await tx.get(vaultRef);
-      const existingApp = op === 'set' ? await tx.get(appRef) : null;
+      const existing = op === 'set' ? await tx.get(targetRef) : null;
 
       const registered = meta.exists ? meta.data().writePublicKey : null;
       if (!registered)
@@ -80,13 +100,13 @@ export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
       else if (registered !== publicKey) throw new Error('not_authorized');
 
       if (op === 'delete') {
-        tx.delete(appRef);
+        tx.delete(targetRef);
       } else {
         // Preserve the original createdAt on re-writes.
-        const createdAt = existingApp?.exists
-          ? existingApp.data().createdAt
+        const createdAt = existing?.exists
+          ? existing.data().createdAt
           : FieldValue.serverTimestamp();
-        tx.set(appRef, { ...docPayload, createdAt });
+        tx.set(targetRef, { ...docPayload, createdAt });
       }
     });
   } catch (e) {

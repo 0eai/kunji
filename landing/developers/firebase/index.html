@@ -191,10 +191,20 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
 
   // first-seen sub = new account; returning sub = existing user
   const customToken = await getAuth().createCustomToken(result.sub, { kunjiPub: assertion.publicKey });
-  await ref.update({ status: 'approved', sub: result.sub, customToken });
+  // result.claims is the user's OPTIONAL, self-asserted profile (or null). It is NOT
+  // verified — store it in your own profile doc, do NOT put it in the token's claims.
+  await ref.update({ status: 'approved', sub: result.sub, customToken, claims: result.claims || null });
 
   res.json({ status: 'ok' });   // single-use: status is now 'approved'
 });</code></pre>
+            <p class="note">
+              <b>Showing the user:</b> you get a stable <code class="k">sub</code>, not a verified
+              name/photo — your app owns the profile. Render a default name + identicon with
+              <code class="k">kunji.handle(sub)</code> (from rp.js); if the user shared
+              <code class="k">claims</code>, prefer it but treat it as untrusted (HTML-escape the
+              name, render the picture client-side only). Keep unverified claims out of the custom
+              token; store them in your own <code class="k">users/{sub}</code> record.
+            </p>
           </div>
 
           <div class="step">
@@ -208,7 +218,7 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
   const snap = await db.collection('loginSessions').doc(String(req.query.sessionId || '_')).get();
   if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
   const s = snap.data();
-  res.json({ status: s.status, sub: s.sub || null, customToken: s.customToken || null });
+  res.json({ status: s.status, sub: s.sub || null, customToken: s.customToken || null, claims: s.claims || null });
 });</code></pre>
           </div>
 

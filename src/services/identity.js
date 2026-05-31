@@ -156,8 +156,10 @@ export const deriveSubFromPublicKey = async (publicKeyBase64) => {
 /**
  * Parse a v2 discoverable-login QR payload.
  * Shape: { kunjiAuth:'v2', mode:'discoverable', sessionId, challenge, audience,
- *          callbackUrl, appName?, iconUrl?, expiresAt }
+ *          callbackUrl, appName?, iconUrl?, expiresAt, scope?: string[] }
  * The callbackUrl must be same-site as the audience and HTTPS (localhost may use HTTP).
+ * `scope` is an optional list of OAuth-style scopes the RP requests (e.g. ['profile']);
+ * the wallet only ever uses it to OFFER a consent toggle — claims stay opt-in.
  */
 export const parseQRPayload = (rawValue) => {
   let parsed;
@@ -179,6 +181,13 @@ export const parseQRPayload = (rawValue) => {
     throw new Error('invalid_qr');
   }
 
+  if (
+    parsed.scope !== undefined &&
+    (!Array.isArray(parsed.scope) || parsed.scope.some((s) => typeof s !== 'string'))
+  ) {
+    throw new Error('invalid_qr');
+  }
+
   assertSameSiteCallback(parsed.audience, parsed.callbackUrl);
 
   if (Date.now() > parsed.expiresAt) {
@@ -187,6 +196,9 @@ export const parseQRPayload = (rawValue) => {
 
   return parsed;
 };
+
+/** Does this parsed QR / session request the user's profile (Layer 2 consent)? */
+export const requestsProfile = (qr) => Array.isArray(qr?.scope) && qr.scope.includes('profile');
 
 // Bare public suffixes / TLDs that must never be accepted as an `audience` — otherwise
 // `host.endsWith('.'+audience)` would match unrelated sites (e.g. audience:"com" →
@@ -313,8 +325,13 @@ export const lookupSessionByCode = async (domain, code) => {
  * Sign the discoverable-login assertion with the app's per-app key and POST it
  * to the relying party's callback URL. Kunji writes nothing to any shared store —
  * the only outbound effect is this single HTTPS POST to the app's own endpoint.
+ *
+ * `claims` (optional) is the user's self-asserted profile to share with THIS app —
+ * only passed when the user explicitly consented. It's signed (so it can't be
+ * tampered in transit) but is NOT verified by anyone: the RP must treat it as
+ * untrusted input. Absent claims ⇒ the RP falls back to the default identity.
  */
-export const submitDiscoverableAssertion = async (userId, cryptoKey, qr) => {
+export const submitDiscoverableAssertion = async (userId, cryptoKey, qr, claims) => {
   // Reproduce the per-app keypair from the master key + audience domain.
   const { secretKey, publicKey } = await deriveAppKeyPair(cryptoKey, qr.audience);
   const publicKeyB64 = exportEd25519PublicKey(publicKey);
@@ -327,6 +344,13 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, qr) => {
     sub,
     timestamp: Date.now(),
   };
+  // Attach consented profile claims (fixed key order; the signer canonicalizes only
+  // top-level keys, so the RP must round-trip this object verbatim — which it does).
+  if (claims && (claims.name || claims.picture)) {
+    signedPayload.claims = {};
+    if (claims.name) signedPayload.claims.name = String(claims.name).slice(0, 60);
+    if (claims.picture) signedPayload.claims.picture = String(claims.picture);
+  }
   const signedToken = signWithEd25519(signedPayload, secretKey);
 
   const resp = await fetch(qr.callbackUrl, {

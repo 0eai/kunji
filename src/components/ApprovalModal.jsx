@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Sheet from './ui/Sheet';
 import { Monogram, Btn } from './ui/primitives';
+import { deriveHandle } from '../lib/kunjiHandle';
 
-const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
+const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [shareProfile, setShareProfile] = useState(false); // Layer 2 consent — opt-in
   const sub = session?.sub || '';
+
+  // Layer 1: the default pseudonymous identity the app will see (derived from sub).
+  const handle = useMemo(() => (sub ? deriveHandle(sub) : null), [sub]);
+
+  // Layer 2: only offer to share a custom profile when the RP asked AND one is set.
+  const hasProfile = !!(profile && (profile.displayName || profile.avatar));
+  const canShare = !!session?.requestProfile && hasProfile;
 
   useEffect(() => {
     if (!session?.expiresAt) return;
@@ -22,7 +31,7 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
   const handleApprove = async () => {
     setLoading(true);
     try {
-      await onApprove();
+      await onApprove(canShare && shareProfile);
     } finally {
       setLoading(false);
     }
@@ -56,6 +65,19 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
 
       {/* Detail rows */}
       <div className="divide-y divide-line border-y border-line mb-6">
+        {handle && (
+          <div className="flex items-center justify-between gap-4 py-3.5">
+            <span className="text-[13px] text-muted">You'll appear as</span>
+            <span className="flex items-center gap-2 min-w-0">
+              <img
+                src={handle.avatarDataUri}
+                alt=""
+                className="w-6 h-6 rounded-md border border-line shrink-0"
+              />
+              <span className="text-[13px] text-ink truncate">{handle.name}</span>
+            </span>
+          </div>
+        )}
         {sub && (
           <div className="flex items-center justify-between gap-4 py-3.5">
             <span className="text-[13px] text-muted">Shared as</span>
@@ -80,8 +102,49 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
         )}
       </div>
 
+      {/* Layer 2 — optional custom profile sharing (only if the RP requested it) */}
+      {canShare && (
+        <button
+          type="button"
+          onClick={() => setShareProfile((v) => !v)}
+          aria-pressed={shareProfile}
+          className="w-full flex items-center gap-3 text-left mb-6 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        >
+          {profile.avatar ? (
+            <img
+              src={profile.avatar}
+              alt=""
+              className="w-9 h-9 rounded-lg border border-line shrink-0 object-cover"
+            />
+          ) : (
+            <Monogram name={profile.displayName} size="sm" />
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-medium text-ink">
+              Share your profile with {session?.appName || 'this app'}
+            </span>
+            <span className="block text-[12px] text-muted truncate">
+              {profile.displayName || 'Your photo'} — instead of the random name above
+            </span>
+          </span>
+          <span
+            className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+              shareProfile ? 'bg-accent-fill' : 'bg-line'
+            }`}
+          >
+            <span
+              className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                shareProfile ? 'translate-x-4' : ''
+              }`}
+            />
+          </span>
+        </button>
+      )}
+
       <p className="text-[12px] text-faint leading-relaxed mb-6">
-        kunji shares only this ID — never your email, name, or which other apps you use.
+        {canShare && shareProfile
+          ? 'kunji will share your chosen name and photo with this app — and never your email or which other apps you use.'
+          : 'kunji shares only this ID — never your email, real name, or which other apps you use. The name and icon above are generated just for this app.'}
       </p>
 
       <div className="flex items-center justify-end gap-1">

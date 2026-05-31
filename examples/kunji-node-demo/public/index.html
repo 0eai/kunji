@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>kunji node demo</title>
+    <style>
+      :root {
+        --paper: #faf9f6;
+        --ink: #1a1a18;
+        --muted: #6b6b66;
+        --line: #e7e5e0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      main {
+        width: 100%;
+        max-width: 26rem;
+      }
+      h1 {
+        font-size: 2rem;
+        letter-spacing: -0.02em;
+        margin: 0 0 4px;
+      }
+      p.sub {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      .who {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+      .who img {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        object-fit: cover;
+      }
+      .who b {
+        font-size: 15px;
+      }
+      .who small {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      code {
+        display: block;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 12px;
+        word-break: break-all;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        padding: 14px 0;
+        margin-bottom: 8px;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      button.link {
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        padding: 8px 0;
+      }
+      button.link:hover {
+        color: var(--ink);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <!-- Logged out -->
+      <section id="out">
+        <h1>kunji node demo</h1>
+        <p class="sub">No Firebase. No framework. Just Node + an Ed25519 signature.</p>
+        <!-- Official drop-in widget. callbackUrl must be absolute (the wallet POSTs to it). -->
+        <div id="kbtn"></div>
+      </section>
+
+      <!-- Logged in -->
+      <section id="in" hidden>
+        <h1>Signed in</h1>
+        <p class="sub">Verified with kunji — no password.</p>
+        <div class="who">
+          <img id="avatar" alt="" />
+          <span>
+            <b id="name"></b>
+            <small id="origin"></small>
+          </span>
+        </div>
+        <p class="note" style="margin-bottom: 6px">Your ID for this app</p>
+        <code id="sub"></code>
+        <p class="note">
+          The SHA-256 of your per-app public key — unique to this app. The name and icon are derived
+          from it (<code style="display: inline; border: 0; padding: 0">kunji.handle(sub)</code>)
+          unless you shared a profile.
+        </p>
+        <button class="link" id="logout">Sign out</button>
+      </section>
+    </main>
+
+    <script src="https://kunji.cc/rp.js"></script>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+        );
+
+      // Render the official button; callbackUrl is absolute (same origin as this page).
+      kunji.render($('kbtn'), {
+        appName: 'kunji Node Demo',
+        audience: location.hostname,
+        sessionUrl: '/api/session',
+        callbackUrl: location.origin + '/kunji/callback',
+        pollUrl: '/kunji/status',
+        scope: 'profile', // ask kunji to OFFER a custom profile (the user may decline)
+      });
+
+      document.addEventListener('kunji:success', (e) => {
+        const { sub, claims } = e.detail;
+        // Prefer the consented custom profile; else the default identity from `sub`.
+        // claims are self-asserted + unverified → escape the name, render picture as <img>.
+        const def = kunji.handle(sub);
+        $('name').textContent = (claims && claims.name) || def.name;
+        $('avatar').src = (claims && claims.picture) || def.avatarDataUri;
+        $('origin').textContent =
+          claims && (claims.name || claims.picture)
+            ? 'shared from their kunji profile'
+            : 'default identity (from your ID)';
+        $('sub').textContent = sub;
+        $('out').hidden = true;
+        $('in').hidden = false;
+      });
+
+      $('logout').onclick = () => {
+        $('in').hidden = true;
+        $('out').hidden = false;
+      };
+    </script>
+  </body>
+</html>

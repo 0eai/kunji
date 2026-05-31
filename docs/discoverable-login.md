@@ -119,7 +119,8 @@ Steps in words:
   "callbackUrl": "https://api.cloq.cc/kunji/callback",
   "appName": "cloq",
   "iconUrl": "https://cloq.cc/icon.png",
-  "expiresAt": 1750000000000
+  "expiresAt": 1750000000000,
+  "scope": ["profile"]
 }
 ```
 
@@ -128,6 +129,10 @@ Rules:
 - `audience` is the domain the user is logging into. Kunji **displays it** and **signs it** (anti-relay).
 - `callbackUrl` MUST be same-site as `audience` (kunji rejects if the host doesn't match `audience`).
 - No `registeredAppId`, no `ownerUid` — discoverable login is user-agnostic.
+- `scope` (optional, string array) — OAuth-style scopes the RP requests. Only `"profile"` is
+  defined: it asks the wallet to **offer** sharing the user's custom name/avatar. The wallet shows
+  a consent toggle (default OFF); the user may decline, so the RP must not depend on receiving it.
+  Omit `scope` and the RP simply renders the default identity (§8.1).
 - `v1` (the existing pre-registered flow) remains valid; see §11.
 
 ### 5.2 Signed assertion (wallet → cloq callback)
@@ -140,7 +145,8 @@ Rules:
     "challenge": "64-hex-byte nonce (echoed back)",
     "audience": "cloq.cc",
     "sub": "hex SHA-256 of publicKey",
-    "timestamp": 1750000000123
+    "timestamp": 1750000000123,
+    "claims": { "name": "Ada Lovelace", "picture": "data:image/webp;base64,…" }
   },
   "signedToken": "base64 Ed25519 signature over canonical-JSON(signedPayload)"
 }
@@ -148,6 +154,11 @@ Rules:
 
 - `sub = hex( SHA-256( utf8(publicKeyBase64) ) )` — the SHA-256 of the base64 public-key _string_, hex-encoded. Self-contained, no kunji UID involved. Stable per (user, app), different across apps. (Implemented as `deriveSubFromPublicKey` in `src/services/identity.js`; the RP recomputes it via `subFromPublicKey` in `examples/kunji-login-demo/functions/verify.js`.)
 - Signature uses the existing `signWithEd25519` canonical-JSON scheme already in `src/lib/crypto`.
+- `claims` (optional) is present **only** when the user consented to share a custom profile
+  (requested via `scope`, §5.1). It is part of `signedPayload`, so it is tamper-evident — but it is
+  **self-asserted and NOT verified by anyone**. The user can type any name and pick any picture, and
+  may present different values to different apps. Treat it as untrusted input (§6.8). Fields:
+  `name` (string, ≤60 chars) and/or `picture` (a small `data:` image URI). Absent ⇒ use §8.1.
 
 ### 5.3 Callback response (cloq → wallet)
 
@@ -166,8 +177,15 @@ it does not need the token (the token goes to cloq's _frontend_ via its own poll
 5. **sub integrity** — recompute `SHA-256(publicKey)` and confirm it equals `signedPayload.sub`.
 6. **Freshness** — `timestamp` within ±2 min of server time.
 7. **Single use** — mark the session consumed; reject re-submission.
+8. **Treat `claims` as untrusted** — if present, `claims` is tamper-evident (covered by the
+   signature in §6.4) but **not** verified: never use it for authentication or authorization, never
+   trust a claimed email as proof of address. HTML-escape `name` before rendering; render `picture`
+   only client-side as an `<img>` (https/`data:` only, **never** server-fetch it — that's an SSRF
+   and tracking vector). It is a display convenience on top of `sub`, nothing more.
 
-Only after all pass: upsert `users/{sub}` (storing `kunjiPublicKey = publicKey`), mint the token.
+Only after all pass: upsert `users/{sub}` (storing `kunjiPublicKey = publicKey`), mint the token. The
+`sub` is the account key; `claims`/the default identity (§8.1) are display only — store them in your
+own profile record, do **not** put unverified claims into the custom-token claims.
 
 ---
 
@@ -196,11 +214,45 @@ exports.kunjiPoll = onCall(async ({ sessionId }) => {
 
 ## 8. Identity Model
 
+> **kunji authenticates; the app owns the profile.** kunji is not an identity provider that vends
+> verified attributes (no Google-style email/name/photo). It proves "the same person returned" via a
+> stable, anonymous, per-app `sub`. The app stores its own profile (display name, avatar, and — if it
+> needs one — a contact email collected directly from the user) keyed by that `sub`. For a suite, use
+> **one consistent `audience`** across your apps to get one shared identity; different audiences yield
+> unrelated, uncorrelatable identities.
+
 - **Account key = the per-app Ed25519 public key.** The same kunji vault on any of the user's devices holds the
   same keypair → same `publicKey` → same account. Kunji recovery key restores the vault → restores identity.
 - **`sub = SHA-256(publicKey)`** is the convenient stable string id cloq uses as the Firebase `uid`.
 - **Per-app pseudonymity preserved** — keypair is per `appDomain`, so two apps see unrelated keys/subs and cannot
   correlate the user. (Consistent with the `derivePseudonymousSub` privacy stance already in `identity.js`.)
+
+### 8.1 Default pseudonymous identity (derived from `sub`)
+
+So an app never has to show a blank placeholder or a raw hex `sub`, every `sub` maps to a friendly
+**display name** and a kunji-themed **identicon** — both pure, deterministic functions of `sub`
+(which the RP already has). No PII, no extra round-trip, no kunji infrastructure: distinct per app,
+stable per app, unlinkable across apps. The RP renders them itself (`window.kunji.handle(sub)` from
+`rp.js`, or by reimplementing the algorithm below). The canonical implementation is
+`src/lib/kunjiHandle.js` + `src/lib/kunjiHandle.wordlists.js`.
+
+Algorithm (treat `sub` as a lowercase hex string; slices are parsed as base-16 integers):
+
+- **Name** = `"{Adjective} {Noun} {NN}"` where
+  `Adjective = ADJECTIVES[int(sub[0:8]) % ADJECTIVES.length]`,
+  `Noun = NOUNS[int(sub[8:16]) % NOUNS.length]`, `NN = int(sub[16:20]) % 100` (a small
+  collision-reducing discriminator; `sub` remains the real key — names may collide, that's fine).
+  The two wordlists are the canonical lists in `kunjiHandle.wordlists.js`.
+- **Identicon** = a 5×5 left-right-mirrored SVG grid on warm paper (`#faf9f6`). A cell `(col,row)`
+  for `col∈{0,1,2}` is filled when `int(sub[24 + col*5 + row]) ≥ 8`, mirrored to `col 3,4`; the fill
+  color is `PALETTE[int(sub[40:42]) % PALETTE.length]`.
+
+⚠️ This algorithm + the wordlists are a **rendering contract** shared by the wallet, `rp.js`, and any
+third-party RP. Changing them re-skins every user's default name/avatar (cosmetic — never a lockout,
+since `sub` is unchanged), so treat any change as a versioned break.
+
+If the user shared a custom profile, the assertion carries `claims` (§5.2) — prefer it over the
+default, but render it as untrusted input (§6.8).
 
 ---
 
@@ -256,11 +308,15 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 - **Pre-registered (v1)** — existing personal/self-hosted flow where a specific keypair is provisioned ahead of time.
   Remains valid; both modes share the §5.2 assertion + §6 verification shape.
 
+- **Default + custom identity (shipped)** — every `sub` has a deterministic default name + identicon
+  (§8.1); the user may optionally share a self-asserted custom profile per-app via the `profile`
+  scope + signed `claims` (§5.1, §5.2, §6.8).
+
 **Future (explicitly out of scope now):**
 
 - Kunji provisioning the app's encryption key → single-passphrase UX (collapses the §9.2 two-passphrase seam).
 - Local/LAN app login (loopback or same-device `postMessage` channel).
-- Optional self-asserted profile (name/avatar) shared per-app via OAuth-style consent scopes.
+- Verified claims (e.g. an attested email) — today all shared `claims` are self-asserted only.
 
 ---
 

@@ -39,6 +39,12 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   and are never locked out. Don't make the upgrade unconditional.
 - **Key separation.** Per-app keys, the vault-write keypair, and the vaultId are independent
   HKDF derivations from the master key. Keep them distinct.
+- **The default-identity algorithm is a rendering contract.** `src/lib/kunjiHandle.js` +
+  `kunjiHandle.wordlists.js` derive a display name + identicon from `sub`, and the wallet, `rp.js`,
+  the demo, and third-party RPs must all produce identical output (it's specified in
+  `docs/discoverable-login.md` §8.1). Changing the algorithm or wordlist length/order re-skins every
+  user's default name/avatar — cosmetic (never a lockout, `sub` is unchanged) but a versioned break.
+  Keep the module pure and dependency-free.
 
 ## Server-side write path (don't bypass)
 
@@ -49,6 +55,11 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   (relaxed from hex to allow legacy random doc ids — see history), `op ∈ {set, delete}`, timestamp
   freshness, and an Ed25519 signature over canonical JSON. First write **TOFU-binds** the
   `writePublicKey`; later writes must match it.
+- `vaultWrite` also handles `kind: 'profile'` → writes the user's optional custom profile to
+  `vaults/{vaultId}/profile/self`. `kind` is signed only when present, so existing app writes stay
+  byte-identical. The login assertion may now carry an optional `claims` object (custom name/avatar)
+  — signed but **self-asserted and unverified**; RPs must treat it as untrusted. The zero-config
+  default identity (`kunjiHandle`) needs none of this.
 
 ## Standing constraints
 
@@ -62,6 +73,10 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 ## Repo map
 
 - `src/lib/crypto/` — KDF, AES-GCM, Ed25519, canonical JSON. **Protocol; edit with extreme care.**
+- `src/lib/kunjiHandle.js` (+ `.wordlists.js`) — deterministic default identity (name + identicon)
+  from `sub`. **Shared rendering contract** (also bundled into `rp.js`); pure, dependency-free.
+- `src/services/profile.js` + `src/components/ProfileSettings.jsx` — the optional custom profile
+  (Layer 2): encrypted vault storage + the editor in `SecurityPanel`.
 - `src/services/identity.js` — QR parsing, callback safety (`isSafeReturnUrl`), assertion submit,
   app register/delete, legacy migration.
 - `functions/` — `vaultWrite` Cloud Function (codebase `app`, Node 20).
@@ -73,10 +88,12 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 
-Firebase project `kunji-cc`, three Hosting targets: `app` → `app-kunji-cc` (app.kunji.cc),
-`landing` → `kunji-cc` (kunji.cc), `redirect` → `kunji-xyz` (301 to kunji.cc). Functions: one
-codebase `app`. The **demo is a different Firebase project** and is deployed independently — a
-main-repo deploy never touches it.
+Firebase project `kunji-cc`, three root Hosting targets: `app` → `app-kunji-cc` (app.kunji.cc),
+`landing` → `kunji-cc` (kunji.cc), `redirect` → `kunji-xyz` (301 to kunji.cc). The app's `vaultWrite`
+lives in Functions **codebase `app`**. The demo (`examples/kunji-login-demo/`) is in the **same
+project** but deploys from its own `firebase.json` (`cd` into it): Hosting site `kunji-demo`, and its
+four functions in the **default** codebase — codebase-isolated from `app`, so deploying one never
+prunes the other. That isolation is load-bearing: always deploy functions with explicit `--only`.
 
 ## Workflow norms
 

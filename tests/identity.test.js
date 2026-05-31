@@ -11,6 +11,7 @@ import {
   parseQRPayload,
   isSafeReturnUrl,
   deriveSubFromPublicKey,
+  requestsProfile,
 } from '../src/services/identity.js';
 
 const validQR = (over = {}) =>
@@ -55,6 +56,21 @@ describe('parseQRPayload', () => {
 
   it('rejects an expired QR', () => {
     expect(() => parseQRPayload(validQR({ expiresAt: Date.now() - 1 }))).toThrow('expired_qr');
+  });
+
+  it('accepts an optional scope array and flags a profile request', () => {
+    const parsed = parseQRPayload(validQR({ scope: ['profile'] }));
+    expect(parsed.scope).toEqual(['profile']);
+    expect(requestsProfile(parsed)).toBe(true);
+  });
+
+  it('treats a missing scope as no profile request', () => {
+    expect(requestsProfile(parseQRPayload(validQR()))).toBe(false);
+  });
+
+  it('rejects a malformed scope (not an array of strings)', () => {
+    expect(() => parseQRPayload(validQR({ scope: 'profile' }))).toThrow('invalid_qr');
+    expect(() => parseQRPayload(validQR({ scope: [1, 2] }))).toThrow('invalid_qr');
   });
 
   it('rejects a cross-site callback', () => {
