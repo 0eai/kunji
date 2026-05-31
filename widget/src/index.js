@@ -98,6 +98,8 @@ const CSS = `
 .expiry b{ font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; color:#6b6b66; font-weight:500; }
 .center { text-align:center; }
 .note { font-size:14px; color:#6b6b66; padding:28px 0; text-align:center; }
+.panel.expired { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; }
+.panel.expired p { font-size:14px; color:#6b6b66; line-height:1.6; }
 .again { margin-top:12px; background:#f59e0b; color:#1a1a18; border:0; border-radius:999px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
 .ok { display:flex; flex-direction:column; align-items:center; gap:10px; padding:34px 0; }
 .ok .ring { width:48px; height:48px; border-radius:999px; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center; font-size:26px; }
@@ -199,6 +201,22 @@ function openModal(opts, sourceEl) {
     try { qrImg = await QRCode.toDataURL(qrData, { width: 196, margin: 1, color: { dark: '#1a1a18', light: '#ffffff' } }); } catch {}
     const code = session.code || '';
 
+    // Everything expired together — replace the panel with one clear action so a
+    // stale QR / code / deep link is never left looking usable.
+    function renderExpired() {
+      sheet.innerHTML = `
+        <div class="top">
+          <div class="title"><span class="mark">${KEY_SVG}</span> Sign in with kunji</div>
+          <button class="x" aria-label="Close">×</button>
+        </div>
+        <div class="panel expired">
+          <p>This sign-in code expired.<br>Codes are short-lived for your security.</p>
+          <button class="again">Get a new code</button>
+        </div>`;
+      sheet.querySelector('.x').onclick = close;
+      sheet.querySelector('.again').onclick = start;
+    }
+
     render();
     function render() {
       sheet.innerHTML = `
@@ -233,12 +251,7 @@ function openModal(opts, sourceEl) {
       const tick = () => {
         if (document.hidden) return;
         const left = Math.max(0, Math.ceil((session.expiresAt - Date.now()) / 1000));
-        if (left <= 0) {
-          clearTimers();
-          exp.innerHTML = `Code expired. <button class="again">New code</button>`;
-          exp.querySelector('.again').onclick = start;
-          return;
-        }
+        if (left <= 0) { clearTimers(); renderExpired(); return; }
         exp.innerHTML = `Expires in <b>${left}s</b>`;
       };
       tick();
