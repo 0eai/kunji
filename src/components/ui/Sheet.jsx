@@ -51,7 +51,7 @@ export default function Sheet({ children, onClose, labelledBy, z = 50, className
 
   return (
     <div
-      className={`fixed inset-0 flex items-end sm:items-center justify-center bg-ink/25 backdrop-blur-[2px] ${closing ? 'animate-fade-out pointer-events-none' : 'animate-fade'}`}
+      className={`fixed inset-0 flex items-end sm:items-center justify-center bg-scrim backdrop-blur-[2px] ${closing ? 'animate-fade-out pointer-events-none' : 'animate-fade'}`}
       style={{ zIndex: z }}
       onClick={requestClose}
     >

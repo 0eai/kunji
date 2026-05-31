@@ -28,8 +28,23 @@
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#faf9f6" />
-  <meta name="color-scheme" content="light" />
+  <meta name="color-scheme" content="light dark" />
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+
+  <!-- Apply the saved theme before paint to avoid a flash of the wrong mode. -->
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('kunji_theme') || 'system';
+        var dark = pref === 'dark' || (pref === 'system' &&
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.background = dark ? '#181714' : '#faf9f6';
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', dark ? '#181714' : '#faf9f6');
+      } catch (e) {}
+    })();
+  </script>
 
   <!-- Home Screen -->
   <meta name="mobile-web-app-capable" content="yes" />
@@ -39,7 +54,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
 </head>
 
-<body style="background:#faf9f6">
+<body>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

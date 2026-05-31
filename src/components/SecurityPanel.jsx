@@ -8,6 +8,7 @@ import { exportRecoveryKey, resetUserVault } from '../services/vault';
 import { completeLink } from '../services/linking';
 import { listenToActivityLog } from '../services/activityLog';
 import { signOutDevice } from '../lib/firebase';
+import { getThemePref, setThemePref } from '../lib/theme';
 import QRScannerOverlay from './QRScannerOverlay';
 import InstallButton from './InstallButton';
 import Sheet from './ui/Sheet';
@@ -50,6 +51,8 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
   const [open, setOpen] = useState({ link: false, recovery: false, activity: false });
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+
+  const [theme, setTheme] = useState(getThemePref());
 
   const [events, setEvents] = useState([]);
   useEffect(() => {
@@ -189,6 +192,22 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             </div>
           )}
         </Row>
+      </div>
+
+      {/* Appearance */}
+      <SectionLabel className="mt-7 mb-3">Appearance</SectionLabel>
+      <div className="flex gap-1 p-1 rounded-full border border-line w-fit">
+        {['light', 'dark', 'system'].map((opt) => (
+          <button
+            key={opt}
+            onClick={() => { setThemePref(opt); setTheme(opt); }}
+            className={`px-4 py-1.5 rounded-full text-[13px] font-medium capitalize transition-colors ${
+              theme === opt ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'
+            }`}
+          >
+            {opt}
+          </button>
+        ))}
       </div>
 
       {/* Session */}

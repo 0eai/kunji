@@ -305,7 +305,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
             You approved sign-in to <span className="font-mono text-ink">{returnInfo.audience}</span>.
           </p>
           <a href={returnInfo.returnUrl}
-            className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors">
+            className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors">
             Return to {returnInfo.audience}
           </a>
           <button onClick={() => setReturnInfo(null)}

@@ -20,11 +20,34 @@
   --color-danger-soft:  #fdf0ef;
   --color-success:      #16a34a;
 
+  --color-on-accent:    #1a1a18;  /* dark text on amber fills — fixed in both themes */
+  --color-scrim:        rgba(26, 26, 24, 0.28);  /* overlay scrim (light) */
+
   --font-sans: 'Geist Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Geist Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 :root { color-scheme: light; }
+
+/* ── Dark mode — warm charcoal. Overrides the token values; every utility
+   resolves via var() so the whole UI recolors. Toggled by `.dark` on <html>. ── */
+html.dark {
+  color-scheme: dark;
+  --color-paper:        #181714;
+  --color-surface:      #211f1b;
+  --color-ink:          #f4f2ec;
+  --color-muted:        #a39f95;
+  --color-faint:        #6f6b61;
+  --color-line:         #322e27;
+  --color-line-strong:  #3d382f;
+  --color-accent:       #fbbf24;  /* lighter amber: legible as text/links/underline on dark */
+  --color-accent-fill:  #f59e0b;  /* button fill unchanged; on-accent text stays dark */
+  --color-accent-soft:  #241c10;
+  --color-danger:       #f87171;
+  --color-danger-soft:  #2a1718;
+  --color-success:      #34d399;
+  --color-scrim:        rgba(0, 0, 0, 0.55);
+}
 
 html, body {
   background-color: var(--color-paper);
@@ -66,6 +89,14 @@ html, body {
   background-size: 200% 100%;
   animation: kunji-shimmer 1.4s ease-in-out infinite;
 }
+html.dark .shimmer {
+  background: linear-gradient(90deg, var(--color-line) 25%, #2b2925 50%, var(--color-line) 75%);
+  background-size: 200% 100%;
+}
+
+/* App monogram — deterministic hue per app (set via --mh); lightness adapts to theme. */
+.monogram { background: hsl(var(--mh) 55% 94%); color: hsl(var(--mh) 42% 36%); }
+html.dark .monogram { background: hsl(var(--mh) 38% 18%); color: hsl(var(--mh) 70% 72%); }
 
 /* Respect reduced-motion: drop animation, keep final state. */
 @media (prefers-reduced-motion: reduce) {

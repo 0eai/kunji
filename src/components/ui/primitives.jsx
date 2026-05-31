@@ -63,7 +63,7 @@ PasswordField.displayName = 'PasswordField';
  *  - danger  : red text/outline
  */
 const VARIANTS = {
-  primary: 'bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full',
+  primary: 'bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full',
   ghost:   'text-accent hover:text-ink font-medium rounded-full',
   quiet:   'text-muted hover:text-ink font-medium rounded-full',
   danger:  'text-danger hover:bg-danger-soft font-semibold rounded-full',
@@ -105,8 +105,8 @@ export const Monogram = ({ name = '?', seed, src, size = 'md' }) => {
   const h = hueOf(seed || name);
   return (
     <span
-      className={`${dim} rounded-xl font-semibold flex items-center justify-center shrink-0 select-none`}
-      style={{ backgroundColor: `hsl(${h} 55% 94%)`, color: `hsl(${h} 42% 36%)` }}
+      className={`monogram ${dim} rounded-xl font-semibold flex items-center justify-center shrink-0 select-none`}
+      style={{ '--mh': h }}
     >
       {(name || '?').trim().charAt(0).toUpperCase()}
     </span>

@@ -5,7 +5,11 @@ import '@fontsource-variable/geist-mono';
 import App from './App';
 import { VaultProvider } from './context/VaultContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { watchSystem } from './lib/theme';
 import './index.css';
+
+// Keep "System" mode in sync if the OS theme flips while the app is open.
+watchSystem();
 
 // Capture the PWA install prompt early (Chrome fires it before React mounts) so a
 // custom "Install kunji" button can trigger it later. iOS Safari never fires this.
