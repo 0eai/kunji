@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
-import { startLink, listenForLinkedKey } from '../services/linking';
+import { startLink, listenForLinkedKey, vaultFingerprint } from '../services/linking';
 import { provisionVaultFromMasterKey } from '../services/vault';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
 import { PasswordField, Btn, Spinner } from './ui/primitives';
 
-const MIN_PASSKEY_LENGTH = 8;
+const MIN_PASSKEY_LENGTH = 10;
 
 // Device B: receive the vault master key from an existing device by QR, then set a
 // local passkey for this device. After this, both devices share the same identity.
 const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
   const { showToast } = useToast();
-  const [phase, setPhase] = useState('init'); // init → waiting → received → saving
+  const [phase, setPhase] = useState('init'); // init → waiting → confirm → received → saving
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [fingerprint, setFingerprint] = useState('');
   const [passkey, setPasskey] = useState('');
   const [confirmKey, setConfirmKey] = useState('');
   const masterKeyRef = useRef(null);
@@ -33,9 +34,10 @@ const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
         unsubRef.current = listenForLinkedKey(
           linkId,
           privateKey,
-          (masterKey) => {
+          async (masterKey) => {
             masterKeyRef.current = masterKey;
-            setPhase('received');
+            setFingerprint(await vaultFingerprint(masterKey));
+            setPhase('confirm'); // user must compare the fingerprint before provisioning
             unsubRef.current?.();
           },
           () => showToast('Could not decrypt the linked key. Try again.', 'error'),
@@ -72,7 +74,23 @@ const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
       </header>
 
       <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise">
-        {phase === 'received' || phase === 'saving' ? (
+        {phase === 'confirm' ? (
+          <>
+            <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
+              <ShieldCheck size={22} className="text-success" strokeWidth={2} />
+            </div>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">Confirm it's you</h1>
+            <p className="text-[15px] text-muted leading-relaxed mb-6">
+              Check this code matches the one on your other device. If it doesn't, cancel — someone may be intercepting the link.
+            </p>
+            <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink mb-8">{fingerprint}</div>
+            <Btn onClick={() => setPhase('received')} className="w-full">Codes match — continue</Btn>
+            <button onClick={onCancel}
+              className="mt-2 w-full text-center text-sm font-medium text-muted hover:text-danger py-2 transition-colors">
+              They don't match — cancel
+            </button>
+          </>
+        ) : phase === 'received' || phase === 'saving' ? (
           <>
             <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
               <ShieldCheck size={22} className="text-success" strokeWidth={2} />

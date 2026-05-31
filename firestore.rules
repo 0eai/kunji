@@ -7,26 +7,36 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Shared vault data (the apps list), keyed by a master-key-derived vaultId so it
-    // syncs across a user's linked devices. The vaultId is a high-entropy secret known
-    // only to devices holding the master key, and all stored metadata is encrypted with
-    // that key — so reads/writes are gated only by being signed in.
+    // Apps list, keyed by a master-key-derived vaultId. READS are gated by knowing the
+    // high-entropy vaultId (and all stored metadata is encrypted with the master key).
+    // WRITES go through the signed-writes Cloud Function (Admin SDK, which bypasses
+    // these rules) — direct client writes are denied, so a leaked vaultId alone cannot
+    // tamper with the vault.
     match /vaults/{vaultId}/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if false;
     }
 
-    // Device-linking relay. The payload is ECDH-encrypted to the new device's
-    // ephemeral key and the linkId is a random secret, so any signed-in user may
-    // participate in a specific handshake; the master key is never exposed in plaintext.
+    // Device-linking relay. Write-once: only a fresh `pending` session can be created
+    // (no payload), and the single pending -> sent deposit cannot be overwritten,
+    // re-deposited, or have pubB changed — stops relay tampering/substitution.
     match /linkSessions/{linkId} {
-      allow create, get, update: if request.auth != null;
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.status == 'pending'
+        && !('pubA' in request.resource.data)
+        && !('encryptedMasterKey' in request.resource.data);
+      allow update: if request.auth != null
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'sent'
+        && request.resource.data.pubB == resource.data.pubB;
     }
 
-    // Demo relying-party login sessions (examples/kunji-login-demo). Writes are
-    // server-only via Cloud Functions (admin); the frontend reads its own session
-    // by random id to flip to "signed in". The doc holds no secrets.
+    // Relying-party login sessions (examples/kunji-login-demo). Server-only via Cloud
+    // Functions (Admin); clients poll the getSessionStatus function and never read the
+    // doc directly, so code/challenge/callbackUrl are not exposed.
     match /loginSessions/{sessionId} {
-      allow get: if true;
+      allow read, write: if false;
     }
   }
 }

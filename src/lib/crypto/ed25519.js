@@ -32,6 +32,29 @@ export const deriveAppKeyPair = async (masterKey, domain) => {
     return { secretKey, publicKey };
 };
 
+// Deterministically derive the per-vault WRITE keypair from the master key. The
+// public key is registered (trust-on-first-use) with the vault-write Cloud Function;
+// every vault write is signed with the secret key, so possession of the master key —
+// not just knowledge of the vaultId — is required to write. info is domain-separated
+// from per-app keys and the vaultId.
+export const deriveVaultWriteKeyPair = async (masterKey) => {
+    const raw = await window.crypto.subtle.exportKey('raw', masterKey);
+    const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+    const bits = await window.crypto.subtle.deriveBits(
+        {
+            name: 'HKDF',
+            hash: 'SHA-256',
+            salt: new TextEncoder().encode('kunji-vault-write-v1'),
+            info: new TextEncoder().encode('kunji-vault-write'),
+        },
+        ikm,
+        256,
+    );
+    const secretKey = new Uint8Array(bits);
+    const publicKey = ed25519.getPublicKey(secretKey);
+    return { secretKey, publicKey };
+};
+
 export const exportEd25519SecretKey = (secretKey) =>
     bufferToBase64(secretKey.buffer ?? secretKey);
 

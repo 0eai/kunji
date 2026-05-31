@@ -4,7 +4,7 @@ import {
   Lock, LogOut, Activity, ChevronRight,
 } from 'lucide-react';
 import { exportRecoveryKey, resetUserVault } from '../services/vault';
-import { completeLink } from '../services/linking';
+import { completeLink, vaultFingerprint } from '../services/linking';
 import { listenToActivityLog } from '../services/activityLog';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
@@ -72,6 +72,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   const clearTimer = useRef(null);
 
   const [showScanner, setShowScanner] = useState(false);
+  const [linkConfirm, setLinkConfirm] = useState(null); // { fingerprint } — compare with the new device
 
   useEffect(() => () => clearTimeout(clearTimer.current), []);
 
@@ -106,7 +107,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     setShowScanner(false);
     try {
       await completeLink(raw, cryptoKey);
-      showToast('Device linked — it now shares your identity.');
+      setLinkConfirm({ fingerprint: await vaultFingerprint(cryptoKey) });
     } catch (e) {
       const msg = e.message === 'link_expired' ? 'Link QR expired.'
         : e.message === 'invalid_link_qr' ? 'Not a kunji device-link QR.'
@@ -216,6 +217,19 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
       {showScanner && (
         <QRScannerOverlay onScan={handleLinkScan} onClose={() => setShowScanner(false)} />
+      )}
+
+      {linkConfirm && (
+        <Sheet onClose={() => setLinkConfirm(null)} z={60} labelledBy="link-fp-title">
+          <h2 id="link-fp-title" className="text-lg font-semibold tracking-tight mb-1">Device linked</h2>
+          <p className="text-[14px] text-muted leading-relaxed mb-5">
+            Confirm this code matches the one on the new device. If it doesn't, don't approve it there.
+          </p>
+          <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink text-center mb-6">{linkConfirm.fingerprint}</div>
+          <div className="flex justify-end">
+            <Btn variant="primary" onClick={() => setLinkConfirm(null)}>Done</Btn>
+          </div>
+        </Sheet>
       )}
 
       {showSignOut && (

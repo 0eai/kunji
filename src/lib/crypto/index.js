@@ -41,6 +41,7 @@ export {
     // Ed25519 — Connected Apps signing
     generateEd25519KeyPair,
     deriveAppKeyPair,
+    deriveVaultWriteKeyPair,
     exportEd25519SecretKey,
     exportEd25519PublicKey,
     importEd25519SecretKey,

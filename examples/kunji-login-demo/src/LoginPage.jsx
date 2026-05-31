@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase.js';
 
 // The RP's identity. In production this is your real domain, hardcoded server-side.
 // Here it's the current origin (audience = hostname; callback is same-site via Hosting rewrite).
@@ -65,6 +63,24 @@ export default function LoginPage({ onSuccess }) {
     setTimeout(() => onSuccess({ sub }), 700);
   };
 
+  // Poll our own backend for approval. loginSessions is server-only (the demo no
+  // longer reads Firestore directly); we hit the getSessionStatus function instead.
+  // Returns a cleanup fn so stop() can cancel it like the old onSnapshot unsubscribe.
+  const pollStatus = (sessionId) => {
+    const check = async () => {
+      if (document.hidden) return;
+      try {
+        const r = await fetch(`/kunji/status?sessionId=${encodeURIComponent(sessionId)}`);
+        if (!r.ok) return;
+        const s = await r.json();
+        if (s.status === 'approved') succeed(s.sub);
+      } catch { /* transient */ }
+    };
+    check();
+    const id = setInterval(check, 2000);
+    return () => clearInterval(id);
+  };
+
   const startFlow = useCallback(async () => {
     stop();
     setStatus('loading');
@@ -103,10 +119,8 @@ export default function LoginPage({ onSuccess }) {
       tick();
       timerRef.current = setInterval(tick, 1000);
 
-      // 3. Listen to our session doc — flips to signed-in the instant the wallet approves.
-      unsubRef.current = onSnapshot(doc(db, 'loginSessions', sessionId), (snap) => {
-        if (snap.data()?.status === 'approved') succeed(snap.data().sub);
-      });
+      // 3. Poll our backend — flips to signed-in once the wallet approves.
+      unsubRef.current = pollStatus(sessionId);
     } catch (err) {
       setStatus('error');
       setErrorMsg(err.message || 'Failed to start login.');
@@ -117,9 +131,7 @@ export default function LoginPage({ onSuccess }) {
   const resumeFlow = useCallback((savedId) => {
     stop();
     setStatus('resuming');
-    unsubRef.current = onSnapshot(doc(db, 'loginSessions', savedId), (snap) => {
-      if (snap.data()?.status === 'approved') succeed(snap.data().sub);
-    });
+    unsubRef.current = pollStatus(savedId);
     // If it wasn't approved (cancelled / gone), fall back to a fresh QR.
     fallbackRef.current = setTimeout(() => {
       localStorage.removeItem(RESUME_KEY);

@@ -1,15 +1,41 @@
 import {
-  collection, doc, getDoc, getDocs, deleteDoc, setDoc,
-  onSnapshot, orderBy, query, serverTimestamp
+  collection, doc, getDoc, getDocs,
+  onSnapshot, orderBy, query,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { encryptData, decryptData } from '../lib/crypto';
 import {
   deriveAppKeyPair,
+  deriveVaultWriteKeyPair,
   exportEd25519PublicKey,
   signWithEd25519,
 } from '../lib/crypto';
 import { normalizeDomain } from '../lib/crypto/helpers';
+
+// Vault writes go through a signed-writes Cloud Function (rules deny direct client
+// writes). Same-origin via Hosting rewrite in production; override for local dev.
+const VAULT_WRITE_URL = import.meta.env.VITE_VAULT_WRITE_URL || '/vault/write';
+
+// Sign and POST a single vault write (set/delete an app doc). Proves master-key
+// possession via the vault write key — the server verifies the signature + TOFU pubkey.
+const callVaultWrite = async (vaultId, cryptoKey, op, appId, docPayload) => {
+  const { secretKey, publicKey } = await deriveVaultWriteKeyPair(cryptoKey);
+  const publicKeyB64 = exportEd25519PublicKey(publicKey);
+  const timestamp = Date.now();
+  // Signed payload — keys/values must match what the function reconstructs.
+  const signed = { appId, doc: docPayload ?? null, op, publicKey: publicKeyB64, timestamp, vaultId };
+  const signedToken = signWithEd25519(signed, secretKey);
+
+  const resp = await fetch(VAULT_WRITE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vaultId, op, appId, doc: docPayload ?? undefined, publicKey: publicKeyB64, signedToken, timestamp }),
+  });
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error('vault_write_failed:' + (e.error || resp.status));
+  }
+};
 import { logActivity } from './activityLog';
 
 // Apps are keyed by the master-key-derived vaultId so the list syncs across every
@@ -59,7 +85,7 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
 
   if (!existed) {
     const payload = await encryptData({ name, domain: normalizeDomain(domain), iconUrl }, cryptoKey);
-    await setDoc(ref, { ...payload, publicKey: pubKeyBase64, createdAt: serverTimestamp() });
+    await callVaultWrite(vaultId, cryptoKey, 'set', id, { ...payload, publicKey: pubKeyBase64 });
     if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, { domain });
   }
 
@@ -67,7 +93,7 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
 };
 
 export const deleteApp = async (vaultId, registeredAppId, appName, cryptoKey, userId) => {
-  await deleteDoc(appDoc(vaultId, registeredAppId));
+  await callVaultWrite(vaultId, cryptoKey, 'delete', registeredAppId, null);
   if (userId) await logActivity(userId, `Removed app: ${appName}`, 'info', 'Unlink', cryptoKey);
 };
 
@@ -76,12 +102,14 @@ export const deleteApp = async (vaultId, registeredAppId, appName, cryptoKey, us
  * to the shared vault path (vaults/{vaultId}/apps) so previously-registered apps
  * reappear after the move to vaultId-keyed storage. Idempotent (same doc ids).
  */
-export const migrateLegacyApps = async (userId, vaultId) => {
+export const migrateLegacyApps = async (userId, vaultId, cryptoKey) => {
   const legacy = await getDocs(collection(db, 'users', userId, 'apps'));
   if (legacy.empty) return 0;
   let n = 0;
   for (const d of legacy.docs) {
-    await setDoc(appDoc(vaultId, d.id), d.data());
+    const data = d.data();
+    delete data.createdAt; // let the function set a fresh server timestamp
+    await callVaultWrite(vaultId, cryptoKey, 'set', d.id, data);
     n++;
   }
   return n;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ScanLine, Lock, Shield, Settings } from 'lucide-react';
 import { listenToApps, deleteApp, registerApp, deriveAppIdentity, parseQRPayload, submitDiscoverableAssertion, deriveSubFromPublicKey, migrateLegacyApps, lookupSessionByCode, isSafeReturnUrl } from '../services/identity';
-import { completeLink } from '../services/linking';
+import { completeLink, vaultFingerprint } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
@@ -26,6 +26,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
   const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } after same-device approval
+  const [linkConfirm, setLinkConfirm] = useState(null); // { fingerprint } after linking a device (compare on both)
   const incomingHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
@@ -47,7 +48,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     if (!vaultId) return;
     const flag = `kunji_migrated_${user.uid}`;
     if (localStorage.getItem(flag)) return;
-    migrateLegacyApps(user.uid, vaultId)
+    migrateLegacyApps(user.uid, vaultId, cryptoKey)
       .then((n) => { localStorage.setItem(flag, '1'); if (n) showToast(`Restored ${n} app${n > 1 ? 's' : ''}.`); })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +73,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       if (maybeLink?.kunjiLink === 'v1') {
         try {
           await completeLink(rawValue, cryptoKey);
-          showToast('Device linked — it now shares your identity.');
+          setLinkConfirm({ fingerprint: await vaultFingerprint(cryptoKey) });
         } catch (e) {
           const m = e.message === 'link_expired' ? 'Link QR expired.'
             : e.message === 'link_already_used' ? 'That link was already used.'
@@ -315,6 +316,22 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
             className="mt-2 w-full text-center text-sm font-medium text-muted hover:text-ink py-2 transition-colors">
             {returnInfo.returnUrl ? 'Stay in kunji' : 'Done'}
           </button>
+        </Sheet>
+      )}
+
+      {linkConfirm && (
+        <Sheet onClose={() => setLinkConfirm(null)} labelledBy="link-title">
+          <div className="flex items-center gap-2.5 mb-1">
+            <Shield size={18} className="text-success" />
+            <h2 id="link-title" className="text-lg font-semibold tracking-tight">Device linked</h2>
+          </div>
+          <p className="text-[14px] text-muted leading-relaxed mb-5">
+            Confirm this code matches the one shown on the new device. If it doesn't, that device may have received the wrong key — don't approve it there.
+          </p>
+          <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink text-center mb-6">{linkConfirm.fingerprint}</div>
+          <div className="flex justify-end">
+            <Btn variant="primary" onClick={() => setLinkConfirm(null)}>Done</Btn>
+          </div>
         </Sheet>
       )}
     </div>

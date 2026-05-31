@@ -8,11 +8,22 @@ import { doc, setDoc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
   generateECDHKeyPair, exportECDHPublicKey, importECDHPublicKey, deriveECDHSharedSecret,
-  encryptData, decryptData, exportKey, importMasterKey, generateSalt,
+  encryptData, decryptData, exportKey, importMasterKey, generateSalt, deriveVaultId,
 } from '../lib/crypto';
 
 const LINK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const linkDoc = (linkId) => doc(db, 'linkSessions', linkId);
+
+/**
+ * A short, human-comparable fingerprint of a master key (first 6 hex of the
+ * master-key-derived vaultId, grouped). Both devices compute it from the same key;
+ * if a linked key was substituted in transit, the two fingerprints won't match.
+ */
+export const vaultFingerprint = async (masterKey) => {
+  const id = await deriveVaultId(masterKey);
+  const s = id.slice(0, 6).toUpperCase();
+  return `${s.slice(0, 3)}-${s.slice(3)}`;
+};
 
 /**
  * Device B (new device). Creates a link session and returns its QR payload plus the
