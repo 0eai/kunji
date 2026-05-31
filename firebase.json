@@ -5,24 +5,45 @@
       "public": "dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [
-        { "source": "/vault/write", "function": { "functionId": "vaultWrite", "region": "us-central1" } },
+        {
+          "source": "/vault/write",
+          "function": { "functionId": "vaultWrite", "region": "us-central1" }
+        },
         { "source": "**", "destination": "/index.html" }
       ],
       "headers": [
         {
           "source": "**",
           "headers": [
-            { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=(), payment=()" },
+            {
+              "key": "Permissions-Policy",
+              "value": "camera=(self), microphone=(), geolocation=(), payment=()"
+            },
             { "key": "X-Frame-Options", "value": "DENY" },
             { "key": "X-Content-Type-Options", "value": "nosniff" },
             { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-            { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            {
+              "key": "Strict-Transport-Security",
+              "value": "max-age=31536000; includeSubDomains; preload"
+            }
           ]
         },
-        { "source": "/assets/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-        { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
-        { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
-        { "source": "/manifest.json", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] }
+        {
+          "source": "/assets/**",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+        },
+        {
+          "source": "/index.html",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        },
+        {
+          "source": "/",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        },
+        {
+          "source": "/manifest.json",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        }
       ]
     },
     {
@@ -36,7 +57,10 @@
             { "key": "X-Frame-Options", "value": "DENY" },
             { "key": "X-Content-Type-Options", "value": "nosniff" },
             { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-            { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            {
+              "key": "Strict-Transport-Security",
+              "value": "max-age=31536000; includeSubDomains; preload"
+            }
           ]
         }
       ]
@@ -45,9 +69,7 @@
       "target": "redirect",
       "public": "redirect-xyz",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "redirects": [
-        { "source": "**", "destination": "https://kunji.cc", "type": 301 }
-      ]
+      "redirects": [{ "source": "**", "destination": "https://kunji.cc", "type": 301 }]
     }
   ],
   "firestore": {

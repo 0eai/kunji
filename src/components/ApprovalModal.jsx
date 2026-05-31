@@ -21,12 +21,20 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
 
   const handleApprove = async () => {
     setLoading(true);
-    try { await onApprove(); } finally { setLoading(false); }
+    try {
+      await onApprove();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeny = async () => {
     setLoading(true);
-    try { await onDeny(); } finally { setLoading(false); }
+    try {
+      await onDeny();
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -35,7 +43,9 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
       <div className="flex items-center gap-3.5 mb-7">
         <Monogram name={session?.appName} seed={session?.domain} src={session?.iconUrl} size="lg" />
         <div className="min-w-0">
-          <h2 id="approval-title" className="text-lg font-semibold tracking-tight truncate">{session?.appName || 'Unknown app'}</h2>
+          <h2 id="approval-title" className="text-lg font-semibold tracking-tight truncate">
+            {session?.appName || 'Unknown app'}
+          </h2>
           <p className="text-[13px] font-mono text-muted truncate">{session?.domain}</p>
         </div>
       </div>
@@ -49,13 +59,16 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
         {sub && (
           <div className="flex items-center justify-between gap-4 py-3.5">
             <span className="text-[13px] text-muted">Shared as</span>
-            <span className="text-[13px] font-mono text-ink tabular">{sub.slice(0, 6)}…{sub.slice(-6)}</span>
+            <span className="text-[13px] font-mono text-ink tabular">
+              {sub.slice(0, 6)}…{sub.slice(-6)}
+            </span>
           </div>
         )}
         {session?.isNew && (
           <div className="py-3.5">
             <p className="text-[13px] text-accent">
-              First time here — kunji creates a new private identity for this app. Other apps can't see it.
+              First time here — kunji creates a new private identity for this app. Other apps can't
+              see it.
             </p>
           </div>
         )}
@@ -72,8 +85,14 @@ const ApprovalModal = ({ session, onApprove, onDeny, onClose }) => {
       </p>
 
       <div className="flex items-center justify-end gap-1">
-        <Btn variant="quiet" onClick={handleDeny} disabled={loading}>Deny</Btn>
-        <Btn variant="primary" onClick={handleApprove} disabled={loading || (!!session?.expiresAt && secondsLeft === 0)}>
+        <Btn variant="quiet" onClick={handleDeny} disabled={loading}>
+          Deny
+        </Btn>
+        <Btn
+          variant="primary"
+          onClick={handleApprove}
+          disabled={loading || (!!session?.expiresAt && secondsLeft === 0)}
+        >
           {loading ? 'Signing in…' : 'Approve'}
         </Btn>
       </div>

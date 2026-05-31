@@ -1,7 +1,9 @@
 {
   "name": "kunji-app-functions",
   "type": "module",
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "20"
+  },
   "main": "index.js",
   "dependencies": {
     "@noble/curves": "^2.0.1",

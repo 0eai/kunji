@@ -77,10 +77,10 @@ export default function App() {
     };
     resetTimer();
     const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
-    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    events.forEach((e) => window.addEventListener(e, resetTimer, { passive: true }));
     return () => {
       if (timer) clearTimeout(timer);
-      events.forEach(e => window.removeEventListener(e, resetTimer));
+      events.forEach((e) => window.removeEventListener(e, resetTimer));
     };
   }, [cryptoKey, user, lockVault]);
 
@@ -88,7 +88,10 @@ export default function App() {
   useEffect(() => {
     if (!cryptoKey || !user) return;
     const handle = () => {
-      if (localStorage.getItem('kunji_lock_on_hidden') === 'true' && document.visibilityState === 'hidden') {
+      if (
+        localStorage.getItem('kunji_lock_on_hidden') === 'true' &&
+        document.visibilityState === 'hidden'
+      ) {
         logActivity(user.uid, 'Vault Auto-Locked (Hidden)', 'info', 'Lock', cryptoKey);
         lockVault('Locked because the tab was hidden.');
       }
@@ -111,10 +114,13 @@ export default function App() {
         <div className="h-[100dvh] w-full flex flex-col items-center justify-center gap-4 bg-paper text-ink px-6 text-center">
           <p className="text-[15px] font-medium">Couldn't connect</p>
           <p className="text-[14px] text-muted max-w-xs leading-relaxed">
-            kunji needs storage and network access. Check your connection, and if you're in private mode or have strict tracking protection on, allow this site.
+            kunji needs storage and network access. Check your connection, and if you're in private
+            mode or have strict tracking protection on, allow this site.
           </p>
-          <button onClick={() => window.location.reload()}
-            className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors">
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors"
+          >
             Try again
           </button>
         </div>

@@ -18,7 +18,14 @@ const RESUME_KEY = 'kunji_demo_pending';
 // The kunji key mark, for the official "Sign in with kunji" button.
 const KeyMark = () => (
   <svg viewBox="0 0 512 512" width="17" height="17" aria-hidden="true">
-    <g transform="rotate(-40 256 256)" fill="none" stroke="currentColor" strokeWidth="58" strokeLinecap="round" strokeLinejoin="round">
+    <g
+      transform="rotate(-40 256 256)"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="58"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="240" cy="172" r="56" />
       <path d="M240 172 V398" />
       <path d="M240 334 L300 314" />
@@ -28,12 +35,12 @@ const KeyMark = () => (
 );
 
 const STATUS = {
-  loading:  { color: 'text-accent',  label: 'Generating code…' },
-  scanning: { color: 'text-muted',   label: 'Scan with the kunji app' },
-  resuming: { color: 'text-accent',  label: 'Finishing sign-in…' },
+  loading: { color: 'text-accent', label: 'Generating code…' },
+  scanning: { color: 'text-muted', label: 'Scan with the kunji app' },
+  resuming: { color: 'text-accent', label: 'Finishing sign-in…' },
   approved: { color: 'text-success', label: 'Verified! Signing you in…' },
-  expired:  { color: 'text-accent',  label: 'Code expired.' },
-  error:    { color: 'text-danger',  label: 'Something went wrong.' },
+  expired: { color: 'text-accent', label: 'Code expired.' },
+  error: { color: 'text-danger', label: 'Something went wrong.' },
 };
 
 export default function LoginPage({ onSuccess }) {
@@ -44,16 +51,27 @@ export default function LoginPage({ onSuccess }) {
   const [code, setCode] = useState('');
   const [qrUrl, setQrUrl] = useState('');
   // Show one method at a time; default to the one that fits the device.
-  const [tab, setTab] = useState(() => (window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'otp'));
+  const [tab, setTab] = useState(() =>
+    window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'otp',
+  );
   const unsubRef = useRef(null);
   const timerRef = useRef(null);
   const fallbackRef = useRef(null);
   const sessionIdRef = useRef(null);
 
   const stop = () => {
-    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (fallbackRef.current) { clearTimeout(fallbackRef.current); fallbackRef.current = null; }
+    if (unsubRef.current) {
+      unsubRef.current();
+      unsubRef.current = null;
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (fallbackRef.current) {
+      clearTimeout(fallbackRef.current);
+      fallbackRef.current = null;
+    }
   };
 
   const succeed = (sub) => {
@@ -74,7 +92,9 @@ export default function LoginPage({ onSuccess }) {
         if (!r.ok) return;
         const s = await r.json();
         if (s.status === 'approved') succeed(s.sub);
-      } catch { /* transient */ }
+      } catch {
+        /* transient */
+      }
     };
     check();
     const id = setInterval(check, 2000);
@@ -99,12 +119,24 @@ export default function LoginPage({ onSuccess }) {
 
       // 2. Build the v2 discoverable payload — one shape, two transports (QR + deep link).
       const payload = {
-        kunjiAuth: 'v2', mode: 'discoverable', sessionId, challenge,
-        audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME, expiresAt,
+        kunjiAuth: 'v2',
+        mode: 'discoverable',
+        sessionId,
+        challenge,
+        audience: AUDIENCE,
+        callbackUrl: CALLBACK_URL,
+        appName: APP_NAME,
+        expiresAt,
         returnUrl: window.location.href,
       };
       const qrData = JSON.stringify(payload);
-      setQrUrl(await QRCode.toDataURL(qrData, { width: 200, margin: 1, color: { dark: '#1a1a18', light: '#ffffff' } }));
+      setQrUrl(
+        await QRCode.toDataURL(qrData, {
+          width: 200,
+          margin: 1,
+          color: { dark: '#1a1a18', light: '#ffffff' },
+        }),
+      );
       setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(qrData)}`); // same-device: open kunji directly
       setStatus('scanning');
 
@@ -114,7 +146,10 @@ export default function LoginPage({ onSuccess }) {
         if (document.hidden) return; // pause when not looking
         const left = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
         setSeconds(left);
-        if (left === 0) { stop(); setStatus('expired'); }
+        if (left === 0) {
+          stop();
+          setStatus('expired');
+        }
       };
       tick();
       timerRef.current = setInterval(tick, 1000);
@@ -128,17 +163,20 @@ export default function LoginPage({ onSuccess }) {
   }, [onSuccess]);
 
   // Same-device return: resume the saved session instead of starting a new one.
-  const resumeFlow = useCallback((savedId) => {
-    stop();
-    setStatus('resuming');
-    unsubRef.current = pollStatus(savedId);
-    // If it wasn't approved (cancelled / gone), fall back to a fresh QR.
-    fallbackRef.current = setTimeout(() => {
-      localStorage.removeItem(RESUME_KEY);
-      startFlow();
-    }, 9000);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startFlow]);
+  const resumeFlow = useCallback(
+    (savedId) => {
+      stop();
+      setStatus('resuming');
+      unsubRef.current = pollStatus(savedId);
+      // If it wasn't approved (cancelled / gone), fall back to a fresh QR.
+      fallbackRef.current = setTimeout(() => {
+        localStorage.removeItem(RESUME_KEY);
+        startFlow();
+      }, 9000);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [startFlow],
+  );
 
   useEffect(() => {
     // Resume only if we navigated out via "Open kunji" (one-shot: read + clear).
@@ -149,7 +187,8 @@ export default function LoginPage({ onSuccess }) {
     };
 
     const saved = consumeResume();
-    if (saved) resumeFlow(saved); else startFlow();
+    if (saved) resumeFlow(saved);
+    else startFlow();
 
     // If the page is restored from bfcache (e.g. back button) after Open kunji.
     const onPageShow = (e) => {
@@ -158,18 +197,24 @@ export default function LoginPage({ onSuccess }) {
       if (id) resumeFlow(id);
     };
     window.addEventListener('pageshow', onPageShow);
-    return () => { window.removeEventListener('pageshow', onPageShow); stop(); };
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      stop();
+    };
   }, [startFlow, resumeFlow]);
 
   const meta = STATUS[status] || STATUS.loading;
 
-  const tabBtn = (id, label) =>
+  const tabBtn = (id, label) => (
     <button
       onClick={() => setTab(id)}
       className={`pb-2 text-sm font-medium border-b-2 -mb-px transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
         tab === id ? 'border-accent text-ink' : 'border-transparent text-faint hover:text-muted'
       }`}
-    >{label}</button>;
+    >
+      {label}
+    </button>
+  );
 
   return (
     <>
@@ -185,71 +230,84 @@ export default function LoginPage({ onSuccess }) {
 
         {/* constant-height region so switching tabs / states never moves the heading */}
         <div className="min-h-[24rem]">
-        {status === 'approved' ? (
-          <p className="text-[15px] font-medium text-success py-6">Verified — signing you in…</p>
-        ) : status === 'expired' ? (
-          <div>
-            <p className="text-[15px] text-accent mb-6">Code expired.</p>
-            <button onClick={startFlow}
-              className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors">
-              Show new code
-            </button>
-          </div>
-        ) : status === 'error' ? (
-          <div>
-            <p className="text-[15px] text-danger mb-6">{errorMsg || 'Something went wrong.'}</p>
-            <button onClick={startFlow}
-              className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity">
-              Try again
-            </button>
-          </div>
-        ) : status !== 'scanning' ? (
-          <p className={`text-[15px] font-medium ${meta.color} py-6`}>{meta.label}</p>
-        ) : (
-          <>
-            {/* Method toggle — text tabs with amber underline */}
-            <div className="flex gap-6 border-b border-line mb-7">
-              {tabBtn('qr', 'QR')}
-              {code && tabBtn('otp', 'OTP')}
+          {status === 'approved' ? (
+            <p className="text-[15px] font-medium text-success py-6">Verified — signing you in…</p>
+          ) : status === 'expired' ? (
+            <div>
+              <p className="text-[15px] text-accent mb-6">Code expired.</p>
+              <button
+                onClick={startFlow}
+                className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+              >
+                Show new code
+              </button>
             </div>
+          ) : status === 'error' ? (
+            <div>
+              <p className="text-[15px] text-danger mb-6">{errorMsg || 'Something went wrong.'}</p>
+              <button
+                onClick={startFlow}
+                className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity"
+              >
+                Try again
+              </button>
+            </div>
+          ) : status !== 'scanning' ? (
+            <p className={`text-[15px] font-medium ${meta.color} py-6`}>{meta.label}</p>
+          ) : (
+            <>
+              {/* Method toggle — text tabs with amber underline */}
+              <div className="flex gap-6 border-b border-line mb-7">
+                {tabBtn('qr', 'QR')}
+                {code && tabBtn('otp', 'OTP')}
+              </div>
 
-            {/* fixed-height panel so switching QR↔OTP never resizes the page */}
-            <div className="min-h-[17rem]">
-              {tab === 'otp' && code ? (
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Type this code into kunji</p>
-                  <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
-                    {code.slice(0, 3)} {code.slice(3)}
+              {/* fixed-height panel so switching QR↔OTP never resizes the page */}
+              <div className="min-h-[17rem]">
+                {tab === 'otp' && code ? (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">
+                      Type this code into kunji
+                    </p>
+                    <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
+                      {code.slice(0, 3)} {code.slice(3)}
+                    </div>
+                    <p className="text-[13px] text-muted mt-3">Open kunji → enter this code.</p>
                   </div>
-                  <p className="text-[13px] text-muted mt-3">Open kunji → enter this code.</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
-                    {qrUrl && <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px]" />}
+                ) : (
+                  <div>
+                    <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
+                      {qrUrl && (
+                        <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px]" />
+                      )}
+                    </div>
+                    <p className="text-[13px] text-muted mt-4">
+                      Scan with the kunji app on your phone.
+                    </p>
                   </div>
-                  <p className="text-[13px] text-muted mt-4">Scan with the kunji app on your phone.</p>
-                </div>
+                )}
+              </div>
+
+              {/* same-device action — the canonical branded button, available under both tabs */}
+              <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.14em] text-faint my-5">
+                <span className="flex-1 h-px bg-line" /> on this device{' '}
+                <span className="flex-1 h-px bg-line" />
+              </div>
+              <a
+                href={deepLink}
+                onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
+                className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+              >
+                <KeyMark /> Sign in with kunji
+              </a>
+
+              {secondsLeft > 0 && (
+                <p className="text-[12px] text-faint mt-6 text-center">
+                  Expires in <span className="font-mono tabular">{secondsLeft}s</span>
+                </p>
               )}
-            </div>
-
-            {/* same-device action — the canonical branded button, available under both tabs */}
-            <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.14em] text-faint my-5">
-              <span className="flex-1 h-px bg-line" /> on this device <span className="flex-1 h-px bg-line" />
-            </div>
-            <a
-              href={deepLink}
-              onClick={() => localStorage.setItem(RESUME_KEY, sessionIdRef.current || '')}
-              className="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
-            >
-              <KeyMark /> Sign in with kunji
-            </a>
-
-            {secondsLeft > 0 && (
-              <p className="text-[12px] text-faint mt-6 text-center">Expires in <span className="font-mono tabular">{secondsLeft}s</span></p>
-            )}
-          </>
-        )}
+            </>
+          )}
         </div>
       </main>
     </>

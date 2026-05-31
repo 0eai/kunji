@@ -1,12 +1,16 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>kunji</title>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>kunji</title>
-
-  <meta http-equiv="Content-Security-Policy" content="
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
     default-src 'self';
     script-src 'self' 'wasm-unsafe-eval' https://*.firebasedatabase.app;
     style-src 'self' 'unsafe-inline';
@@ -24,28 +28,28 @@
     frame-ancestors 'none';
     object-src 'none';
     base-uri 'self';
-  " />
+  "
+    />
 
-  <!-- PWA -->
-  <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#faf9f6" />
-  <meta name="color-scheme" content="light dark" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#faf9f6" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
-  <!-- Apply the saved theme before paint (external so it satisfies CSP script-src 'self'). -->
-  <script src="/theme-init.js"></script>
+    <!-- Apply the saved theme before paint (external so it satisfies CSP script-src 'self'). -->
+    <script src="/theme-init.js"></script>
 
-  <!-- Home Screen -->
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="kunji" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
-</head>
+    <!-- Home Screen -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="kunji" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
+  </head>
 
-<body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.jsx"></script>
-</body>
-
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react';
 const isStandalone = () =>
   window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-const isIOS = () =>
-  /iphone|ipad|ipod/i.test(window.navigator.userAgent) && !window.MSStream;
+const isIOS = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent) && !window.MSStream;
 
 /**
  * PWA install state. Chrome/Android exposes a deferred `beforeinstallprompt`
@@ -16,7 +15,10 @@ export function useInstall() {
 
   useEffect(() => {
     const onAvailable = () => setCanPrompt(!!window.__kunjiDeferredInstall);
-    const onInstalled = () => { window.__kunjiDeferredInstall = null; setCanPrompt(false); };
+    const onInstalled = () => {
+      window.__kunjiDeferredInstall = null;
+      setCanPrompt(false);
+    };
     window.addEventListener('kunji-installable', onAvailable);
     window.addEventListener('appinstalled', onInstalled);
     return () => {

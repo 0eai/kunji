@@ -8,44 +8,44 @@
 //   import { deriveECDHSharedSecret }   from '../../lib/crypto/ecdh';
 
 export {
-    // AES-256-GCM
-    generateSalt,
-    getDefaultIterations,
-    generateMasterKey,
-    exportKey,
-    importMasterKey,
-    deriveKeyFromPasskey,
-    deriveKeyArgon2id,
-    ARGON2_DEFAULTS,
-    ARGON2_LEGACY,
-    argon2ParamsFromDoc,
-    argon2DocFields,
-    deriveVaultId,
-    encryptData,
-    decryptData,
-    keyToUrlString,
-    keyFromUrlString,
+  // AES-256-GCM
+  generateSalt,
+  getDefaultIterations,
+  generateMasterKey,
+  exportKey,
+  importMasterKey,
+  deriveKeyFromPasskey,
+  deriveKeyArgon2id,
+  ARGON2_DEFAULTS,
+  ARGON2_LEGACY,
+  argon2ParamsFromDoc,
+  argon2DocFields,
+  deriveVaultId,
+  encryptData,
+  decryptData,
+  keyToUrlString,
+  keyFromUrlString,
 } from './aes';
 
 export {
-    // ECDH P-256
-    generateECDHKeyPair,
-    exportECDHPublicKey,
-    exportECDHPrivateKey,
-    importECDHPublicKey,
-    importECDHPrivateKey,
-    deriveECDHSharedSecret,
+  // ECDH P-256
+  generateECDHKeyPair,
+  exportECDHPublicKey,
+  exportECDHPrivateKey,
+  importECDHPublicKey,
+  importECDHPrivateKey,
+  deriveECDHSharedSecret,
 } from './ecdh';
 
 export {
-    // Ed25519 — Connected Apps signing
-    generateEd25519KeyPair,
-    deriveAppKeyPair,
-    deriveVaultWriteKeyPair,
-    exportEd25519SecretKey,
-    exportEd25519PublicKey,
-    importEd25519SecretKey,
-    importEd25519PublicKey,
-    signWithEd25519,
-    verifyEd25519Signature,
+  // Ed25519 — Connected Apps signing
+  generateEd25519KeyPair,
+  deriveAppKeyPair,
+  deriveVaultWriteKeyPair,
+  exportEd25519SecretKey,
+  exportEd25519PublicKey,
+  importEd25519SecretKey,
+  importEd25519PublicKey,
+  signWithEd25519,
+  verifyEd25519Signature,
 } from './ed25519';

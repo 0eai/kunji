@@ -24,8 +24,10 @@ export default class ErrorBoundary extends React.Component {
         <p className="text-[14px] text-muted max-w-xs leading-relaxed">
           kunji hit an unexpected error. Your vault is safe — reloading usually fixes it.
         </p>
-        <button onClick={() => window.location.reload()}
-          className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors">
+        <button
+          onClick={() => window.location.reload()}
+          className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors"
+        >
           Reload
         </button>
       </div>

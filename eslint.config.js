@@ -2,9 +2,19 @@ import js from '@eslint/js';
 import globals from 'globals';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
+import prettier from 'eslint-config-prettier';
 
 export default [
-  { ignores: ['dist', '**/dist/**', 'landing/rp.js', 'landing/rp.v1.js', 'reports', 'eslint.config.js'] },
+  {
+    ignores: [
+      'dist',
+      '**/dist/**',
+      'landing/rp.js',
+      'landing/rp.v1.js',
+      'reports',
+      'eslint.config.js',
+    ],
+  },
   js.configs.recommended,
   {
     files: ['**/*.{js,jsx}'],
@@ -28,4 +38,5 @@ export default [
       'no-empty': ['warn', { allowEmptyCatch: true }],
     },
   },
+  prettier, // turn off ESLint rules that conflict with Prettier (keep last)
 ];

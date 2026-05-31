@@ -4,14 +4,18 @@ import { Eye, EyeOff } from 'lucide-react';
 /* Small quiet uppercase section label, optional trailing count. Editorial header. */
 export const SectionLabel = ({ children, count, className = '' }) => (
   <div className={`flex items-baseline gap-2 ${className}`}>
-    <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-faint">{children}</span>
+    <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-faint">
+      {children}
+    </span>
     {count != null && <span className="text-[11px] font-mono text-faint tabular">· {count}</span>}
   </div>
 );
 
 /* Persistent field label — keeps context after the placeholder disappears on type. */
 const FieldLabel = ({ children }) => (
-  <span className="block text-[11px] uppercase tracking-[0.14em] text-faint mb-1.5">{children}</span>
+  <span className="block text-[11px] uppercase tracking-[0.14em] text-faint mb-1.5">
+    {children}
+  </span>
 );
 
 const FIELD_BASE =
@@ -21,10 +25,19 @@ const FIELD_BASE =
 /* Underline input — no box. Amber underline on focus. Optional label above. */
 export const Field = React.forwardRef(({ className = '', mono = false, label, ...props }, ref) => {
   const input = (
-    <input ref={ref} {...props} className={`${FIELD_BASE} ${mono ? 'font-mono tabular' : ''} ${className}`} />
+    <input
+      ref={ref}
+      {...props}
+      className={`${FIELD_BASE} ${mono ? 'font-mono tabular' : ''} ${className}`}
+    />
   );
   if (!label) return input;
-  return <label className="block"><FieldLabel>{label}</FieldLabel>{input}</label>;
+  return (
+    <label className="block">
+      <FieldLabel>{label}</FieldLabel>
+      {input}
+    </label>
+  );
 });
 Field.displayName = 'Field';
 
@@ -51,7 +64,12 @@ export const PasswordField = React.forwardRef(({ className = '', label, ...props
     </div>
   );
   if (!label) return field;
-  return <div><FieldLabel>{label}</FieldLabel>{field}</div>;
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      {field}
+    </div>
+  );
 });
 PasswordField.displayName = 'PasswordField';
 
@@ -64,9 +82,9 @@ PasswordField.displayName = 'PasswordField';
  */
 const VARIANTS = {
   primary: 'bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full',
-  ghost:   'text-accent hover:text-ink font-medium rounded-full',
-  quiet:   'text-muted hover:text-ink font-medium rounded-full',
-  danger:  'text-danger hover:bg-danger-soft font-semibold rounded-full',
+  ghost: 'text-accent hover:text-ink font-medium rounded-full',
+  quiet: 'text-muted hover:text-ink font-medium rounded-full',
+  danger: 'text-danger hover:bg-danger-soft font-semibold rounded-full',
 };
 
 export const Btn = ({ variant = 'primary', className = '', children, ...props }) => (
@@ -83,7 +101,14 @@ export const Btn = ({ variant = 'primary', className = '', children, ...props })
 
 /* Inline spinner for in-button loading states. */
 export const Spinner = ({ size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className="spin" aria-hidden="true">
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    className="spin"
+    aria-hidden="true"
+  >
     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
     <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
   </svg>
@@ -98,9 +123,19 @@ const hueOf = (s = '') => {
 
 /* Monogram chip — first letter on a soft, app-deterministic colored tile. */
 export const Monogram = ({ name = '?', seed, src, size = 'md' }) => {
-  const dim = size === 'sm' ? 'w-8 h-8 text-sm' : size === 'lg' ? 'w-12 h-12 text-lg' : 'w-10 h-10 text-base';
+  const dim =
+    size === 'sm' ? 'w-8 h-8 text-sm' : size === 'lg' ? 'w-12 h-12 text-lg' : 'w-10 h-10 text-base';
   if (src) {
-    return <img src={src} alt="" className={`${dim} rounded-xl object-cover shrink-0`} onError={(e) => { e.currentTarget.style.display = 'none'; }} />;
+    return (
+      <img
+        src={src}
+        alt=""
+        className={`${dim} rounded-xl object-cover shrink-0`}
+        onError={(e) => {
+          e.currentTarget.style.display = 'none';
+        }}
+      />
+    );
   }
   const h = hueOf(seed || name);
   return (

@@ -14,7 +14,7 @@ kunji lets you sign in to apps by scanning a code, authenticated by keys that ne
 
 - **Zero-knowledge.** Your vault is encrypted on-device with a key derived from your passphrase (Argon2id → AES-GCM master key). The servers store only ciphertext; sign-in is anonymous (no email/phone/name).
 - **Per-app identity.** A deterministic per-domain Ed25519 keypair is derived from your master key; an app only ever sees `sub = SHA-256(publicKey)`. Different domain → unrelated key, so apps can't correlate you.
-- **Self-sovereign.** No registry, no gatekeeper. Your vault syncs across your devices via a master-key-derived id; a recovery key restores everything. Lose your vault *and* recovery key and no one — including us — can restore it. That's the trade-off for nobody being able to lock you out.
+- **Self-sovereign.** No registry, no gatekeeper. Your vault syncs across your devices via a master-key-derived id; a recovery key restores everything. Lose your vault _and_ recovery key and no one — including us — can restore it. That's the trade-off for nobody being able to lock you out.
 
 The plain-language + verifiable version of all this lives at **[kunji.cc/security](https://kunji.cc/security)**, with links to the exact source.
 
@@ -26,13 +26,15 @@ Fastest path — the drop-in widget:
 
 ```html
 <script src="https://kunji.cc/rp.js"></script>
-<div data-kunji-signin
-     data-app-name="Your App"
-     data-audience="yourapp.com"
-     data-session-url="/kunji/session"
-     data-callback-url="/kunji/callback"
-     data-poll-url="/kunji/status"
-     data-redirect="/dashboard"></div>
+<div
+  data-kunji-signin
+  data-app-name="Your App"
+  data-audience="yourapp.com"
+  data-session-url="/kunji/session"
+  data-callback-url="/kunji/callback"
+  data-poll-url="/kunji/status"
+  data-redirect="/dashboard"
+></div>
 ```
 
 - **Protocol & message formats:** [`docs/discoverable-login.md`](docs/discoverable-login.md)

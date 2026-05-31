@@ -1,91 +1,113 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>kunji — your keys, your apps, no Google</title>
+    <meta
+      name="description"
+      content="Kunji is a zero-knowledge identity wallet. Sign in to your apps with keys only you hold — no Google, no passwords, no tracking."
+    />
+    <meta name="theme-color" content="#faf9f6" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>kunji — your keys, your apps, no Google</title>
-  <meta name="description" content="Kunji is a zero-knowledge identity wallet. Sign in to your apps with keys only you hold — no Google, no passwords, no tracking." />
-  <meta name="theme-color" content="#faf9f6" />
-  <meta name="color-scheme" content="light" />
-  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <!-- Open Graph -->
+    <meta property="og:title" content="kunji — your keys, your apps, no Google" />
+    <meta
+      property="og:description"
+      content="A zero-knowledge identity wallet. Your keys never leave your device."
+    />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:type" content="website" />
 
-  <!-- Open Graph -->
-  <meta property="og:title" content="kunji — your keys, your apps, no Google" />
-  <meta property="og:description" content="A zero-knowledge identity wallet. Your keys never leave your device." />
-  <meta property="og:image" content="/icon-512.png" />
-  <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
 
-  <link rel="stylesheet" href="/style.css" />
-</head>
-
-<body>
-  <div class="wrap">
-    <header>
-      <a class="brand" href="/">
-        <img src="/icon.svg" alt="" />
-        <span>kunji</span>
-      </a>
-      <nav class="nav">
-        <a class="navlink" href="/security">Security</a>
-        <a class="navlink" href="/developers">Developers</a>
-      </nav>
-    </header>
-
-    <main class="center">
-      <p class="kicker">ZERO-KNOWLEDGE IDENTITY WALLET</p>
-      <h1>Your keys.<br />Your apps.<br />No Google.</h1>
-      <p class="pitch">
-        Sign in to your apps by scanning a code — authenticated by keys that never leave your device.
-        No passwords, no email links, no tracking.
-      </p>
-
-      <div class="cta-row">
-        <a class="cta" href="https://app.kunji.cc">
-          Open kunji
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/icon.svg" alt="" />
+          <span>kunji</span>
         </a>
-        <a class="ghost" href="/developers">Read the integration guide →</a>
-      </div>
+        <nav class="nav">
+          <a class="navlink" href="/security">Security</a>
+          <a class="navlink" href="/developers">Developers</a>
+        </nav>
+      </header>
 
-      <div class="features">
-        <a class="feature" href="/security#zero-knowledge">
-          <div class="idx">01</div>
-          <div>
-            <h3>Zero-knowledge</h3>
-            <p>Your vault is encrypted with a key derived from your passphrase. The server never sees it.</p>
-          </div>
-        </a>
-        <a class="feature" href="/security#per-app-identity">
-          <div class="idx">02</div>
-          <div>
-            <h3>Per-app identity</h3>
-            <p>Each app sees a different ID. Two apps can't link your accounts or track you across them.</p>
-          </div>
-        </a>
-        <a class="feature" href="/security#self-sovereign">
-          <div class="idx">03</div>
-          <div>
-            <h3>Self-sovereign</h3>
-            <p>No registry, no gatekeeper. You are your key — recover everything with your recovery key.</p>
-          </div>
-        </a>
-      </div>
-    </main>
+      <main class="center">
+        <p class="kicker">ZERO-KNOWLEDGE IDENTITY WALLET</p>
+        <h1>Your keys.<br />Your apps.<br />No Google.</h1>
+        <p class="pitch">
+          Sign in to your apps by scanning a code — authenticated by keys that never leave your
+          device. No passwords, no email links, no tracking.
+        </p>
 
-    <footer>
-      <span>A zero-knowledge identity wallet</span>
-      <span class="sep">·</span>
-      <a href="/security">Security</a>
-      <span class="sep">·</span>
-      <a href="/developers">Developers</a>
-      <span class="sep">·</span>
-      <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
-      <span class="sep">·</span>
-      <a href="https://app.kunji.cc">app.kunji.cc</a>
-    </footer>
-  </div>
-</body>
+        <div class="cta-row">
+          <a class="cta" href="https://app.kunji.cc">
+            Open kunji
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </a>
+          <a class="ghost" href="/developers">Read the integration guide →</a>
+        </div>
 
+        <div class="features">
+          <a class="feature" href="/security#zero-knowledge">
+            <div class="idx">01</div>
+            <div>
+              <h3>Zero-knowledge</h3>
+              <p>
+                Your vault is encrypted with a key derived from your passphrase. The server never
+                sees it.
+              </p>
+            </div>
+          </a>
+          <a class="feature" href="/security#per-app-identity">
+            <div class="idx">02</div>
+            <div>
+              <h3>Per-app identity</h3>
+              <p>
+                Each app sees a different ID. Two apps can't link your accounts or track you across
+                them.
+              </p>
+            </div>
+          </a>
+          <a class="feature" href="/security#self-sovereign">
+            <div class="idx">03</div>
+            <div>
+              <h3>Self-sovereign</h3>
+              <p>
+                No registry, no gatekeeper. You are your key — recover everything with your recovery
+                key.
+              </p>
+            </div>
+          </a>
+        </div>
+      </main>
+
+      <footer>
+        <span>A zero-knowledge identity wallet</span>
+        <span class="sep">·</span>
+        <a href="/security">Security</a>
+        <span class="sep">·</span>
+        <a href="/developers">Developers</a>
+        <span class="sep">·</span>
+        <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
+        <span class="sep">·</span>
+        <a href="https://app.kunji.cc">app.kunji.cc</a>
+      </footer>
+    </div>
+  </body>
 </html>

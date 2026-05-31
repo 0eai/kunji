@@ -1,23 +1,34 @@
 import { doc, getDoc, setDoc, deleteField } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
-  deriveKeyFromPasskey, deriveKeyArgon2id, generateSalt,
-  exportKey, encryptData, decryptData, getDefaultIterations,
-  ARGON2_DEFAULTS, argon2ParamsFromDoc, argon2DocFields,
+  deriveKeyFromPasskey,
+  deriveKeyArgon2id,
+  generateSalt,
+  exportKey,
+  encryptData,
+  decryptData,
+  getDefaultIterations,
+  ARGON2_DEFAULTS,
+  argon2ParamsFromDoc,
+  argon2DocFields,
 } from '../lib/crypto';
 
 export const resetUserVault = async (userId) => {
   const userDocRef = doc(db, 'users', userId);
-  await setDoc(userDocRef, {
-    encryptionSalt: deleteField(),
-    encryptedMasterKey: deleteField(),
-    encryptedValidator: deleteField(),
-    kdf: deleteField(),
-    iterations: deleteField(),
-    argon2: deleteField(),
-    failedAttempts: deleteField(),
-    lockoutUntil: deleteField(),
-  }, { merge: true });
+  await setDoc(
+    userDocRef,
+    {
+      encryptionSalt: deleteField(),
+      encryptedMasterKey: deleteField(),
+      encryptedValidator: deleteField(),
+      kdf: deleteField(),
+      iterations: deleteField(),
+      argon2: deleteField(),
+      failedAttempts: deleteField(),
+      lockoutUntil: deleteField(),
+    },
+    { merge: true },
+  );
 };
 
 /**
@@ -32,15 +43,19 @@ export const provisionVaultFromMasterKey = async (userId, masterKey, newPasskey)
   const encryptedMasterKey = await encryptData(masterKeyJWK, wrapperKey);
   const validationPayload = await encryptData({ check: 'VALID' }, masterKey);
 
-  await setDoc(doc(db, 'users', userId), {
-    encryptionSalt: salt,
-    encryptedMasterKey,
-    encryptedValidator: validationPayload,
-    kdf: 'argon2id',
-    argon2: argon2DocFields(ARGON2_DEFAULTS),
-    failedAttempts: 0,
-    lockoutUntil: 0,
-  }, { merge: true });
+  await setDoc(
+    doc(db, 'users', userId),
+    {
+      encryptionSalt: salt,
+      encryptedMasterKey,
+      encryptedValidator: validationPayload,
+      kdf: 'argon2id',
+      argon2: argon2DocFields(ARGON2_DEFAULTS),
+      failedAttempts: 0,
+      lockoutUntil: 0,
+    },
+    { merge: true },
+  );
 };
 
 /**
@@ -57,9 +72,10 @@ export const exportRecoveryKey = async (userId, passkey, recoveryPassphrase) => 
   const data = userDoc.data();
   const { encryptionSalt, encryptedMasterKey, kdf, iterations } = data;
 
-  const wrapperKey = kdf === 'argon2id'
-    ? await deriveKeyArgon2id(passkey, encryptionSalt, argon2ParamsFromDoc(data))
-    : await deriveKeyFromPasskey(passkey, encryptionSalt, iterations || getDefaultIterations());
+  const wrapperKey =
+    kdf === 'argon2id'
+      ? await deriveKeyArgon2id(passkey, encryptionSalt, argon2ParamsFromDoc(data))
+      : await deriveKeyFromPasskey(passkey, encryptionSalt, iterations || getDefaultIterations());
 
   const masterKeyJWK = await decryptData(encryptedMasterKey, wrapperKey);
   if (!masterKeyJWK) throw new Error('Current passkey is incorrect.');
@@ -71,5 +87,14 @@ export const exportRecoveryKey = async (userId, passkey, recoveryPassphrase) => 
 
   // v2 format: versioned prefix + base64(JSON({ salt, argon2, iv, data })).
   // The embedded `argon2` lets the recovery flow derive the same key on import.
-  return 'v2:' + btoa(JSON.stringify({ salt: recoverySalt, argon2: argon2DocFields(ARGON2_DEFAULTS), ...encryptedJWK }));
+  return (
+    'v2:' +
+    btoa(
+      JSON.stringify({
+        salt: recoverySalt,
+        argon2: argon2DocFields(ARGON2_DEFAULTS),
+        ...encryptedJWK,
+      }),
+    )
+  );
 };

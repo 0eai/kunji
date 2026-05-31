@@ -33,8 +33,8 @@ key → existing user.
 
 Sessions live in **Firestore** (not in memory), so the flow is correct across Cloud
 Functions instances. For demo simplicity the Functions/Firestore live in the **kunji-cc**
-project — *a production RP would use its own project and hardcode its own domain as the
-audience server-side.*
+project — _a production RP would use its own project and hardcode its own domain as the
+audience server-side._
 
 ## Deploy
 
@@ -58,7 +58,13 @@ kunji app. Tap **Approve** → the page signs you in and shows your `sub`.
 ```json
 {
   "publicKey": "<base64 Ed25519 public key>",
-  "signedPayload": { "sessionId": "...", "challenge": "...", "audience": "kunji-demo.web.app", "sub": "<hex>", "timestamp": 0 },
+  "signedPayload": {
+    "sessionId": "...",
+    "challenge": "...",
+    "audience": "kunji-demo.web.app",
+    "sub": "<hex>",
+    "timestamp": 0
+  },
   "signedToken": "<base64 Ed25519 signature over canonical-JSON(signedPayload)>"
 }
 ```

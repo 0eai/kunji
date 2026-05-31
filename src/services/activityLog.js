@@ -1,5 +1,11 @@
 import {
-  collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { encryptData, decryptData } from '../lib/crypto';
@@ -7,7 +13,14 @@ import { encryptData, decryptData } from '../lib/crypto';
 const activityCol = (uid) => collection(db, 'users', uid, 'activity_log');
 
 // `extra` is merged into the (encrypted) payload — e.g. { domain } to tag app events.
-export const logActivity = async (uid, action, type = 'success', icon = 'CheckCircle', cryptoKey = null, extra = {}) => {
+export const logActivity = async (
+  uid,
+  action,
+  type = 'success',
+  icon = 'CheckCircle',
+  cryptoKey = null,
+  extra = {},
+) => {
   if (!uid) return;
   try {
     const payload = { action, type, icon, ...extra };
@@ -34,7 +47,9 @@ export const listenToActivityLog = (uid, callback, maxItems = 30, cryptoKey = nu
             events.push({ id: d.id, ...decrypted, createdAt: raw.createdAt });
             continue;
           }
-        } catch { /* fall through */ }
+        } catch {
+          /* fall through */
+        }
       }
       events.push({ id: d.id, ...raw });
     }

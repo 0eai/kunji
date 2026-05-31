@@ -22,12 +22,17 @@ const freshCode = async () => {
 
 // Per-IP sliding-window rate limit (protects the 6-digit code space).
 const rateLimited = async (ip, max = 10, windowMs = 60 * 1000) => {
-  const ref = db.collection('rateLimits').doc(`lookup_${(ip || 'unknown').replace(/[^\w.:-]/g, '_')}`);
+  const ref = db
+    .collection('rateLimits')
+    .doc(`lookup_${(ip || 'unknown').replace(/[^\w.:-]/g, '_')}`);
   const now = Date.now();
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const d = snap.exists ? snap.data() : null;
-    if (!d || now - d.start > windowMs) { tx.set(ref, { start: now, count: 1 }); return false; }
+    if (!d || now - d.start > windowMs) {
+      tx.set(ref, { start: now, count: 1 });
+      return false;
+    }
     if (d.count >= max) return true;
     tx.update(ref, { count: d.count + 1 });
     return false;
@@ -41,7 +46,7 @@ const GLOBAL_FAIL_REF = () => db.collection('rateLimits').doc('global_code_failu
 const globalFailuresExceeded = async (max = 60, windowMs = 60 * 1000) => {
   const snap = await GLOBAL_FAIL_REF().get();
   const d = snap.exists ? snap.data() : null;
-  return !!d && (Date.now() - d.start <= windowMs) && d.count >= max;
+  return !!d && Date.now() - d.start <= windowMs && d.count >= max;
 };
 const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
   const ref = GLOBAL_FAIL_REF();
@@ -62,7 +67,8 @@ const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
 export const createSession = onRequest({ cors: true }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const { audience, callbackUrl } = req.body || {};
-  if (!audience || !callbackUrl) return res.status(400).json({ error: 'audience and callbackUrl required' });
+  if (!audience || !callbackUrl)
+    return res.status(400).json({ error: 'audience and callbackUrl required' });
 
   const sessionId = hex(16);
   const challenge = hex(32);
@@ -71,7 +77,16 @@ export const createSession = onRequest({ cors: true }, async (req, res) => {
   // `ttl` lets Firestore's TTL policy auto-delete the doc ~5 min after expiry,
   // so loginSessions never grows unbounded.
   const ttl = Timestamp.fromMillis(expiresAt + 5 * 60 * 1000);
-  await sessionRef(sessionId).set({ challenge, audience, callbackUrl, code, status: 'pending', sub: null, expiresAt, ttl });
+  await sessionRef(sessionId).set({
+    challenge,
+    audience,
+    callbackUrl,
+    code,
+    status: 'pending',
+    sub: null,
+    expiresAt,
+    ttl,
+  });
   res.json({ sessionId, challenge, code, expiresAt });
 });
 
@@ -87,10 +102,19 @@ export const lookupSession = onRequest({ cors: true }, async (req, res) => {
   const q = await db.collection('loginSessions').where('code', '==', code).limit(1).get();
   const doc = q.docs[0];
   const s = doc?.data();
-  if (!doc || s.status !== 'pending') { await bumpGlobalFailure(); return res.status(404).json({ error: 'invalid_code' }); }
+  if (!doc || s.status !== 'pending') {
+    await bumpGlobalFailure();
+    return res.status(404).json({ error: 'invalid_code' });
+  }
   if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_code' });
 
-  res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: s.callbackUrl, expiresAt: s.expiresAt });
+  res.json({
+    sessionId: doc.id,
+    challenge: s.challenge,
+    audience: s.audience,
+    callbackUrl: s.callbackUrl,
+    expiresAt: s.expiresAt,
+  });
 });
 
 // Poll endpoint for the drop-in widget (rp.js): resolve a sessionId to its status.

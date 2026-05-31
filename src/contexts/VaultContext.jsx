@@ -10,17 +10,17 @@ export const VaultProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [cryptoKey, setCryptoKey] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [lockReason, setLockReason] = useState("");
+  const [lockReason, setLockReason] = useState('');
 
   // Lock vault: clear key + optionally set a reason message
-  const lockVault = useCallback((reason = "") => {
+  const lockVault = useCallback((reason = '') => {
     setLockReason(reason);
     setCryptoKey(null);
   }, []);
 
   // Unlock vault: set key + clear any lock reason
   const unlockVault = useCallback((key) => {
-    setLockReason("");
+    setLockReason('');
     setCryptoKey(key);
   }, []);
 
@@ -30,15 +30,23 @@ export const VaultProvider = ({ children }) => {
     setLoading(false);
     if (!u) {
       setCryptoKey(null);
-      setLockReason("");
+      setLockReason('');
     }
   }, []);
 
   return (
-    <VaultContext.Provider value={{
-      user, cryptoKey, loading, lockReason,
-      setAuthUser, setCryptoKey, unlockVault, lockVault
-    }}>
+    <VaultContext.Provider
+      value={{
+        user,
+        cryptoKey,
+        loading,
+        lockReason,
+        setAuthUser,
+        setCryptoKey,
+        unlockVault,
+        lockVault,
+      }}
+    >
       {children}
     </VaultContext.Provider>
   );

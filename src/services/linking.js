@@ -7,8 +7,16 @@
 import { doc, setDoc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
-  generateECDHKeyPair, exportECDHPublicKey, importECDHPublicKey, deriveECDHSharedSecret,
-  encryptData, decryptData, exportKey, importMasterKey, generateSalt, deriveVaultId,
+  generateECDHKeyPair,
+  exportECDHPublicKey,
+  importECDHPublicKey,
+  deriveECDHSharedSecret,
+  encryptData,
+  decryptData,
+  exportKey,
+  importMasterKey,
+  generateSalt,
+  deriveVaultId,
 } from '../lib/crypto';
 
 const LINK_TTL_MS = 5 * 60 * 1000; // 5 minutes

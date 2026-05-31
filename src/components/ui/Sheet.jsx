@@ -16,11 +16,14 @@ let savedOverflow = '';
  */
 export default function Sheet({ children, onClose, labelledBy, z = 50, className = '' }) {
   const [closing, setClosing] = useState(false);
-  const closingRef = useRef(false);   // guard the timer without re-subscribing effects
+  const closingRef = useRef(false); // guard the timer without re-subscribing effects
   const closeTimer = useRef(null);
 
   useEffect(() => {
-    if (lockCount === 0) { savedOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+    if (lockCount === 0) {
+      savedOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
     lockCount += 1;
     return () => {
       lockCount -= 1;
@@ -41,7 +44,9 @@ export default function Sheet({ children, onClose, labelledBy, z = 50, className
 
   useEffect(() => {
     if (!onClose) return;
-    const onKey = (e) => { if (e.key === 'Escape') requestClose(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') requestClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, requestClose]);

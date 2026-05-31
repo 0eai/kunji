@@ -14,17 +14,22 @@ export default function Dashboard({ sub, onLogout }) {
         </div>
 
         <div className="mb-7">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2.5">Your ID for this app</p>
+          <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2.5">
+            Your ID for this app
+          </p>
           <code className="block text-[12px] font-mono tabular text-ink break-all leading-relaxed border-y border-line py-3.5">
             {sub}
           </code>
           <p className="text-[12px] text-faint mt-2 leading-relaxed">
-            The SHA-256 of your per-app public key — unique to this app, so other apps see a different ID.
+            The SHA-256 of your per-app public key — unique to this app, so other apps see a
+            different ID.
           </p>
         </div>
 
-        <button onClick={onLogout}
-          className="inline-flex items-center justify-center w-fit text-sm font-medium text-muted hover:text-ink transition-colors">
+        <button
+          onClick={onLogout}
+          className="inline-flex items-center justify-center w-fit text-sm font-medium text-muted hover:text-ink transition-colors"
+        >
           Sign out
         </button>
       </main>

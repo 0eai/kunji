@@ -4,10 +4,22 @@
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
-      { "source": "/api/session", "function": { "functionId": "createSession", "region": "us-central1" } },
-      { "source": "/kunji/session", "function": { "functionId": "lookupSession", "region": "us-central1" } },
-      { "source": "/kunji/status", "function": { "functionId": "getSessionStatus", "region": "us-central1" } },
-      { "source": "/kunji/callback", "function": { "functionId": "kunjiCallback", "region": "us-central1" } },
+      {
+        "source": "/api/session",
+        "function": { "functionId": "createSession", "region": "us-central1" }
+      },
+      {
+        "source": "/kunji/session",
+        "function": { "functionId": "lookupSession", "region": "us-central1" }
+      },
+      {
+        "source": "/kunji/status",
+        "function": { "functionId": "getSessionStatus", "region": "us-central1" }
+      },
+      {
+        "source": "/kunji/callback",
+        "function": { "functionId": "kunjiCallback", "region": "us-central1" }
+      },
       { "source": "**", "destination": "/index.html" }
     ],
     "headers": [
@@ -17,12 +29,24 @@
           { "key": "X-Frame-Options", "value": "DENY" },
           { "key": "X-Content-Type-Options", "value": "nosniff" },
           { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-          { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+          {
+            "key": "Strict-Transport-Security",
+            "value": "max-age=31536000; includeSubDomains; preload"
+          }
         ]
       },
-      { "source": "/assets/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-      { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] },
-      { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] }
+      {
+        "source": "/assets/**",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      },
+      {
+        "source": "/index.html",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+      },
+      {
+        "source": "/",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+      }
     ]
   },
   "functions": { "source": "functions" }

@@ -1,52 +1,62 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add Sign in with kunji — developer guide</title>
+    <meta
+      name="description"
+      content="Integrate Sign in with kunji: passwordless, per-app identity. kunji shares no database and runs no backend in the login path — you run a tiny verifier and own your session."
+    />
+    <meta name="theme-color" content="#faf9f6" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Add Sign in with kunji — developer guide</title>
-  <meta name="description" content="Integrate Sign in with kunji: passwordless, per-app identity. kunji shares no database and runs no backend in the login path — you run a tiny verifier and own your session." />
-  <meta name="theme-color" content="#faf9f6" />
-  <meta name="color-scheme" content="light" />
-  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <meta property="og:title" content="Add Sign in with kunji — developer guide" />
+    <meta
+      property="og:description"
+      content="Passwordless, per-app identity for your app. No shared database, no kunji backend in the login path."
+    />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:type" content="website" />
 
-  <meta property="og:title" content="Add Sign in with kunji — developer guide" />
-  <meta property="og:description" content="Passwordless, per-app identity for your app. No shared database, no kunji backend in the login path." />
-  <meta property="og:image" content="/icon-512.png" />
-  <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
 
-  <link rel="stylesheet" href="/style.css" />
-</head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/icon.svg" alt="" />
+          <span>kunji</span>
+        </a>
+        <nav class="nav">
+          <a class="navlink" href="/developers/firebase">Firebase</a>
+          <a class="navlink" href="/developers/try">Try it</a>
+        </nav>
+      </header>
 
-<body>
-  <div class="wrap">
-    <header>
-      <a class="brand" href="/">
-        <img src="/icon.svg" alt="" />
-        <span>kunji</span>
-      </a>
-      <nav class="nav">
-        <a class="navlink" href="/developers/firebase">Firebase</a>
-        <a class="navlink" href="/developers/try">Try it</a>
-      </nav>
-    </header>
+      <main class="guide">
+        <p class="kicker">FOR DEVELOPERS</p>
+        <h1>Add Sign in with kunji</h1>
+        <p class="lead">
+          Passwordless sign-in where the user holds the keys. Each app sees its own per-app identity
+          — a stable <code class="k">sub</code> — and nothing else.
+          <b>kunji shares no database and runs no backend in the login path:</b> you create a
+          session, show a code, and verify a signed assertion the wallet posts straight to your own
+          callback.
+        </p>
 
-    <main class="guide">
-      <p class="kicker">FOR DEVELOPERS</p>
-      <h1>Add Sign in with kunji</h1>
-      <p class="lead">
-        Passwordless sign-in where the user holds the keys. Each app sees its own per-app identity —
-        a stable <code class="k">sub</code> — and nothing else. <b>kunji shares no database and runs no
-        backend in the login path:</b> you create a session, show a code, and verify a signed assertion the
-        wallet posts straight to your own callback.
-      </p>
-
-      <!-- Fastest path: the widget -->
-      <section class="sec">
-        <div class="sec-label">Fastest path — the drop-in button</div>
-        <p>Include the widget and drop in a button. It renders the official "Sign in with kunji" button, opens the QR / OTP modal, and reports success — entirely client-side, talking only to your own endpoints.</p>
-        <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
+        <!-- Fastest path: the widget -->
+        <section class="sec">
+          <div class="sec-label">Fastest path — the drop-in button</div>
+          <p>
+            Include the widget and drop in a button. It renders the official "Sign in with kunji"
+            button, opens the QR / OTP modal, and reports success — entirely client-side, talking
+            only to your own endpoints.
+          </p>
+          <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
 
 &lt;div data-kunji-signin
      data-app-name="Your App"
@@ -55,39 +65,75 @@
      data-callback-url="https://yourapp.com/kunji/callback"
      data-poll-url="https://yourapp.com/kunji/status"
      data-redirect="/dashboard"&gt;&lt;/div&gt;</code></pre>
-        <p class="note">
-          Pin <code class="k">rp.v1.js</code> in production. For SPAs, drop <code class="k">data-redirect</code> and
-          listen for <code class="k">kunji:success</code> (<code class="k">e.detail.sub</code>). On Firebase?
-          <a class="back" href="/developers/firebase">Use the Firebase guide →</a> ·
-          <a class="back" href="/developers/try">try the button →</a>
-        </p>
-        <p class="note">You still implement the three endpoints below (session · callback · status) and verify server-side — the widget is UI + orchestration only.</p>
-      </section>
+          <p class="note">
+            Pin <code class="k">rp.v1.js</code> in production. For SPAs, drop
+            <code class="k">data-redirect</code> and listen for
+            <code class="k">kunji:success</code> (<code class="k">e.detail.sub</code>). On Firebase?
+            <a class="back" href="/developers/firebase">Use the Firebase guide →</a> ·
+            <a class="back" href="/developers/try">try the button →</a>
+          </p>
+          <p class="note">
+            You still implement the three endpoints below (session · callback · status) and verify
+            server-side — the widget is UI + orchestration only.
+          </p>
+        </section>
 
-      <!-- How it works -->
-      <section class="sec">
-        <div class="sec-label">How it works</div>
-        <ol class="flow">
-          <li><span><b>Create a session</b> on your server — a random challenge with a short TTL.</span></li>
-          <li><span><b>Show it</b> as a QR (and/or a 6-digit code) the user scans or types in kunji.</span></li>
-          <li><span><b>The user approves</b> in the wallet, which signs the challenge with their per-app key.</span></li>
-          <li><span><b>The wallet POSTs</b> the signed assertion to <em>your</em> callback URL — directly, no kunji server.</span></li>
-          <li><span><b>You verify</b> the signature, audience, freshness, and single-use.</span></li>
-          <li><span><b>You start your session</b>, keyed by the user's <code class="k">sub</code>.</span></li>
-        </ol>
-        <p class="note">
-          The only two cross-boundary channels are the <b>QR</b> (your app → wallet) and the
-          <b>signed-assertion POST</b> (wallet → your callback). There is no shared storage and no kunji service in the middle.
-        </p>
-      </section>
+        <!-- How it works -->
+        <section class="sec">
+          <div class="sec-label">How it works</div>
+          <ol class="flow">
+            <li>
+              <span
+                ><b>Create a session</b> on your server — a random challenge with a short TTL.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>Show it</b> as a QR (and/or a 6-digit code) the user scans or types in
+                kunji.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>The user approves</b> in the wallet, which signs the challenge with their
+                per-app key.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>The wallet POSTs</b> the signed assertion to <em>your</em> callback URL —
+                directly, no kunji server.</span
+              >
+            </li>
+            <li>
+              <span><b>You verify</b> the signature, audience, freshness, and single-use.</span>
+            </li>
+            <li>
+              <span
+                ><b>You start your session</b>, keyed by the user's
+                <code class="k">sub</code>.</span
+              >
+            </li>
+          </ol>
+          <p class="note">
+            The only two cross-boundary channels are the <b>QR</b> (your app → wallet) and the
+            <b>signed-assertion POST</b> (wallet → your callback). There is no shared storage and no
+            kunji service in the middle.
+          </p>
+        </section>
 
-      <!-- Step 1 -->
-      <section class="sec">
-        <div class="step">
-          <div class="n">STEP 1</div>
-          <h3>Create a login session (server)</h3>
-          <p>Mint a random <code class="k">sessionId</code> and <code class="k">challenge</code> with a short TTL, and store it in <em>your</em> session store. Hardcode your own domain as the <code class="k">audience</code> server-side.</p>
-          <pre><code>import { randomBytes } from 'node:crypto';
+        <!-- Step 1 -->
+        <section class="sec">
+          <div class="step">
+            <div class="n">STEP 1</div>
+            <h3>Create a login session (server)</h3>
+            <p>
+              Mint a random <code class="k">sessionId</code> and
+              <code class="k">challenge</code> with a short TTL, and store it in
+              <em>your</em> session store. Hardcode your own domain as the
+              <code class="k">audience</code> server-side.
+            </p>
+            <pre><code>import { randomBytes } from 'node:crypto';
 const hex = (n) => randomBytes(n).toString('hex');
 
 // POST /kunji/session  → create a short-lived login session
@@ -104,14 +150,18 @@ app.post('/kunji/session', async (req, res) => {
 
   res.json({ sessionId, challenge, expiresAt });
 });</code></pre>
-        </div>
+          </div>
 
-        <!-- Step 2 -->
-        <div class="step">
-          <div class="n">STEP 2</div>
-          <h3>Render the QR / code (frontend)</h3>
-          <p>Encode the v2 discoverable payload into a QR. The same payload also powers a same-device deep link and the typed 6-digit code. Then poll your own session for <code class="k">status === 'approved'</code>.</p>
-          <pre><code>import QRCode from 'qrcode';
+          <!-- Step 2 -->
+          <div class="step">
+            <div class="n">STEP 2</div>
+            <h3>Render the QR / code (frontend)</h3>
+            <p>
+              Encode the v2 discoverable payload into a QR. The same payload also powers a
+              same-device deep link and the typed 6-digit code. Then poll your own session for
+              <code class="k">status === 'approved'</code>.
+            </p>
+            <pre><code>import QRCode from 'qrcode';
 
 const { sessionId, challenge, expiresAt } =
   await (await fetch('/kunji/session', { method: 'POST' })).json();
@@ -128,14 +178,18 @@ const payload = {
 
 const qrDataUrl = await QRCode.toDataURL(JSON.stringify(payload));
 // render qrDataUrl as an image; poll your session until status === 'approved'</code></pre>
-        </div>
+          </div>
 
-        <!-- Step 3 -->
-        <div class="step">
-          <div class="n">STEP 3</div>
-          <h3>Receive &amp; verify the assertion (server)</h3>
-          <p>The wallet POSTs the signed assertion to your <code class="k">callbackUrl</code>. Verify all seven rules below before trusting it. The canonical-JSON + Ed25519 scheme must match kunji exactly.</p>
-          <pre><code>import { createHash } from 'node:crypto';
+          <!-- Step 3 -->
+          <div class="step">
+            <div class="n">STEP 3</div>
+            <h3>Receive &amp; verify the assertion (server)</h3>
+            <p>
+              The wallet POSTs the signed assertion to your <code class="k">callbackUrl</code>.
+              Verify all seven rules below before trusting it. The canonical-JSON + Ed25519 scheme
+              must match kunji exactly.
+            </p>
+            <pre><code>import { createHash } from 'node:crypto';
 import { ed25519 } from '@noble/curves/ed25519.js';
 
 // keys sorted, no whitespace — MUST match kunji's signer
@@ -174,27 +228,38 @@ app.post('/kunji/callback', async (req, res) => {
 
   res.json({ status: 'ok' });
 });</code></pre>
-        </div>
+          </div>
 
-        <!-- Step 4 -->
-        <div class="step">
-          <div class="n">STEP 4</div>
-          <h3>Start your session</h3>
-          <p>Key your user by <code class="k">sub</code> — a first-seen <code class="k">sub</code> is a new account, a returning one is an existing user (the SSH / passkey model). On Firebase, mint a custom token with <code class="k">uid = sub</code> so your existing security rules keep working unchanged.</p>
-          <pre><code>// your frontend sees status === 'approved' for its session, then:
+          <!-- Step 4 -->
+          <div class="step">
+            <div class="n">STEP 4</div>
+            <h3>Start your session</h3>
+            <p>
+              Key your user by <code class="k">sub</code> — a first-seen
+              <code class="k">sub</code> is a new account, a returning one is an existing user (the
+              SSH / passkey model). On Firebase, mint a custom token with
+              <code class="k">uid = sub</code> so your existing security rules keep working
+              unchanged.
+            </p>
+            <pre><code>// your frontend sees status === 'approved' for its session, then:
 const token = await admin.auth().createCustomToken(session.sub, {
   kunjiPub: publicKey,            // optional claim
 });
 // frontend: signInWithCustomToken(token) → request.auth.uid === sub</code></pre>
-          <p class="note">Using the drop-in widget? Also expose a read-only <code class="k">GET /kunji/status?sessionId=</code> → <code class="k">{ status, sub }</code> that the widget polls until <code class="k">approved</code>.</p>
-        </div>
-      </section>
+            <p class="note">
+              Using the drop-in widget? Also expose a read-only
+              <code class="k">GET /kunji/status?sessionId=</code> →
+              <code class="k">{ status, sub }</code> that the widget polls until
+              <code class="k">approved</code>.
+            </p>
+          </div>
+        </section>
 
-      <!-- Message formats -->
-      <section class="sec">
-        <div class="sec-label">Message formats</div>
-        <h2 style="font-size:16px;margin-bottom:6px;">QR payload — your app → wallet</h2>
-        <pre><code>{
+        <!-- Message formats -->
+        <section class="sec">
+          <div class="sec-label">Message formats</div>
+          <h2 style="font-size: 16px; margin-bottom: 6px">QR payload — your app → wallet</h2>
+          <pre><code>{
   "kunjiAuth": "v2",
   "mode": "discoverable",
   "sessionId": "8f3c…",
@@ -204,8 +269,10 @@ const token = await admin.auth().createCustomToken(session.sub, {
   "appName": "Your App",
   "expiresAt": 1750000000000
 }</code></pre>
-        <h2 style="font-size:16px;margin:24px 0 6px;">Signed assertion — wallet → your callback</h2>
-        <pre><code>{
+          <h2 style="font-size: 16px; margin: 24px 0 6px">
+            Signed assertion — wallet → your callback
+          </h2>
+          <pre><code>{
   "publicKey": "base64 Ed25519 public key (the user's identity for this app)",
   "signedPayload": {
     "sessionId": "8f3c…",
@@ -216,64 +283,101 @@ const token = await admin.auth().createCustomToken(session.sub, {
   },
   "signedToken": "base64 Ed25519 signature over canonicalJson(signedPayload)"
 }</code></pre>
-      </section>
+        </section>
 
-      <!-- Verification checklist -->
-      <section class="sec">
-        <div class="sec-label">Verification checklist</div>
-        <ul class="checklist">
-          <li><span>Session is known, not expired, and <code class="k">status === 'pending'</code>.</span></li>
-          <li><span><code class="k">challenge</code> equals the session's stored challenge (anti-replay).</span></li>
-          <li><span><code class="k">audience</code> equals your own domain (anti-relay / phishing).</span></li>
-          <li><span>Signature verifies over <code class="k">canonicalJson(signedPayload)</code> with the presented <code class="k">publicKey</code>.</span></li>
-          <li><span><code class="k">sub</code> equals <code class="k">SHA-256(publicKey)</code> recomputed server-side.</span></li>
-          <li><span><code class="k">timestamp</code> is within ±2 minutes of server time.</span></li>
-          <li><span>Mark the session consumed — reject any re-submission (single-use).</span></li>
-        </ul>
-      </section>
+        <!-- Verification checklist -->
+        <section class="sec">
+          <div class="sec-label">Verification checklist</div>
+          <ul class="checklist">
+            <li>
+              <span
+                >Session is known, not expired, and
+                <code class="k">status === 'pending'</code>.</span
+              >
+            </li>
+            <li>
+              <span
+                ><code class="k">challenge</code> equals the session's stored challenge
+                (anti-replay).</span
+              >
+            </li>
+            <li>
+              <span
+                ><code class="k">audience</code> equals your own domain (anti-relay /
+                phishing).</span
+              >
+            </li>
+            <li>
+              <span
+                >Signature verifies over <code class="k">canonicalJson(signedPayload)</code> with
+                the presented <code class="k">publicKey</code>.</span
+              >
+            </li>
+            <li>
+              <span
+                ><code class="k">sub</code> equals
+                <code class="k">SHA-256(publicKey)</code> recomputed server-side.</span
+              >
+            </li>
+            <li>
+              <span><code class="k">timestamp</code> is within ±2 minutes of server time.</span>
+            </li>
+            <li><span>Mark the session consumed — reject any re-submission (single-use).</span></li>
+          </ul>
+        </section>
 
-      <!-- Security -->
-      <section class="sec">
-        <div class="sec-label">Security notes</div>
-        <p class="note">
-          <b>Audience binding</b> stops a malicious site relaying your QR — the wallet signs your domain and shows it to the
-          user for confirmation. <b>The callback must be HTTPS and same-site</b> as the audience; kunji rejects mismatches.
-          The <b>challenge is single-use</b> and session-bound. Keys never leave the vault — only signatures are emitted.
-          One caveat to surface to users: the kunji vault (and its recovery key) becomes the root of access to every
-          connected app, so it's load-bearing — back up the recovery key.
-        </p>
-      </section>
+        <!-- Security -->
+        <section class="sec">
+          <div class="sec-label">Security notes</div>
+          <p class="note">
+            <b>Audience binding</b> stops a malicious site relaying your QR — the wallet signs your
+            domain and shows it to the user for confirmation.
+            <b>The callback must be HTTPS and same-site</b> as the audience; kunji rejects
+            mismatches. The <b>challenge is single-use</b> and session-bound. Keys never leave the
+            vault — only signatures are emitted. One caveat to surface to users: the kunji vault
+            (and its recovery key) becomes the root of access to every connected app, so it's
+            load-bearing — back up the recovery key.
+          </p>
+        </section>
 
-      <!-- Reference -->
-      <section class="sec">
-        <div class="sec-label">Reference</div>
-        <p class="note">
-          A complete, working relying-party — <code class="k">createSession</code>, the QR/code frontend, and the full
-          <code class="k">verifyAssertion</code> — lives in the kunji repo under
-          <code class="k">examples/kunji-login-demo</code>. Try it live:
-        </p>
-        <div class="cta-row" style="margin-top:20px;">
-          <a class="cta" href="https://kunji-demo.web.app">
-            Open the demo
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          </a>
-          <a class="ghost" href="/">← Back to home</a>
-        </div>
-      </section>
-    </main>
+        <!-- Reference -->
+        <section class="sec">
+          <div class="sec-label">Reference</div>
+          <p class="note">
+            A complete, working relying-party — <code class="k">createSession</code>, the QR/code
+            frontend, and the full <code class="k">verifyAssertion</code> — lives in the kunji repo
+            under <code class="k">examples/kunji-login-demo</code>. Try it live:
+          </p>
+          <div class="cta-row" style="margin-top: 20px">
+            <a class="cta" href="https://kunji-demo.web.app">
+              Open the demo
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </a>
+            <a class="ghost" href="/">← Back to home</a>
+          </div>
+        </section>
+      </main>
 
-    <footer>
-      <span>A zero-knowledge identity wallet</span>
-      <span class="sep">·</span>
-      <a href="/developers/firebase">Firebase</a>
-      <span class="sep">·</span>
-      <a href="/developers/try">Try it</a>
-      <span class="sep">·</span>
-      <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
-      <span class="sep">·</span>
-      <a href="https://app.kunji.cc">app.kunji.cc</a>
-    </footer>
-  </div>
-</body>
-
+      <footer>
+        <span>A zero-knowledge identity wallet</span>
+        <span class="sep">·</span>
+        <a href="/developers/firebase">Firebase</a>
+        <span class="sep">·</span>
+        <a href="/developers/try">Try it</a>
+        <span class="sep">·</span>
+        <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
+        <span class="sep">·</span>
+        <a href="https://app.kunji.cc">app.kunji.cc</a>
+      </footer>
+    </div>
+  </body>
 </html>

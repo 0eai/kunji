@@ -1,7 +1,4 @@
-import {
-  collection, doc, getDoc, getDocs,
-  onSnapshot, orderBy, query,
-} from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { encryptData, decryptData } from '../lib/crypto';
 import {
@@ -23,13 +20,28 @@ const callVaultWrite = async (vaultId, cryptoKey, op, appId, docPayload) => {
   const publicKeyB64 = exportEd25519PublicKey(publicKey);
   const timestamp = Date.now();
   // Signed payload — keys/values must match what the function reconstructs.
-  const signed = { appId, doc: docPayload ?? null, op, publicKey: publicKeyB64, timestamp, vaultId };
+  const signed = {
+    appId,
+    doc: docPayload ?? null,
+    op,
+    publicKey: publicKeyB64,
+    timestamp,
+    vaultId,
+  };
   const signedToken = signWithEd25519(signed, secretKey);
 
   const resp = await fetch(VAULT_WRITE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vaultId, op, appId, doc: docPayload ?? undefined, publicKey: publicKeyB64, signedToken, timestamp }),
+    body: JSON.stringify({
+      vaultId,
+      op,
+      appId,
+      doc: docPayload ?? undefined,
+      publicKey: publicKeyB64,
+      signedToken,
+      timestamp,
+    }),
   });
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}));
@@ -47,8 +59,13 @@ const appDoc = (vaultId, appId) => doc(db, 'vaults', vaultId, 'apps', appId);
 // (same id across devices and logins — registration is idempotent). Normalized so
 // casing variants of the same domain collapse to one entry.
 const appIdForDomain = async (domain) => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizeDomain(domain)));
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(normalizeDomain(domain)),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 };
 
 export const listenToApps = (vaultId, cryptoKey, callback) => {
@@ -84,9 +101,15 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
   const existed = (await getDoc(ref)).exists();
 
   if (!existed) {
-    const payload = await encryptData({ name, domain: normalizeDomain(domain), iconUrl }, cryptoKey);
+    const payload = await encryptData(
+      { name, domain: normalizeDomain(domain), iconUrl },
+      cryptoKey,
+    );
     await callVaultWrite(vaultId, cryptoKey, 'set', id, { ...payload, publicKey: pubKeyBase64 });
-    if (userId) await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, { domain });
+    if (userId)
+      await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, {
+        domain,
+      });
   }
 
   return { registeredAppId: id, publicKey: pubKeyBase64, isNew: !existed };
@@ -125,7 +148,9 @@ export const migrateLegacyApps = async (userId, vaultId, cryptoKey) => {
 export const deriveSubFromPublicKey = async (publicKeyBase64) => {
   const data = new TextEncoder().encode(publicKeyBase64);
   const digest = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 };
 
 /**
@@ -145,8 +170,11 @@ export const parseQRPayload = (rawValue) => {
   if (
     parsed?.kunjiAuth !== 'v2' ||
     parsed.mode !== 'discoverable' ||
-    !parsed.sessionId || !parsed.challenge || !parsed.audience ||
-    !parsed.callbackUrl || !parsed.expiresAt
+    !parsed.sessionId ||
+    !parsed.challenge ||
+    !parsed.audience ||
+    !parsed.callbackUrl ||
+    !parsed.expiresAt
   ) {
     throw new Error('invalid_qr');
   }
@@ -165,12 +193,41 @@ export const parseQRPayload = (rawValue) => {
 // "evil.com"). Not exhaustive (a full PSL is the proper long-term fix); covers the
 // common cases that break the same-site guarantee.
 const PUBLIC_SUFFIXES = new Set([
-  'com', 'org', 'net', 'io', 'co', 'dev', 'app', 'xyz', 'cc', 'info', 'biz', 'me', 'ai', 'gg',
-  'co.uk', 'org.uk', 'gov.uk', 'ac.uk', 'com.au', 'net.au', 'org.au', 'co.in', 'co.jp',
-  'com.br', 'co.nz', 'co.za', 'com.mx', 'com.sg', 'com.hk',
+  'com',
+  'org',
+  'net',
+  'io',
+  'co',
+  'dev',
+  'app',
+  'xyz',
+  'cc',
+  'info',
+  'biz',
+  'me',
+  'ai',
+  'gg',
+  'co.uk',
+  'org.uk',
+  'gov.uk',
+  'ac.uk',
+  'com.au',
+  'net.au',
+  'org.au',
+  'co.in',
+  'co.jp',
+  'com.br',
+  'co.nz',
+  'co.za',
+  'com.mx',
+  'com.sg',
+  'com.hk',
 ]);
 
-const normalizeHost = (h) => String(h || '').toLowerCase().replace(/\.$/, '');
+const normalizeHost = (h) =>
+  String(h || '')
+    .toLowerCase()
+    .replace(/\.$/, '');
 
 const isRegistrableDomain = (aud) => aud.includes('.') && !PUBLIC_SUFFIXES.has(aud);
 
@@ -179,12 +236,19 @@ const isRegistrableDomain = (aud) => aud.includes('.') && !PUBLIC_SUFFIXES.has(a
 // rejected so it can't be abused to relay assertions to an unrelated host.
 const assertSameSiteCallback = (audience, callbackUrl) => {
   let cbUrl;
-  try { cbUrl = new URL(callbackUrl); } catch { throw new Error('untrusted_callback'); }
+  try {
+    cbUrl = new URL(callbackUrl);
+  } catch {
+    throw new Error('untrusted_callback');
+  }
   const host = normalizeHost(cbUrl.hostname);
   const aud = normalizeHost(audience);
   const isLocal = host === 'localhost' || host === '127.0.0.1';
   const secure = cbUrl.protocol === 'https:' || (isLocal && cbUrl.protocol === 'http:');
-  if (isLocal) { if (!secure) throw new Error('untrusted_callback'); return; }
+  if (isLocal) {
+    if (!secure) throw new Error('untrusted_callback');
+    return;
+  }
   if (!isRegistrableDomain(aud)) throw new Error('untrusted_callback');
   const sameSite = host === aud || host.endsWith('.' + aud);
   if (!sameSite || !secure) throw new Error('untrusted_callback');
@@ -199,7 +263,11 @@ const assertSameSiteCallback = (audience, callbackUrl) => {
 export const isSafeReturnUrl = (returnUrl, audience) => {
   if (!returnUrl) return false;
   let u;
-  try { u = new URL(returnUrl); } catch { return false; }
+  try {
+    u = new URL(returnUrl);
+  } catch {
+    return false;
+  }
   const host = normalizeHost(u.hostname);
   const aud = normalizeHost(audience);
   const isLocal = host === 'localhost' || host === '127.0.0.1';
@@ -234,7 +302,8 @@ export const lookupSessionByCode = async (domain, code) => {
   if (resp.status === 429) throw new Error('rate_limited');
   if (!resp.ok) throw new Error('lookup_failed');
   const s = await resp.json();
-  if (!s.sessionId || !s.challenge || !s.audience || !s.callbackUrl) throw new Error('lookup_failed');
+  if (!s.sessionId || !s.challenge || !s.audience || !s.callbackUrl)
+    throw new Error('lookup_failed');
   if (s.audience !== domain) throw new Error('untrusted_callback');
   assertSameSiteCallback(s.audience, s.callbackUrl);
   return s; // { sessionId, challenge, audience, callbackUrl }
@@ -270,7 +339,9 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, qr) => {
     throw new Error(`callback_rejected:${resp.status}${detail ? ` ${detail}` : ''}`);
   }
 
-  await logActivity(userId, `Signed in to ${qr.audience}`, 'success', 'ShieldCheck', cryptoKey, { domain: qr.audience });
+  await logActivity(userId, `Signed in to ${qr.audience}`, 'success', 'ShieldCheck', cryptoKey, {
+    domain: qr.audience,
+  });
   return { sub };
 };
 
@@ -281,8 +352,17 @@ export const exportAllApps = async (vaultId, cryptoKey) => {
     const raw = d.data();
     try {
       const dec = await decryptData(raw, cryptoKey);
-      if (dec) apps.push({ id: d.id, name: dec.name, domain: dec.domain, iconUrl: dec.iconUrl, publicKey: raw.publicKey });
-    } catch { /* skip */ }
+      if (dec)
+        apps.push({
+          id: d.id,
+          name: dec.name,
+          domain: dec.domain,
+          iconUrl: dec.iconUrl,
+          publicKey: raw.publicKey,
+        });
+    } catch {
+      /* skip */
+    }
   }
   return apps;
 };

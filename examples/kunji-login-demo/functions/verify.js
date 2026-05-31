@@ -8,7 +8,11 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 export function canonicalJson(obj) {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return JSON.stringify(obj);
   const sorted = {};
-  Object.keys(obj).sort().forEach((k) => { sorted[k] = obj[k]; });
+  Object.keys(obj)
+    .sort()
+    .forEach((k) => {
+      sorted[k] = obj[k];
+    });
   return JSON.stringify(sorted);
 }
 
@@ -25,7 +29,8 @@ export function subFromPublicKey(publicKeyBase64) {
  */
 export function verifyAssertion({ assertion, session, audience, now = Date.now() }) {
   const { publicKey, signedPayload, signedToken } = assertion || {};
-  if (!publicKey || !signedPayload || !signedToken) return { ok: false, error: 'malformed_assertion' };
+  if (!publicKey || !signedPayload || !signedToken)
+    return { ok: false, error: 'malformed_assertion' };
 
   // 1. session exists, fresh, pending
   if (!session) return { ok: false, error: 'unknown_session' };
@@ -33,7 +38,8 @@ export function verifyAssertion({ assertion, session, audience, now = Date.now()
   if (now > session.expiresAt) return { ok: false, error: 'session_expired' };
 
   // 2. challenge match (anti-replay)
-  if (signedPayload.challenge !== session.challenge) return { ok: false, error: 'challenge_mismatch' };
+  if (signedPayload.challenge !== session.challenge)
+    return { ok: false, error: 'challenge_mismatch' };
 
   // 3. audience match (anti-relay/phishing)
   if (signedPayload.audience !== audience) return { ok: false, error: 'audience_mismatch' };
@@ -52,10 +58,12 @@ export function verifyAssertion({ assertion, session, audience, now = Date.now()
   if (!sigOk) return { ok: false, error: 'bad_signature' };
 
   // 5. sub integrity
-  if (signedPayload.sub !== subFromPublicKey(publicKey)) return { ok: false, error: 'sub_mismatch' };
+  if (signedPayload.sub !== subFromPublicKey(publicKey))
+    return { ok: false, error: 'sub_mismatch' };
 
   // 6. freshness (±2 min)
-  if (Math.abs(now - signedPayload.timestamp) > 120_000) return { ok: false, error: 'stale_timestamp' };
+  if (Math.abs(now - signedPayload.timestamp) > 120_000)
+    return { ok: false, error: 'stale_timestamp' };
 
   return { ok: true, sub: signedPayload.sub };
 }

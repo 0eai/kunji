@@ -149,9 +149,19 @@ function openModal(opts, sourceEl) {
   document.body.style.overflow = 'hidden';
 
   let timers = [];
-  const clearTimers = () => { timers.forEach(clearInterval); timers.forEach(clearTimeout); timers = []; };
-  const close = () => { clearTimers(); document.body.style.overflow = prevOverflow; host.remove(); };
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  const clearTimers = () => {
+    timers.forEach(clearInterval);
+    timers.forEach(clearTimeout);
+    timers = [];
+  };
+  const close = () => {
+    clearTimers();
+    document.body.style.overflow = prevOverflow;
+    host.remove();
+  };
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
 
   let tab = window.matchMedia('(min-width:640px)').matches ? 'qr' : 'otp';
   let currentSessionId = null;
@@ -175,8 +185,13 @@ function openModal(opts, sourceEl) {
     let session;
     try {
       const r = await fetch(opts.sessionUrl, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audience: opts.audience, callbackUrl: opts.callbackUrl, appName: opts.appName }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audience: opts.audience,
+          callbackUrl: opts.callbackUrl,
+          appName: opts.appName,
+        }),
       });
       if (!r.ok) throw new Error('session');
       session = await r.json(); // { sessionId, challenge, code?, expiresAt }
@@ -188,10 +203,14 @@ function openModal(opts, sourceEl) {
     }
 
     const payload = {
-      kunjiAuth: 'v2', mode: 'discoverable',
-      sessionId: session.sessionId, challenge: session.challenge,
-      audience: opts.audience, callbackUrl: opts.callbackUrl,
-      appName: opts.appName, expiresAt: session.expiresAt,
+      kunjiAuth: 'v2',
+      mode: 'discoverable',
+      sessionId: session.sessionId,
+      challenge: session.challenge,
+      audience: opts.audience,
+      callbackUrl: opts.callbackUrl,
+      appName: opts.appName,
+      expiresAt: session.expiresAt,
       returnUrl: location.href,
     };
     const qrData = JSON.stringify(payload);
@@ -200,7 +219,13 @@ function openModal(opts, sourceEl) {
     const safeAppUrl = /^https:\/\//i.test(opts.appUrl) ? opts.appUrl : APP_URL_DEFAULT;
     const deepLink = `${safeAppUrl}/?approve=${b64url(qrData)}`;
     let qrImg = '';
-    try { qrImg = await QRCode.toDataURL(qrData, { width: 196, margin: 1, color: { dark: '#1a1a18', light: '#ffffff' } }); } catch {}
+    try {
+      qrImg = await QRCode.toDataURL(qrData, {
+        width: 196,
+        margin: 1,
+        color: { dark: '#1a1a18', light: '#ffffff' },
+      });
+    } catch {}
     // Accept the OTP only if it's strictly digits, so it can never carry markup.
     const code = /^\d{4,10}$/.test(session.code) ? session.code : '';
 
@@ -233,28 +258,42 @@ function openModal(opts, sourceEl) {
           ${code ? `<button class="tab ${tab === 'otp' ? 'on' : ''}" data-t="otp">OTP</button>` : ''}
         </div>
         <div class="panel">
-          ${tab === 'qr' || !code ? `
+          ${
+            tab === 'qr' || !code
+              ? `
             <div class="qrbox">${qrImg ? `<img src="${qrImg}" alt="Sign-in QR">` : ''}</div>
             <p class="cap">Scan with the kunji app on your phone.</p>
-          ` : `
+          `
+              : `
             <p class="otplabel">Type this code into kunji</p>
             <div class="otp">${code.slice(0, 3)} ${code.slice(3)}</div>
             <p class="cap">Open kunji → enter this code.</p>
-          `}
+          `
+          }
         </div>
         <div class="divider">on this device</div>
         <a class="open" href="${deepLink}"><span class="mark">${KEY_SVG}</span> Sign in with kunji</a>
         <p class="expiry"></p>`;
 
       sheet.querySelector('.x').onclick = close;
-      sheet.querySelectorAll('.tab').forEach((b) => b.onclick = () => { tab = b.dataset.t; render(); });
+      sheet.querySelectorAll('.tab').forEach(
+        (b) =>
+          (b.onclick = () => {
+            tab = b.dataset.t;
+            render();
+          }),
+      );
 
       // countdown (pauses while tab hidden); on expiry offer a fresh code
       const exp = sheet.querySelector('.expiry');
       const tick = () => {
         if (document.hidden) return;
         const left = Math.max(0, Math.ceil((session.expiresAt - Date.now()) / 1000));
-        if (left <= 0) { clearTimers(); renderExpired(); return; }
+        if (left <= 0) {
+          clearTimers();
+          renderExpired();
+          return;
+        }
         exp.innerHTML = `Expires in <b>${left}s</b>`;
       };
       tick();
@@ -265,7 +304,9 @@ function openModal(opts, sourceEl) {
     const poll = async () => {
       if (document.hidden) return;
       try {
-        const r = await fetch(`${opts.pollUrl}${opts.pollUrl.includes('?') ? '&' : '?'}sessionId=${encodeURIComponent(session.sessionId)}`);
+        const r = await fetch(
+          `${opts.pollUrl}${opts.pollUrl.includes('?') ? '&' : '?'}sessionId=${encodeURIComponent(session.sessionId)}`,
+        );
         if (!r.ok) return;
         const s = await r.json();
         if (s.status === 'approved') succeed(s);
@@ -277,7 +318,11 @@ function openModal(opts, sourceEl) {
   start();
 }
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) =>
+  String(s).replace(
+    /[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+  );
 
 // ── button rendering ────────────────────────────────────────────
 function render(node, override = {}) {
@@ -287,7 +332,9 @@ function render(node, override = {}) {
   const root = node.attachShadow ? node.attachShadow({ mode: 'open' }) : node;
   const style = document.createElement('style');
   style.textContent = CSS;
-  const btn = el(`<button class="btn ${opts.theme === 'dark' ? 'dark' : ''}"><span class="mark">${KEY_SVG}</span>${esc(opts.label)}</button>`);
+  const btn = el(
+    `<button class="btn ${opts.theme === 'dark' ? 'dark' : ''}"><span class="mark">${KEY_SVG}</span>${esc(opts.label)}</button>`,
+  );
   btn.addEventListener('click', () => openModal(opts, node));
   root.appendChild(style);
   root.appendChild(btn);
@@ -301,7 +348,8 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else init();
 
 window.kunji = {
-  render: (elOrSel, opts) => render(typeof elOrSel === 'string' ? document.querySelector(elOrSel) : elOrSel, opts),
+  render: (elOrSel, opts) =>
+    render(typeof elOrSel === 'string' ? document.querySelector(elOrSel) : elOrSel, opts),
   signIn: (opts) => openModal(readOpts(null, opts || {}), null),
   init,
 };

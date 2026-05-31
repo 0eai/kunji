@@ -7,9 +7,11 @@ export default function App() {
 
   return (
     <div className="min-h-[100dvh] bg-paper text-ink flex flex-col">
-      {auth
-        ? <Dashboard sub={auth.sub} onLogout={() => setAuth(null)} />
-        : <LoginPage onSuccess={setAuth} />}
+      {auth ? (
+        <Dashboard sub={auth.sub} onLogout={() => setAuth(null)} />
+      ) : (
+        <LoginPage onSuccess={setAuth} />
+      )}
     </div>
   );
 }

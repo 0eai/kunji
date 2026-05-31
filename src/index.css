@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ───────────────────────────────────────────────────────────────
    kunji design system — "Editorial / mono on warm paper"
@@ -7,50 +7,57 @@
    ─────────────────────────────────────────────────────────────── */
 @theme {
   /* --color-paper: keep in sync with public/theme-init.js, src/lib/theme.js, manifest.json */
-  --color-paper:        #faf9f6;
-  --color-surface:      #ffffff;
-  --color-ink:          #1a1a18;
-  --color-muted:        #6b6b66;
-  --color-faint:        #a8a59c;
-  --color-line:         #e7e5e0;
-  --color-line-strong:  #dcd9d2;
-  --color-accent:       #d97706;
-  --color-accent-fill:  #f59e0b;
-  --color-accent-soft:  #fdf3e3;
-  --color-danger:       #dc2626;
-  --color-danger-soft:  #fdf0ef;
-  --color-success:      #16a34a;
+  --color-paper: #faf9f6;
+  --color-surface: #ffffff;
+  --color-ink: #1a1a18;
+  --color-muted: #6b6b66;
+  --color-faint: #a8a59c;
+  --color-line: #e7e5e0;
+  --color-line-strong: #dcd9d2;
+  --color-accent: #d97706;
+  --color-accent-fill: #f59e0b;
+  --color-accent-soft: #fdf3e3;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fdf0ef;
+  --color-success: #16a34a;
 
-  --color-on-accent:    #1a1a18;  /* dark text on amber fills — fixed in both themes */
-  --color-scrim:        rgba(26, 26, 24, 0.28);  /* overlay scrim (light) */
+  --color-on-accent: #1a1a18; /* dark text on amber fills — fixed in both themes */
+  --color-scrim: rgba(26, 26, 24, 0.28); /* overlay scrim (light) */
 
-  --font-sans: 'Geist Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'Geist Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans:
+    'Geist Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono:
+    'Geist Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
+    Consolas, monospace;
 }
 
-:root { color-scheme: light; }
+:root {
+  color-scheme: light;
+}
 
 /* ── Dark mode — warm charcoal. Overrides the token values; every utility
    resolves via var() so the whole UI recolors. Toggled by `.dark` on <html>. ── */
 html.dark {
   color-scheme: dark;
-  --color-paper:        #121110;  /* deep warm near-black (not pure #000) */
-  --color-surface:      #1c1a16;  /* elevated: a notch above paper, stays warm */
-  --color-ink:          #f4f2ec;
-  --color-muted:        #a09c92;
-  --color-faint:        #6a675d;
-  --color-line:         #2b2822;
-  --color-line-strong:  #38342b;
-  --color-accent:       #fbbf24;  /* lighter amber: legible as text/links/underline on dark */
-  --color-accent-fill:  #f59e0b;  /* button fill unchanged; on-accent text stays dark */
-  --color-accent-soft:  #211a0f;
-  --color-danger:       #f87171;
-  --color-danger-soft:  #241617;
-  --color-success:      #34d399;
-  --color-scrim:        rgba(0, 0, 0, 0.6);
+  --color-paper: #121110; /* deep warm near-black (not pure #000) */
+  --color-surface: #1c1a16; /* elevated: a notch above paper, stays warm */
+  --color-ink: #f4f2ec;
+  --color-muted: #a09c92;
+  --color-faint: #6a675d;
+  --color-line: #2b2822;
+  --color-line-strong: #38342b;
+  --color-accent: #fbbf24; /* lighter amber: legible as text/links/underline on dark */
+  --color-accent-fill: #f59e0b; /* button fill unchanged; on-accent text stays dark */
+  --color-accent-soft: #211a0f;
+  --color-danger: #f87171;
+  --color-danger-soft: #241617;
+  --color-success: #34d399;
+  --color-scrim: rgba(0, 0, 0, 0.6);
 }
 
-html, body {
+html,
+body {
   background-color: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-sans);
@@ -59,29 +66,105 @@ html, body {
 }
 
 /* Lining tabular figures — keeps codes / keys / timers from shifting width. */
-.tabular { font-variant-numeric: tabular-nums; }
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── Motion ─────────────────────────────────────────────────── */
-@keyframes kunji-slide-up   { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes kunji-slide-down { from { transform: translateY(0); }    to { transform: translateY(100%); } }
-@keyframes kunji-fade       { from { opacity: 0; } to { opacity: 1; } }
-@keyframes kunji-fade-out   { from { opacity: 1; } to { opacity: 0; } }
-@keyframes kunji-rise       { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes kunji-shake      { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-9px)} 75%{transform:translateX(9px)} }
-@keyframes kunji-spin       { to { transform: rotate(360deg); } }
-@keyframes kunji-shimmer    { 100% { background-position: -200% 0; } }
+@keyframes kunji-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes kunji-slide-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes kunji-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes kunji-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes kunji-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes kunji-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-9px);
+  }
+  75% {
+    transform: translateX(9px);
+  }
+}
+@keyframes kunji-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes kunji-shimmer {
+  100% {
+    background-position: -200% 0;
+  }
+}
 
-.animate-fade      { animation: kunji-fade .18s ease-out; }
-.animate-fade-out  { animation: kunji-fade-out .2s ease-in forwards; }
-.animate-sheet     { animation: kunji-slide-up .26s cubic-bezier(0.22, 1, 0.36, 1); }
-.animate-sheet-out { animation: kunji-slide-down .2s ease-in forwards; }
-.animate-rise      { animation: kunji-rise .22s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-shake     { animation: kunji-shake .4s ease-in-out; }
-.spin              { animation: kunji-spin .7s linear infinite; }
+.animate-fade {
+  animation: kunji-fade 0.18s ease-out;
+}
+.animate-fade-out {
+  animation: kunji-fade-out 0.2s ease-in forwards;
+}
+.animate-sheet {
+  animation: kunji-slide-up 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.animate-sheet-out {
+  animation: kunji-slide-down 0.2s ease-in forwards;
+}
+.animate-rise {
+  animation: kunji-rise 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-shake {
+  animation: kunji-shake 0.4s ease-in-out;
+}
+.spin {
+  animation: kunji-spin 0.7s linear infinite;
+}
 
 @media (min-width: 640px) {
-  .animate-sheet     { animation: kunji-fade .2s ease-out; }
-  .animate-sheet-out { animation: kunji-fade-out .18s ease-in forwards; }
+  .animate-sheet {
+    animation: kunji-fade 0.2s ease-out;
+  }
+  .animate-sheet-out {
+    animation: kunji-fade-out 0.18s ease-in forwards;
+  }
 }
 
 /* Skeleton shimmer (loading rows) */
@@ -96,14 +179,28 @@ html.dark .shimmer {
 }
 
 /* App monogram — deterministic hue per app (set via --mh); lightness adapts to theme. */
-.monogram { background: hsl(var(--mh) 55% 94%); color: hsl(var(--mh) 42% 36%); }
-html.dark .monogram { background: hsl(var(--mh) 38% 18%); color: hsl(var(--mh) 70% 72%); }
+.monogram {
+  background: hsl(var(--mh) 55% 94%);
+  color: hsl(var(--mh) 42% 36%);
+}
+html.dark .monogram {
+  background: hsl(var(--mh) 38% 18%);
+  color: hsl(var(--mh) 70% 72%);
+}
 
 /* Respect reduced-motion: drop animation, keep final state. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade, .animate-fade-out, .animate-sheet, .animate-sheet-out,
-  .animate-rise, .animate-shake, .spin, .shimmer {
+  .animate-fade,
+  .animate-fade-out,
+  .animate-sheet,
+  .animate-sheet-out,
+  .animate-rise,
+  .animate-shake,
+  .spin,
+  .shimmer {
     animation: none !important;
   }
-  * { transition-duration: 0.01ms !important; }
+  * {
+    transition-duration: 0.01ms !important;
+  }
 }

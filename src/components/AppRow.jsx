@@ -15,7 +15,11 @@ const AppRow = ({ app, onOpen }) => (
       <p className="text-[15px] font-medium text-ink truncate">{app.name}</p>
       <p className="text-[13px] font-mono text-muted truncate">{app.domain}</p>
     </div>
-    <ChevronRight size={18} strokeWidth={1.75} className="text-faint group-hover:text-muted transition-colors shrink-0" />
+    <ChevronRight
+      size={18}
+      strokeWidth={1.75}
+      className="text-faint group-hover:text-muted transition-colors shrink-0"
+    />
   </button>
 );
 

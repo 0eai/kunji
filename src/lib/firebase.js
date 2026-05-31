@@ -1,5 +1,12 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, setPersistence, browserLocalPersistence, onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  getAuth,
+  signInAnonymously,
+  setPersistence,
+  browserLocalPersistence,
+  onAuthStateChanged,
+  signOut,
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -13,7 +20,9 @@ const firebaseConfig = {
 };
 
 if (!firebaseConfig.apiKey) {
-  console.error('Firebase config missing. Copy .env.example to .env and fill in your Firebase project values.');
+  console.error(
+    'Firebase config missing. Copy .env.example to .env and fill in your Firebase project values.',
+  );
 }
 
 const app = initializeApp(firebaseConfig);
