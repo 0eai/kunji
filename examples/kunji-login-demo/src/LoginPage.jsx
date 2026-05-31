@@ -20,11 +20,11 @@ const RESUME_KEY = 'kunji_demo_pending';
 // The kunji key mark, for the official "Sign in with kunji" button.
 const KeyMark = () => (
   <svg viewBox="0 0 512 512" width="17" height="17" aria-hidden="true">
-    <g transform="rotate(-40 256 256)" fill="currentColor">
-      <path fillRule="evenodd" d="M 282,256 A 86,86 0 0,1 110,256 A 86,86 0 0,1 282,256 Z M 244,256 A 48,48 0 0,0 148,256 A 48,48 0 0,0 244,256 Z" />
-      <rect x="196" y="238" width="200" height="36" rx="18" />
-      <rect x="356" y="274" width="28" height="48" rx="8" />
-      <rect x="314" y="274" width="28" height="36" rx="8" />
+    <g transform="rotate(-40 256 256)" fill="none" stroke="currentColor" strokeWidth="58" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="240" cy="172" r="56" />
+      <path d="M240 172 V398" />
+      <path d="M240 334 L300 314" />
+      <path d="M240 334 L300 358" />
     </g>
   </svg>
 );
