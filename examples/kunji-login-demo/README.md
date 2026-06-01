@@ -89,4 +89,7 @@ verification the demo renders the resolved identity (`src/Dashboard.jsx`):
 - Replace the demo "signed in" state with your real session / a Firebase custom token
   (see the kunji spec §7 for the custom-token bridge).
 
+Other references: [`../kunji-node-demo`](../kunji-node-demo) (no Firebase, no framework) ·
+[`../kunji-relay-demo`](../kunji-relay-demo) (local server + relay, real phone without a tunnel).
+
 Full protocol: [`../../docs/discoverable-login.md`](../../docs/discoverable-login.md)

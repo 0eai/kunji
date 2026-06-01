@@ -82,7 +82,9 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `functions/` — `vaultWrite` Cloud Function (codebase `app`, Node 20).
 - `landing/` — marketing site + `rp.js` (the built drop-in "Sign in with kunji" widget).
 - `widget/` — `rp.js` source (built with esbuild into `landing/`).
-- `examples/kunji-login-demo/` — **separate Firebase project**; the RP reference implementation.
+- `examples/` — reference relying parties: `kunji-login-demo` (Firebase; same project `kunji-cc`,
+  site `kunji-demo`, default functions codebase), `kunji-node-demo` (plain Node, no Firebase),
+  `kunji-relay-demo` (local RP + thin public callback Function, for real-phone testing with no tunnel).
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check).
 - `docs/discoverable-login.md` — the full login protocol spec.
 

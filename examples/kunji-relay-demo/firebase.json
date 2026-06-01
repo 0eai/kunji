@@ -1,0 +1,4 @@
+{
+  "functions": { "source": "functions", "codebase": "relay" },
+  "firestore": { "rules": "firestore.rules" }
+}

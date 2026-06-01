@@ -335,6 +335,11 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 - `firebase.json` — Hosting rewrites mapping `/kunji/session`, `/kunji/status`, `/kunji/callback` to those functions (so the callback is same-site as the audience).
 - Firestore rule for `loginSessions` (get-only; writes are server-only via Admin) → root `firestore.rules`.
 
+**Other relying-party references:**
+
+- `examples/kunji-node-demo/` — the same protocol with **no Firebase, no framework** (plain Node `http` + `@noble/curves`, in-memory sessions) and a wallet simulator for local end-to-end testing.
+- `examples/kunji-relay-demo/` — a **local** RP (dynamic IP, behind NAT) that rendezvous with the phone via a thin public callback Function + Firestore, so you can test with a **real phone, no tunnel**. Verifies §6 at the edge; the local server listens outbound. (Caveat: the `sub` is then bound to the relay's Firebase domain, not your production audience.)
+
 **Drop-in widget — `rp.js`:**
 
 - Source `widget/src/index.js`, bundled to `landing/rp.js` (+ pinned `rp.v1.js`), served at `https://kunji.cc/rp.js`.

@@ -5,8 +5,9 @@ single dependency (`@noble/curves`, for Ed25519 verification). It proves the poi
 backend in the login path** and shares **no database** with your app — _any_ server works. The
 wallet POSTs a signed assertion straight to your callback; you verify it and you're done.
 
-Prefer Firebase? See [`../kunji-login-demo`](../kunji-login-demo). The protocol is identical — only
-the storage/host differ.
+Prefer Firebase? See [`../kunji-login-demo`](../kunji-login-demo). Want to keep the server local but
+still test with a real phone (no tunnel)? See [`../kunji-relay-demo`](../kunji-relay-demo). The
+protocol is identical across all three — only the storage/host differ.
 
 ## Run it
 

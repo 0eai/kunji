@@ -41,7 +41,7 @@ Fastest path — the drop-in widget:
 
 - **Protocol & message formats:** [`docs/discoverable-login.md`](docs/discoverable-login.md)
 - **Guides:** [kunji.cc/developers](https://kunji.cc/developers) · [Firebase end-to-end](https://kunji.cc/developers/firebase) · [try it live](https://kunji.cc/developers/try)
-- **Working reference RPs:** [`examples/kunji-login-demo/`](examples/kunji-login-demo) (Firebase) · [`examples/kunji-node-demo/`](examples/kunji-node-demo) (plain Node — no Firebase, no framework)
+- **Working reference RPs:** [`examples/kunji-login-demo/`](examples/kunji-login-demo) (Firebase) · [`examples/kunji-node-demo/`](examples/kunji-node-demo) (plain Node — no Firebase, no framework) · [`examples/kunji-relay-demo/`](examples/kunji-relay-demo) (local server + Firebase relay — real phone, no tunnel)
 
 ## Repository layout
 
@@ -54,7 +54,8 @@ src/                     the kunji PWA — React 19 + Vite + Tailwind v4
 landing/                 static marketing site + /developers + /security guides
   rp.js, rp.v1.js        built "Sign in with kunji" widget (source in widget/)
 widget/                  widget source; esbuild → landing/rp.js
-examples/kunji-login-demo/  reference relying party (Cloud Functions + Firestore + React)
+examples/                 reference relying parties: kunji-login-demo (Firebase),
+                          kunji-node-demo (plain Node), kunji-relay-demo (local + relay)
 docs/discoverable-login.md  the v2 discoverable-login protocol
 firestore.rules          Firestore security rules
 firebase.json            Hosting: app / landing / redirect targets
