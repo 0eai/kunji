@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48" role="img" aria-label="Sign in with kunji">
+  <rect width="240" height="48" rx="24" fill="#1a1a18"/>
+  <g transform="translate(20 24) scale(0.05) translate(-256 -256)">
+    <g transform="rotate(-40 256 256)" fill="none" stroke="#faf9f6" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="240" cy="172" r="56"/>
+      <path d="M240 172 V398"/>
+      <path d="M240 334 L300 314"/>
+      <path d="M240 334 L300 358"/>
+    </g>
+  </g>
+  <text x="46" y="30" fill="#faf9f6" font-family="'Geist','Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" font-size="16" font-weight="600" letter-spacing="-0.2">Sign in with kunji</text>
+</svg>

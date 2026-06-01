@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brand guide — Sign in with kunji</title>
+    <meta
+      name="description"
+      content="Brand guide for kunji: the name, logo, the official 'Sign in with kunji' button, colors, and downloadable assets — so you can add it consistently."
+    />
+    <meta name="theme-color" content="#faf9f6" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+
+    <meta property="og:title" content="kunji brand guide" />
+    <meta
+      property="og:description"
+      content="Logo, the official 'Sign in with kunji' button, colors, and assets — use them consistently."
+    />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:type" content="website" />
+
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      .swatches,
+      .tiles,
+      .assets {
+        display: grid;
+        gap: 14px;
+        margin-top: 18px;
+      }
+      .swatches {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+      .swatch {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .swatch .chip {
+        height: 64px;
+      }
+      .swatch .meta {
+        padding: 10px 12px;
+        font-size: 13px;
+      }
+      .swatch .meta b {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      .swatch .meta code {
+        font-family: var(--mono);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .tiles {
+        grid-template-columns: 1fr 1fr;
+      }
+      .tile {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 132px;
+      }
+      .tile.light {
+        background: #faf9f6;
+      }
+      .tile.dark {
+        background: #1a1a18;
+      }
+      .tile img {
+        display: block;
+      }
+      .tile .logo {
+        width: 56px;
+        height: 56px;
+      }
+      .tile .btnimg {
+        width: 200px;
+        height: auto;
+      }
+      .assets {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .asset {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        text-decoration: none;
+        color: var(--ink);
+        font-size: 14px;
+        transition: background 0.15s ease;
+      }
+      .asset:hover {
+        background: var(--code);
+      }
+      .asset .ext {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--faint);
+      }
+      .rules {
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+      }
+      .rules li {
+        display: flex;
+        gap: 10px;
+        font-size: 14.5px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+      .rules .y {
+        color: #15803d;
+        font-weight: 700;
+      }
+      .rules .n {
+        color: var(--danger, #b91c1c);
+        font-weight: 700;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/icon.svg" alt="" />
+          <span>kunji</span>
+        </a>
+        <nav class="nav">
+          <a class="navlink" href="/developers">Developers</a>
+          <a class="navlink" href="/security">Security</a>
+        </nav>
+      </header>
+
+      <main class="guide">
+        <p class="kicker">BRAND &amp; USAGE</p>
+        <h1>Brand guide</h1>
+        <p class="lead">
+          Everything you need to add <b>Sign in with kunji</b> consistently — the name, the logo, the
+          official button, colors, and downloadable assets. When in doubt, use the official widget so
+          the button always stays current.
+        </p>
+
+        <!-- Name -->
+        <section class="sec">
+          <div class="sec-label">The name</div>
+          <p>
+            It's <b>kunji</b> — always lowercase, even at the start of a sentence where you can. The
+            action is <b>Sign in with kunji</b> (sentence case; only "Sign" is capitalized). Don't
+            translate it, pluralize it, abbreviate it, or restyle the wordmark.
+          </p>
+          <ul class="rules">
+            <li><span class="y">Do</span> write "Sign in with kunji".</li>
+            <li>
+              <span class="n">Don't</span> write "Kunji Login", "KUNJI", "Sign in with Kunji", or
+              "kunji sign-on".
+            </li>
+          </ul>
+        </section>
+
+        <!-- Logo -->
+        <section class="sec">
+          <div class="sec-label">Logo</div>
+          <p>
+            The kunji mark. Keep clear space around it of at least the height of the mark's stem, and
+            don't render it below 20px. Use it on a light or dark surface as shown — never recolor,
+            rotate, stretch, add shadows/gradients, or place it on a busy background.
+          </p>
+          <div class="tiles">
+            <div class="tile light"><img class="logo" src="/icon.svg" alt="kunji logo on light" /></div>
+            <div class="tile dark"><img class="logo" src="/icon.svg" alt="kunji logo on dark" /></div>
+          </div>
+          <ul class="rules">
+            <li><span class="y">Do</span> keep the original colors and proportions.</li>
+            <li><span class="n">Don't</span> recolor, distort, rotate, or add effects.</li>
+          </ul>
+        </section>
+
+        <!-- The button -->
+        <section class="sec">
+          <div class="sec-label">The "Sign in with kunji" button</div>
+          <p>
+            The recommended button is the official widget — drop it in and it renders, opens the
+            QR / OTP modal, and reports success. Because it's served from kunji, it always stays
+            up to date:
+          </p>
+          <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
+
+&lt;div data-kunji-signin
+     data-app-name="Your App"
+     data-audience="yourapp.com"
+     data-session-url="/kunji/session"
+     data-callback-url="/kunji/callback"
+     data-poll-url="/kunji/status"
+     data-theme="light"&gt;&lt;/div&gt;</code></pre>
+          <p class="note">
+            Set <code class="k">data-theme="dark"</code> on dark surfaces.
+            <a class="back" href="/developers">Full integration guide →</a>
+          </p>
+
+          <p style="margin-top: 26px">
+            If you can't run the widget, use the static asset below — light on light surfaces, dark on
+            dark:
+          </p>
+          <div class="tiles">
+            <div class="tile light">
+              <img class="btnimg" src="/brand/sign-in-with-kunji.svg" alt="Sign in with kunji (light)" />
+            </div>
+            <div class="tile dark">
+              <img class="btnimg" src="/brand/sign-in-with-kunji-dark.svg" alt="Sign in with kunji (dark)" />
+            </div>
+          </div>
+          <ul class="rules">
+            <li><span class="y">Do</span> use the provided asset or widget, at a min height of 40px.</li>
+            <li>
+              <span class="n">Don't</span> recreate the button, change the label or key mark, recolor
+              it, or crop the clear space.
+            </li>
+          </ul>
+        </section>
+
+        <!-- Colors -->
+        <section class="sec">
+          <div class="sec-label">Colors</div>
+          <p>The button and brand palette.</p>
+          <div class="swatches">
+            <div class="swatch">
+              <div class="chip" style="background: #f59e0b"></div>
+              <div class="meta"><b>Amber</b><code>#f59e0b</code></div>
+            </div>
+            <div class="swatch">
+              <div class="chip" style="background: #d97706"></div>
+              <div class="meta"><b>Amber · hover</b><code>#d97706</code></div>
+            </div>
+            <div class="swatch">
+              <div class="chip" style="background: #1a1a18"></div>
+              <div class="meta"><b>Ink</b><code>#1a1a18</code></div>
+            </div>
+            <div class="swatch">
+              <div class="chip" style="background: #faf9f6; border-bottom: 1px solid var(--line)"></div>
+              <div class="meta"><b>Paper</b><code>#faf9f6</code></div>
+            </div>
+          </div>
+          <p class="note">
+            On the amber button the label and key mark are ink (<code class="k">#1a1a18</code>); on the
+            dark button they're paper (<code class="k">#faf9f6</code>).
+          </p>
+        </section>
+
+        <!-- Typography + tagline -->
+        <section class="sec">
+          <div class="sec-label">Type &amp; tagline</div>
+          <p>
+            kunji uses <b>Geist</b>, falling back to the system stack
+            (<code class="k">system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif</code>). You
+            don't need to ship Geist to use the button — the asset and widget handle their own type.
+          </p>
+          <p>
+            The brand tagline is <b>"Be your own key."</b> Use it as a signature near the kunji name —
+            not as a button label or inside the sign-in flow.
+          </p>
+        </section>
+
+        <!-- Assets -->
+        <section class="sec">
+          <div class="sec-label">Download assets</div>
+          <div class="assets">
+            <a class="asset" href="/icon.svg" download>Logo <span class="ext">SVG</span></a>
+            <a class="asset" href="/icon-512.png" download>Logo <span class="ext">PNG 512</span></a>
+            <a class="asset" href="/brand/sign-in-with-kunji.svg" download
+              >Button · light <span class="ext">SVG</span></a
+            >
+            <a class="asset" href="/brand/sign-in-with-kunji-dark.svg" download
+              >Button · dark <span class="ext">SVG</span></a
+            >
+          </div>
+          <div class="cta-row" style="margin-top: 28px">
+            <a class="cta" href="/developers">
+              Integration guide
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </a>
+            <a class="ghost" href="/">← Back to home</a>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>A zero-knowledge identity wallet</span>
+        <span class="sep">·</span>
+        <a href="/security">Security</a>
+        <span class="sep">·</span>
+        <a href="/developers">Developers</a>
+        <span class="sep">·</span>
+        <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
+        <span class="sep">·</span>
+        <a href="https://app.kunji.cc">app.kunji.cc</a>
+      </footer>
+    </div>
+  </body>
+</html>
