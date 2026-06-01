@@ -76,8 +76,8 @@ header {
   color: var(--ink);
 }
 .brand img {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
 }
 .brand span {
   font-size: 18px;

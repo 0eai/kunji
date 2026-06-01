@@ -368,7 +368,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
     <div className="min-h-[100dvh] w-full flex flex-col bg-paper text-ink">
       {/* wordmark */}
       <header className="flex items-center gap-2 px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
-        <img src="/icons/icon.svg" alt="" className="w-6 h-6" />
+        <img src="/icons/icon.svg" alt="" className="w-7 h-7" />
         <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
         <span className="ml-auto text-[13px] text-faint tracking-tight">Be your own key.</span>
       </header>

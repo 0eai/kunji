@@ -222,6 +222,7 @@ export default function LoginPage({ onSuccess }) {
   return (
     <>
       <header className="flex items-center gap-2 max-w-[26rem] w-full mx-auto px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
+        <img src="https://kunji.cc/icon.svg" alt="" className="w-6 h-6" />
         <span className="text-[15px] font-medium text-faint">Kunji Demo</span>
       </header>
 
