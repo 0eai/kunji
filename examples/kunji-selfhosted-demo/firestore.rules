@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Real accounts, keyed by the kunji `sub`. The custom token minted in kunjiCallback
+    // sets request.auth.uid = sub, so a signed-in user reads/writes only their own doc.
+    // (Tighten the `write` shape to your app's needs; the worker uses the Admin SDK and
+    // bypasses these rules.)
+    match /users/{sub} {
+      allow read, write: if request.auth != null && request.auth.uid == sub;
+    }
+
+    // Login handshake — server-only. The browser polls the getSessionStatus Function;
+    // it never reads these docs directly, so the challenge/token aren't exposed.
+    match /loginSessions/{sessionId} {
+      allow read, write: if false;
+    }
+  }
+}

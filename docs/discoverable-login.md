@@ -339,6 +339,7 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 
 - `examples/kunji-node-demo/` — the same protocol with **no Firebase, no framework** (plain Node `http` + `@noble/curves`, in-memory sessions) and a wallet simulator for local end-to-end testing.
 - `examples/kunji-relay-demo/` — a **local** RP (dynamic IP, behind NAT) that rendezvous with the phone via a thin public callback Function + Firestore, so you can test with a **real phone, no tunnel**. Verifies §6 at the edge; the local server listens outbound. (Caveat: the `sub` is then bound to the relay's Firebase domain, not your production audience.)
+- `examples/kunji-selfhosted-demo/` — the **production** self-hosted shape: your own Firebase (Hosting + **custom domain** → real production `sub`, Auth **custom token** per §7, Firestore accounts) as the public front door, plus an **on-prem worker on a dynamic IP** that reacts to logins over an outbound listener. No tunnel.
 
 **Drop-in widget — `rp.js`:**
 

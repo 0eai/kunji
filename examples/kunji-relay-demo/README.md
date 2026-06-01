@@ -86,4 +86,6 @@ the production `sub` is to host the callback on your real domain (i.e. a deploy)
 is faithful.
 
 Firebase-free variant: [`../kunji-node-demo`](../kunji-node-demo). Firebase end-to-end (hosted):
-[`../kunji-login-demo`](../kunji-login-demo). Protocol: [`../../docs/discoverable-login.md`](../../docs/discoverable-login.md)
+[`../kunji-login-demo`](../kunji-login-demo). Production self-hosted (own Firebase + on-prem worker):
+[`../kunji-selfhosted-demo`](../kunji-selfhosted-demo). Protocol:
+[`../../docs/discoverable-login.md`](../../docs/discoverable-login.md)

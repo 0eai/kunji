@@ -7,7 +7,9 @@ wallet POSTs a signed assertion straight to your callback; you verify it and you
 
 Prefer Firebase? See [`../kunji-login-demo`](../kunji-login-demo). Want to keep the server local but
 still test with a real phone (no tunnel)? See [`../kunji-relay-demo`](../kunji-relay-demo). The
-protocol is identical across all three — only the storage/host differ.
+protocol is identical across all of them — only the storage/host differ. For a production
+self-hosted setup (own Firebase + custom token, on-prem worker on a dynamic IP) see
+[`../kunji-selfhosted-demo`](../kunji-selfhosted-demo).
 
 ## Run it
 

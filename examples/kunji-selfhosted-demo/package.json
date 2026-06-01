@@ -1,0 +1,15 @@
+{
+  "name": "kunji-selfhosted-demo",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Production self-hosted 'Sign in with kunji' RP: own Firebase (Hosting + Auth + Firestore) front door, on-prem worker on a dynamic IP, no tunnel.",
+  "scripts": {
+    "worker": "node worker.js",
+    "wallet": "node wallet-sim.js"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "firebase-admin": "^12.7.0"
+  }
+}
