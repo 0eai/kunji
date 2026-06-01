@@ -108,7 +108,7 @@ export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = 
     await callVaultWrite(vaultId, cryptoKey, 'set', id, { ...payload, publicKey: pubKeyBase64 });
     if (userId)
       await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, {
-        domain,
+        domain: normalizeDomain(domain),
       });
   }
 
@@ -364,7 +364,7 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, qr, claims)
   }
 
   await logActivity(userId, `Signed in to ${qr.audience}`, 'success', 'ShieldCheck', cryptoKey, {
-    domain: qr.audience,
+    domain: normalizeDomain(qr.audience),
   });
   return { sub };
 };

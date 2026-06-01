@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Copy, CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
+import { Copy, CheckCircle2, KeyRound, Trash2, ChevronRight } from 'lucide-react';
 import { deriveSubFromPublicKey } from '../services/identity';
 import { listenToActivityLog } from '../services/activityLog';
+import { normalizeDomain } from '../lib/crypto/helpers';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Monogram } from './ui/primitives';
 import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
@@ -10,6 +11,7 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
   const [sub, setSub] = useState('');
   const [copiedSub, setCopiedSub] = useState(false);
   const [events, setEvents] = useState([]);
+  const [showActivity, setShowActivity] = useState(false); // collapsed by default
 
   useEffect(() => {
     if (!app?.publicKey) return;
@@ -18,13 +20,15 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
       .catch(() => setSub(''));
   }, [app?.publicKey]);
 
-  // This device's recent activity for this app (tagged with its domain).
+  // This device's recent activity for this app (tagged with its domain). Compare
+  // normalized both ways so casing/port/trailing-dot variants still match.
   useEffect(() => {
     if (!userId) return;
+    const want = normalizeDomain(app.domain);
     const unsub = listenToActivityLog(
       userId,
       (all) => {
-        setEvents(all.filter((e) => e.domain === app.domain).slice(0, 8));
+        setEvents(all.filter((e) => e.domain && normalizeDomain(e.domain) === want).slice(0, 8));
       },
       50,
       cryptoKey,
@@ -74,29 +78,41 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
         </div>
       )}
 
-      {/* Recent activity */}
+      {/* Recent activity — collapsed by default */}
       <div className="mb-7">
-        <SectionLabel className="mb-2.5">Recent activity</SectionLabel>
-        {events.length === 0 ? (
-          <p className="text-[13px] text-faint py-2">
-            No activity for this app on this device yet.
-          </p>
-        ) : (
-          <div className="divide-y divide-line border-t border-line">
-            {events.map((e) => {
-              const Icon = activityIcon(e.icon);
-              return (
-                <div key={e.id} className="flex items-center gap-3 py-3">
-                  <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
-                  <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
-                  <span className="text-[11px] font-mono text-faint shrink-0 tabular">
-                    {relTime(e.createdAt)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <button
+          onClick={() => setShowActivity((v) => !v)}
+          aria-expanded={showActivity}
+          className="w-full flex items-center justify-between gap-2 py-1 group focus-visible:outline-none"
+        >
+          <SectionLabel count={events.length || null}>Recent activity</SectionLabel>
+          <ChevronRight
+            size={16}
+            strokeWidth={1.75}
+            className={`text-faint group-hover:text-muted transition-transform ${showActivity ? 'rotate-90' : ''}`}
+          />
+        </button>
+        {showActivity &&
+          (events.length === 0 ? (
+            <p className="text-[13px] text-faint py-2">
+              No activity for this app on this device yet.
+            </p>
+          ) : (
+            <div className="divide-y divide-line border-t border-line mt-2.5">
+              {events.map((e) => {
+                const Icon = activityIcon(e.icon);
+                return (
+                  <div key={e.id} className="flex items-center gap-3 py-3">
+                    <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
+                    <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
+                    <span className="text-[11px] font-mono text-faint shrink-0 tabular">
+                      {relTime(e.createdAt)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
       </div>
 
       {/* Actions */}
