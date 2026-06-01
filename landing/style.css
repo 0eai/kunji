@@ -243,6 +243,50 @@ a.feature:hover h3::after {
   transform: translateX(0);
 }
 
+.protect {
+  margin-top: 72px;
+  padding-top: 8px;
+}
+.protect > h2 {
+  font-size: clamp(24px, 4.5vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin-bottom: 28px;
+}
+.protect-grid {
+  display: grid;
+  gap: 24px;
+}
+@media (min-width: 640px) {
+  .protect-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 30px;
+  }
+}
+.protect-item h3 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 7px;
+}
+.protect-item p {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.protect-link {
+  display: inline-block;
+  margin-top: 28px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.protect-link:hover {
+  color: var(--ink);
+}
+
 footer {
   padding: 28px 0;
   color: var(--faint);
@@ -450,6 +494,9 @@ main.center > .cta-row {
 }
 main.center > .features {
   animation-delay: 0.24s;
+}
+main.center > .protect {
+  animation-delay: 0.3s;
 }
 @media (prefers-reduced-motion: reduce) {
   main.center > * {
