@@ -31,8 +31,9 @@ const MIN_PASSPHRASE = 8;
 const CLEAR_MS = 60000;
 const SIGNOUT_CONFIRM = 'SIGN OUT';
 
-// Navigable hairline row that expands in place.
-const Row = ({ icon: Icon, title, open, onToggle, children }) => (
+// Navigable hairline row that expands in place. Optional `count` shows a badge so you
+// can see there's content (e.g. activity) without expanding.
+const Row = ({ icon: Icon, title, count, open, onToggle, children }) => (
   <div>
     <button
       onClick={onToggle}
@@ -41,6 +42,9 @@ const Row = ({ icon: Icon, title, open, onToggle, children }) => (
     >
       <Icon size={17} strokeWidth={1.75} className="text-muted shrink-0" />
       <span className="flex-1 text-[15px] font-medium text-ink">{title}</span>
+      {count != null && (
+        <span className="text-[12px] font-mono text-faint tabular">· {count}</span>
+      )}
       <ChevronRight
         size={17}
         strokeWidth={1.75}
@@ -242,6 +246,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         <Row
           icon={Activity}
           title="Recent activity"
+          count={events.length || null}
           open={open.activity}
           onToggle={() => toggle('activity')}
         >
