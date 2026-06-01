@@ -1,6 +1,8 @@
 # kunji
 
-**A zero-knowledge identity wallet. Your keys, your apps — no Google, no passwords, no tracking.**
+**Be your own key.**
+
+A zero-knowledge identity wallet. Your keys, your apps — no Google, no passwords, no tracking.
 
 kunji lets you sign in to apps by scanning a code, authenticated by keys that never leave your device. Each app sees a different, unlinkable identity, and there's no account to create and no company in the middle.
 

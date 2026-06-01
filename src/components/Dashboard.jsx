@@ -225,7 +225,12 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       <header className="flex items-center justify-between max-w-[34rem] w-full mx-auto px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-5 shrink-0">
         <div className="flex items-center gap-2">
           <img src="/icons/icon.svg" alt="" className="w-6 h-6" />
-          <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
+          <div className="flex flex-col leading-none">
+            <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
+            <span className="hidden min-[380px]:block text-[10px] text-faint tracking-tight mt-0.5">
+              Be your own key.
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-0.5 -mr-2">
           <button

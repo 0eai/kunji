@@ -1,7 +1,7 @@
 {
   "name": "kunji",
   "short_name": "kunji",
-  "description": "Your identity wallet — connect apps with zero-knowledge passkey auth.",
+  "description": "Be your own key — a zero-knowledge identity wallet. Connect apps with keys only you hold.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#faf9f6",

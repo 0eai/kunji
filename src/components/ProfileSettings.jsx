@@ -5,9 +5,26 @@ import { loadProfile, saveProfile } from '../services/profile';
 import { Field, Btn, Monogram } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
-// Downscale a picked image to a small square WebP data-URI so it fits the encrypted
-// profile doc (and never leaves the device un-encrypted).
+// Downscale + compress a picked image to a small square data-URI so it fits the
+// encrypted profile doc (and never leaves the device un-encrypted). Re-encoding via
+// canvas also strips EXIF/metadata.
 const AVATAR_PX = 128;
+const TARGET_BYTES = 24 * 1024; // keep well under the function's 64 KB profile cap
+
+// Encode the canvas, preferring WebP but falling back to JPEG where the browser can't
+// encode WebP (older Safari silently returns a big PNG otherwise), then step quality
+// down until under the byte target. Returns the smallest data-URI produced.
+const compressCanvas = (canvas) => {
+  const webpOk = canvas.toDataURL('image/webp', 0.7).startsWith('data:image/webp');
+  const type = webpOk ? 'image/webp' : 'image/jpeg';
+  let best = canvas.toDataURL(type, 0.82);
+  for (let q = 0.82; q >= 0.4 && best.length > TARGET_BYTES; q -= 0.12) {
+    const next = canvas.toDataURL(type, q);
+    if (next.length < best.length) best = next;
+  }
+  return best;
+};
+
 const resizeToDataUri = (file) =>
   new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -21,9 +38,7 @@ const resizeToDataUri = (file) =>
       const h = img.height * scale;
       ctx.drawImage(img, (AVATAR_PX - w) / 2, (AVATAR_PX - h) / 2, w, h);
       URL.revokeObjectURL(url);
-      let out = canvas.toDataURL('image/webp', 0.8);
-      if (out.length > 40000) out = canvas.toDataURL('image/webp', 0.55); // keep doc small
-      resolve(out);
+      resolve(compressCanvas(canvas));
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
