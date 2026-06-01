@@ -5,10 +5,10 @@ import { loadProfile, saveProfile } from '../services/profile';
 import { Field, Btn, Monogram } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
-// Downscale + compress a picked image to a small square data-URI so it fits the
-// encrypted profile doc (and never leaves the device un-encrypted). Re-encoding via
+// Downscale + center-crop a picked image to a small 96px square data-URI so it fits
+// the encrypted profile doc (and never leaves the device un-encrypted). Re-encoding via
 // canvas also strips EXIF/metadata.
-const AVATAR_PX = 128;
+const AVATAR_PX = 96;
 const TARGET_BYTES = 24 * 1024; // keep well under the function's 64 KB profile cap
 
 // Encode the canvas, preferring WebP but falling back to JPEG where the browser can't
