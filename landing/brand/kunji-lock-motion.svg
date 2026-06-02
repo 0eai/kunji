@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" width="320" height="360" role="img" aria-label="kunji lock hanging on a hasp bar, gently swinging">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" width="320" height="360" role="img" aria-label="kunji lock hanging from a knob, gently swinging">
   <style>
-    /* Pendulum sway, pivoting where the shackle rests on the bar. Honors reduced-motion. */
+    /* Pendulum sway, pivoting where the shackle enters the knob. Honors reduced-motion. */
     .swing {
       transform-box: fill-box;
-      transform-origin: 50% 6%;
+      transform-origin: 50% 1%;
       animation: sway 4.4s ease-in-out infinite;
     }
     @keyframes sway {
@@ -15,11 +15,7 @@
     }
   </style>
   <rect width="320" height="360" fill="#faf9f6"/>
-  <!-- fixed dark hasp bar through the shackle, bracketed on both sides (door hardware) -->
-  <rect x="90" y="72" width="20" height="32" rx="5" fill="#1a1a18"/>
-  <rect x="210" y="72" width="20" height="32" rx="5" fill="#1a1a18"/>
-  <line x1="98" y1="88" x2="222" y2="88" stroke="#1a1a18" stroke-width="16" stroke-linecap="round"/>
-  <!-- the padlock hangs on the bar (swings) -->
+  <!-- the padlock (swings) — drawn first so the dark knob sits OVER its shackle -->
   <g class="swing">
     <path d="M120 156 V112 a40 40 0 0 1 80 0 V156" fill="none" stroke="#f59e0b" stroke-width="20" stroke-linecap="round"/>
     <rect x="68" y="150" width="184" height="176" rx="30" fill="#f59e0b"/>
@@ -32,4 +28,8 @@
       </g>
     </svg>
   </g>
+  <!-- fixed dark knob the shackle inserts into (drawn over the amber) -->
+  <rect x="136" y="20" width="48" height="18" rx="6" fill="#1a1a18"/>
+  <rect x="148" y="34" width="24" height="22" fill="#1a1a18"/>
+  <rect x="116" y="54" width="88" height="34" rx="17" fill="#1a1a18"/>
 </svg>
