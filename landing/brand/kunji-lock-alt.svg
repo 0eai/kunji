@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" width="320" height="360" role="img" aria-label="kunji lock — be your own key">
+  <rect width="320" height="360" fill="#faf9f6"/>
+  <!-- shackle -->
+  <path d="M120 156 V112 a40 40 0 0 1 80 0 V156" fill="none" stroke="#1a1a18" stroke-width="20" stroke-linecap="round"/>
+  <!-- solid body -->
+  <rect x="68" y="150" width="184" height="176" rx="30" fill="#1a1a18"/>
+  <!-- our logo key icon as the keyway -->
+  <svg x="104" y="205" width="120" height="120" viewBox="0 0 512 512" aria-hidden="true">
+    <g fill="none" stroke="#f59e0b" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="240" cy="172" r="56" fill="#f59e0b"/>
+      <path d="M240 172 V398"/>
+      <path d="M240 334 L300 314"/>
+      <path d="M240 334 L300 358"/>
+    </g>
+  </svg>
+</svg>

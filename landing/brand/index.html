@@ -18,7 +18,7 @@
       property="og:description"
       content="Logo, the official 'Sign in with kunji' button, colors, and assets — use them consistently."
     />
-    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:image" content="https://kunji.cc/brand/og.png" />
     <meta property="og:type" content="website" />
 
     <link rel="stylesheet" href="/style.css" />
@@ -82,6 +82,10 @@
       }
       .tile .btnimg {
         width: 184px;
+        height: auto;
+      }
+      .tile .lockimg {
+        width: 128px;
         height: auto;
       }
       /* Live preview button — mirrors the rp.js widget so it auto-sizes perfectly. */
@@ -213,6 +217,30 @@
           </ul>
         </section>
 
+        <!-- Lock graphic -->
+        <section class="sec">
+          <div class="sec-label">Lock graphic</div>
+          <p>
+            A padlock with the kunji key as its keyway — "be your own key." Two treatments that form a
+            light/dark pair; pick by background, don't mix them in one place.
+          </p>
+          <div class="tiles">
+            <div class="tile light"><img class="lockimg" src="/brand/kunji-lock.svg" alt="kunji lock — amber body, dark key" /></div>
+            <div class="tile dark"><img class="lockimg" src="/brand/kunji-lock.svg" alt="kunji lock on dark" /></div>
+          </div>
+          <ul class="rules">
+            <li><span class="y">Primary</span> amber lock, dark key (matches the app icon) — on light <em>and</em> dark surfaces.</li>
+            <li><span class="y">Alternate</span> ink lock, amber key — for amber / low-contrast surfaces where the amber lock would disappear.</li>
+            <li><span class="n">Don't</span> recolor the key, change the keyway, or use both variants together.</li>
+          </ul>
+          <div class="tiles" style="margin-top: 14px">
+            <div class="tile light"><img class="lockimg" src="/brand/kunji-lock-alt.svg" alt="kunji lock alternate — ink body, amber key" /></div>
+            <div class="tile" style="background: #f59e0b">
+              <img class="lockimg" src="/brand/kunji-lock-alt.svg" alt="kunji lock alternate on amber" />
+            </div>
+          </div>
+        </section>
+
         <!-- The button -->
         <section class="sec">
           <div class="sec-label">The "Sign in with kunji" button</div>
@@ -324,6 +352,15 @@
             >
             <a class="asset" href="/brand/sign-in-with-kunji-dark.svg" download
               >Button · dark <span class="ext">SVG</span></a
+            >
+            <a class="asset" href="/brand/kunji-lock.svg" download
+              >Lock · primary <span class="ext">SVG</span></a
+            >
+            <a class="asset" href="/brand/kunji-lock-alt.svg" download
+              >Lock · alternate <span class="ext">SVG</span></a
+            >
+            <a class="asset" href="/brand/og.png" download
+              >Share image <span class="ext">PNG 1200</span></a
             >
           </div>
           <div class="cta-row" style="margin-top: 28px">
