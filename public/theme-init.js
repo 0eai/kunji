@@ -16,5 +16,5 @@
     document.documentElement.style.background = dark ? '#121110' : '#faf9f6';
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', dark ? '#121110' : '#faf9f6');
-  } catch (e) {}
+  } catch {}
 })();

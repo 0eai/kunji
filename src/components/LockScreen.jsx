@@ -66,7 +66,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const [status, setStatus] = useState(initialMessage || '');
   const [errorShake, setErrorShake] = useState(false);
 
-  const [failCount, setFailCount] = useState(0);
+  const [, setFailCount] = useState(0);
   const [cooldownEnd, setCooldownEnd] = useState(0);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const timerRef = useRef(null);
@@ -307,7 +307,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         setFailCount(0);
         onUnlock(masterKey);
       }
-    } catch (error) {
+    } catch {
       setIsDeriving(false);
       try {
         const userDocRef = doc(db, 'users', user.uid);

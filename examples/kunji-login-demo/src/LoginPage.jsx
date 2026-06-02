@@ -59,7 +59,7 @@ export default function LoginPage({ onSuccess }) {
   const fallbackRef = useRef(null);
   const sessionIdRef = useRef(null);
 
-  const stop = () => {
+  const stop = useCallback(() => {
     if (unsubRef.current) {
       unsubRef.current();
       unsubRef.current = null;
@@ -72,34 +72,40 @@ export default function LoginPage({ onSuccess }) {
       clearTimeout(fallbackRef.current);
       fallbackRef.current = null;
     }
-  };
+  }, []);
 
-  const succeed = (sub, claims) => {
-    stop();
-    localStorage.removeItem(RESUME_KEY);
-    setStatus('approved');
-    setTimeout(() => onSuccess({ sub, claims: claims || null }), 700);
-  };
+  const succeed = useCallback(
+    (sub, claims) => {
+      stop();
+      localStorage.removeItem(RESUME_KEY);
+      setStatus('approved');
+      setTimeout(() => onSuccess({ sub, claims: claims || null }), 700);
+    },
+    [stop, onSuccess],
+  );
 
   // Poll our own backend for approval. loginSessions is server-only (the demo no
   // longer reads Firestore directly); we hit the getSessionStatus function instead.
   // Returns a cleanup fn so stop() can cancel it like the old onSnapshot unsubscribe.
-  const pollStatus = (sessionId) => {
-    const check = async () => {
-      if (document.hidden) return;
-      try {
-        const r = await fetch(`/kunji/status?sessionId=${encodeURIComponent(sessionId)}`);
-        if (!r.ok) return;
-        const s = await r.json();
-        if (s.status === 'approved') succeed(s.sub, s.claims);
-      } catch {
-        /* transient */
-      }
-    };
-    check();
-    const id = setInterval(check, 2000);
-    return () => clearInterval(id);
-  };
+  const pollStatus = useCallback(
+    (sessionId) => {
+      const check = async () => {
+        if (document.hidden) return;
+        try {
+          const r = await fetch(`/kunji/status?sessionId=${encodeURIComponent(sessionId)}`);
+          if (!r.ok) return;
+          const s = await r.json();
+          if (s.status === 'approved') succeed(s.sub, s.claims);
+        } catch {
+          /* transient */
+        }
+      };
+      check();
+      const id = setInterval(check, 2000);
+      return () => clearInterval(id);
+    },
+    [succeed],
+  );
 
   const startFlow = useCallback(async () => {
     stop();
@@ -163,7 +169,7 @@ export default function LoginPage({ onSuccess }) {
       setStatus('error');
       setErrorMsg(err.message || 'Failed to start login.');
     }
-  }, [onSuccess]);
+  }, [stop, pollStatus]);
 
   // Same-device return: resume the saved session instead of starting a new one.
   const resumeFlow = useCallback(
@@ -176,9 +182,8 @@ export default function LoginPage({ onSuccess }) {
         localStorage.removeItem(RESUME_KEY);
         startFlow();
       }, 9000);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [startFlow],
+    [stop, pollStatus, startFlow],
   );
 
   useEffect(() => {
@@ -204,7 +209,7 @@ export default function LoginPage({ onSuccess }) {
       window.removeEventListener('pageshow', onPageShow);
       stop();
     };
-  }, [startFlow, resumeFlow]);
+  }, [startFlow, resumeFlow, stop]);
 
   const meta = STATUS[status] || STATUS.loading;
 

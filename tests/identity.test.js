@@ -96,6 +96,12 @@ describe('parseQRPayload', () => {
       parseQRPayload(validQR({ audience: 'localhost', callbackUrl: 'http://localhost:3000/cb' })),
     ).not.toThrow();
   });
+
+  it('rejects a real-domain audience with a localhost callback (§5.2 relay attempt)', () => {
+    expect(() =>
+      parseQRPayload(validQR({ audience: 'victim.com', callbackUrl: 'http://localhost:9999/cb' })),
+    ).toThrow('untrusted_callback');
+  });
 });
 
 describe('isSafeReturnUrl', () => {
@@ -106,6 +112,8 @@ describe('isSafeReturnUrl', () => {
     ['https://evil.com/x', 'app.com', false],
     ['https://app.com', 'com', false], // bare-TLD audience
     ['javascript:alert(1)', 'app.com', false],
+    ['http://localhost/x', 'localhost', true], // dev: local audience + local return
+    ['http://localhost/x', 'victim.com', false], // §5.2: real audience + localhost return
     ['', 'app.com', false],
     [null, 'app.com', false],
   ])('isSafeReturnUrl(%s, %s) === %s', (url, audience, expected) => {

@@ -259,6 +259,10 @@ const assertSameSiteCallback = (audience, callbackUrl) => {
   const secure = cbUrl.protocol === 'https:' || (isLocal && cbUrl.protocol === 'http:');
   if (isLocal) {
     if (!secure) throw new Error('untrusted_callback');
+    // A real-domain audience with a localhost callback is a §5.2 mismatch (relay attempt):
+    // only allow the localhost shortcut when the audience is itself local (or unset).
+    const audLocal = !aud || aud === host || aud === 'localhost' || aud === '127.0.0.1';
+    if (!audLocal) throw new Error('untrusted_callback');
     return;
   }
   if (!isRegistrableDomain(aud)) throw new Error('untrusted_callback');
@@ -283,7 +287,12 @@ export const isSafeReturnUrl = (returnUrl, audience) => {
   const host = normalizeHost(u.hostname);
   const aud = normalizeHost(audience);
   const isLocal = host === 'localhost' || host === '127.0.0.1';
-  if (isLocal) return u.protocol === 'http:' || u.protocol === 'https:';
+  if (isLocal) {
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    // Same §5.2 audience-binding as assertSameSiteCallback: a real-domain audience
+    // with a localhost return URL is not same-site.
+    return !aud || aud === host || aud === 'localhost' || aud === '127.0.0.1';
+  }
   if (u.protocol !== 'https:') return false;
   if (!isRegistrableDomain(aud)) return false;
   return host === aud || host.endsWith('.' + aud);

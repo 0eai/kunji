@@ -151,7 +151,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         showToast(msg, 'error');
       }
     },
-    [vaultId, cryptoKey, user.uid, showToast],
+    [vaultId, cryptoKey, showToast],
   );
 
   const handleApprove = async (shareProfile) => {

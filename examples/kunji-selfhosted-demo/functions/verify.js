@@ -34,7 +34,7 @@ function extractClaims(signedPayload) {
   if (!c || typeof c !== 'object') return null;
   const out = {};
   if (typeof c.name === 'string') out.name = c.name.slice(0, 60);
-  if (typeof c.picture === 'string') out.picture = c.picture;
+  if (typeof c.picture === 'string') out.picture = c.picture.slice(0, 2048);
   return out.name || out.picture ? out : null;
 }
 

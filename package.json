@@ -1,12 +1,12 @@
 {
   "name": "kunji",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "test": "vitest run",
     "preview": "vite preview"

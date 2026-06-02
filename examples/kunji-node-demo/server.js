@@ -37,6 +37,18 @@ const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 };
+
+// Security headers for the served frontend. The CSP keeps `script-src` tight (no
+// 'unsafe-inline') — that's why the page script lives in an external /app.js.
+const SECURITY_HEADERS = {
+  'Content-Security-Policy':
+    "default-src 'none'; script-src 'self' https://kunji.cc; connect-src 'self'; " +
+    "img-src 'self' https: data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+};
 const readBody = (req) =>
   new Promise((resolve) => {
     let data = '';
@@ -127,11 +139,20 @@ const handler = async (req, res) => {
     return json(res, 200, { status: s.status, sub: s.sub, claims: s.claims });
   }
 
-  // 4. Static frontend.
+  // 4. Static frontend + its externalized script.
+  if (req.method === 'GET' && path === '/app.js') {
+    try {
+      const js = readFileSync(join(__dirname, 'public', 'app.js'));
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', ...SECURITY_HEADERS });
+      return res.end(js);
+    } catch {
+      return json(res, 404, { error: 'not_found' });
+    }
+  }
   if (req.method === 'GET') {
     try {
       const html = readFileSync(join(__dirname, 'public', 'index.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...SECURITY_HEADERS });
       return res.end(html);
     } catch {
       return json(res, 500, { error: 'no_frontend' });

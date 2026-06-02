@@ -118,47 +118,6 @@
     </main>
 
     <script src="https://kunji.cc/rp.js"></script>
-    <script>
-      const $ = (id) => document.getElementById(id);
-
-      // Ask the local server where the public callback lives, then render the widget.
-      // session-url / poll-url are LOCAL; callback-url is the public Firebase Function.
-      fetch('/config')
-        .then((r) => r.json())
-        .then((cfg) => {
-          $('hint').textContent =
-            'Callback relays through ' + cfg.audience + ' — scan with the kunji app.';
-          kunji.render($('kbtn'), {
-            appName: 'kunji Relay Demo',
-            audience: cfg.audience,
-            sessionUrl: '/api/session',
-            callbackUrl: cfg.callbackUrl,
-            pollUrl: '/kunji/status',
-            scope: 'profile',
-          });
-        })
-        .catch(() => ($('hint').textContent = 'Could not load /config — is the local server running?'));
-
-      document.addEventListener('kunji:success', (e) => {
-        const { sub, claims } = e.detail;
-        // Prefer the consented custom profile; else the default identity from `sub`.
-        // claims are self-asserted + unverified → escape the name, render picture as <img>.
-        const def = kunji.handle(sub);
-        $('name').textContent = (claims && claims.name) || def.name;
-        $('avatar').src = (claims && claims.picture) || def.avatarDataUri;
-        $('origin').textContent =
-          claims && (claims.name || claims.picture)
-            ? 'shared from their kunji profile'
-            : 'default identity (from your ID)';
-        $('sub').textContent = sub;
-        $('out').hidden = true;
-        $('in').hidden = false;
-      });
-
-      $('logout').onclick = () => {
-        $('in').hidden = true;
-        $('out').hidden = false;
-      };
-    </script>
+    <script src="/app.js"></script>
   </body>
 </html>
