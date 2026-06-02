@@ -41,7 +41,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [selectedApp, setSelectedApp] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
-  const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } after same-device approval
+  const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } — same-device (deep-link) approval only
   const [linkConfirm, setLinkConfirm] = useState(null); // { fingerprint } after linking a device (compare on both)
   const incomingHandled = useRef(false);
 
@@ -87,14 +87,14 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   useEffect(() => {
     if (!vaultId || !incomingApproval || incomingHandled.current) return;
     incomingHandled.current = true;
-    handleQRScan(incomingApproval);
+    handleQRScan(incomingApproval, 'deeplink');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, incomingApproval]);
 
   // useCallback so QRScannerOverlay's [onScan] effect doesn't tear down the camera
   // on every parent re-render.
   const handleQRScan = useCallback(
-    async (rawValue) => {
+    async (rawValue, origin = 'qr') => {
       setShowScanner(false);
 
       // A device-link QR ({kunjiLink:'v1'}) — transfer the master key to the new device.
@@ -140,6 +140,9 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           sub,
           isNew,
           requestProfile: requestsProfile(qr),
+          // Only the same-device deep link returns to a tab on THIS device; a scanned
+          // QR is cross-device, so its post-approval "Return to…" sheet is suppressed.
+          sameDevice: origin === 'deeplink',
         });
       } catch (err) {
         const msg =
@@ -172,11 +175,15 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           : undefined;
       await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims);
       showToast(`Signed in to ${audience}`);
-      // Only offer the "Return to …" link if it's https + same-site as the audience.
-      setReturnInfo({
-        audience,
-        returnUrl: isSafeReturnUrl(returnUrl, audience) ? returnUrl : null,
-      });
+      // The toast above is the confirmation for cross-device (QR) / device-code sign-ins.
+      // Only the same-device deep link shows the "Return to …" sheet (it returns to the
+      // tab on THIS device). The Return link itself stays gated to https + same-site.
+      if (pendingSession.sameDevice) {
+        setReturnInfo({
+          audience,
+          returnUrl: isSafeReturnUrl(returnUrl, audience) ? returnUrl : null,
+        });
+      }
     } catch (e) {
       showToast('Login failed: ' + e.message, 'error');
     } finally {
