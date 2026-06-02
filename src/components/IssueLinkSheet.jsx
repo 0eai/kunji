@@ -20,6 +20,13 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
   const ctx = useRef({ linkId: null, privateKey: null, pubB: null });
   const unsubRef = useRef(null);
   const expiryRef = useRef(null);
+  // Keep latest callbacks in refs so the init effect can run exactly once on mount —
+  // a fresh `onClose` from the parent must NOT restart the link (writing the "Device
+  // Linked" activity entry re-renders the parent, which would otherwise re-issue).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
 
   useEffect(() => {
     let alive = true;
@@ -48,15 +55,15 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
             setPhase('verify');
             unsubRef.current?.();
           },
-          () => showToast('Linking error. Try again.', 'error'),
+          () => showToastRef.current('Linking error. Try again.', 'error'),
         );
         expiryRef.current = setTimeout(() => {
           unsubRef.current?.();
           setPhase((p) => (p === 'waiting' ? 'expired' : p));
         }, LINK_TTL_MS);
       } catch (e) {
-        showToast('Could not start linking: ' + e.message, 'error');
-        onClose();
+        showToastRef.current('Could not start linking: ' + e.message, 'error');
+        onCloseRef.current();
       }
     })();
     return () => {
@@ -64,7 +71,7 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
       unsubRef.current?.();
       clearTimeout(expiryRef.current);
     };
-  }, [onClose, showToast]);
+  }, []);
 
   const approve = async () => {
     setPhase('depositing');
