@@ -34,7 +34,9 @@ function extractClaims(signedPayload) {
   if (!c || typeof c !== 'object') return null;
   const out = {};
   if (typeof c.name === 'string') out.name = c.name.slice(0, 60);
-  if (typeof c.picture === 'string') out.picture = c.picture.slice(0, 2048);
+  // Avatars are ~24KB data-URIs (64KB ceiling). Bound it, but DROP (don't slice) an
+  // oversized value — truncating a data-URI corrupts it and breaks the <img>.
+  if (typeof c.picture === 'string' && c.picture.length <= 64 * 1024) out.picture = c.picture;
   return out.name || out.picture ? out : null;
 }
 
