@@ -26,7 +26,7 @@ const KeyMark = () => (
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <circle cx="240" cy="172" r="56" />
+      <circle cx="240" cy="172" r="56" fill="currentColor" />
       <path d="M240 172 V398" />
       <path d="M240 334 L300 314" />
       <path d="M240 334 L300 358" />

@@ -25,7 +25,7 @@ const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=
 
 // Official key mark (dark ink), reused from the kunji brand icon.
 const KEY_SVG = `<svg viewBox="0 0 512 512" aria-hidden="true"><g transform="rotate(-40 256 256)" fill="none" stroke="currentColor" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="240" cy="172" r="56"/><path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>
+  <circle cx="240" cy="172" r="56" fill="currentColor"/><path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>
 </g></svg>`;
 
 const CSS = `
