@@ -17,18 +17,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Device-linking relay. Write-once: only a fresh `pending` session can be created
-    // (no payload), and the single pending -> sent deposit cannot be overwritten,
-    // re-deposited, or have pubB changed — stops relay tampering/substitution.
+    // Device-linking relay (issuer → consumer). Two-round, write-once:
+    //   create (issuer A): publishes A's ephemeral key + lookup code; no peer key/secret.
+    //   update#1 (consumer B): pending -> keyset, adds pubB, pubA immutable, still no secret.
+    //   update#2 (issuer A): keyset -> sent, adds encryptedMasterKey, both keys immutable.
+    // Each transition happens at most once and neither ephemeral key can be swapped, so a
+    // relay can't substitute keys or re-deposit. The shared-secret SAS (confirmed on both
+    // devices before A deposits) is the user-verifiable backstop against substitution.
     match /linkSessions/{linkId} {
       allow get: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.status == 'pending'
-        && !('pubA' in request.resource.data)
+        && 'pubA' in request.resource.data
+        && !('pubB' in request.resource.data)
         && !('encryptedMasterKey' in request.resource.data);
+      // B publishes its ephemeral key (pending -> keyset).
       allow update: if request.auth != null
         && resource.data.status == 'pending'
+        && request.resource.data.status == 'keyset'
+        && request.resource.data.pubA == resource.data.pubA
+        && 'pubB' in request.resource.data
+        && !('encryptedMasterKey' in request.resource.data);
+      // A deposits the encrypted master key (keyset -> sent).
+      allow update: if request.auth != null
+        && resource.data.status == 'keyset'
         && request.resource.data.status == 'sent'
+        && request.resource.data.pubA == resource.data.pubA
         && request.resource.data.pubB == resource.data.pubB;
     }
 

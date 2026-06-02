@@ -116,3 +116,66 @@ export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
 
   res.json({ status: 'ok' });
 });
+
+// ── Device-link code lookup ──────────────────────────────────────────────────
+// Resolves a short numeric link code (shown by the issuing device) to that device's
+// link session {linkId, pubA}, so the new device can join without scanning a QR. The
+// code is short, so this is rate-limited (per-IP + a global failed-lookup cap) to bound
+// enumeration; a guessed code only yields a public key, and the shared-secret SAS the
+// user confirms on both screens is what actually prevents the master key reaching a
+// wrong device. linkSessions are written client-side under firestore.rules; this
+// function only READS them (Admin SDK), never the master key.
+const CODE = /^\d{8}$/;
+
+const rateLimited = async (ip, max = 10, windowMs = 60 * 1000) => {
+  const ref = db.collection('rateLimits').doc(`link_${(ip || 'unknown').replace(/[^\w.:-]/g, '_')}`);
+  const now = Date.now();
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : null;
+    if (!d || now - d.start > windowMs) {
+      tx.set(ref, { start: now, count: 1 });
+      return false;
+    }
+    if (d.count >= max) return true;
+    tx.update(ref, { count: d.count + 1 });
+    return false;
+  });
+};
+
+const GLOBAL_FAIL_REF = () => db.collection('rateLimits').doc('global_link_failures');
+const globalFailuresExceeded = async (max = 60, windowMs = 60 * 1000) => {
+  const snap = await GLOBAL_FAIL_REF().get();
+  const d = snap.exists ? snap.data() : null;
+  return !!d && Date.now() - d.start <= windowMs && d.count >= max;
+};
+const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
+  const ref = GLOBAL_FAIL_REF();
+  const now = Date.now();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists ? snap.data() : null;
+    if (!d || now - d.start > windowMs) tx.set(ref, { start: now, count: 1 });
+    else tx.update(ref, { count: d.count + 1 });
+  });
+};
+
+export const linkLookup = onRequest({ cors: true }, async (req, res) => {
+  if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
+  if (await globalFailuresExceeded()) return res.status(429).json({ error: 'rate_limited' });
+
+  const code = String(req.query.code || '');
+  if (!CODE.test(code)) return res.status(400).json({ error: 'bad_code' });
+
+  const q = await db.collection('linkSessions').where('code', '==', code).limit(1).get();
+  const doc = q.docs[0];
+  const s = doc?.data();
+  if (!doc || s.status !== 'pending') {
+    await bumpGlobalFailure();
+    return res.status(404).json({ error: 'invalid_code' });
+  }
+  if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_code' });
+
+  // Only the issuer's public key + the (secret) doc id — never any key material.
+  res.json({ linkId: doc.id, pubA: s.pubA });
+});

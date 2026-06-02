@@ -9,6 +9,10 @@
           "source": "/vault/write",
           "function": { "functionId": "vaultWrite", "region": "us-central1" }
         },
+        {
+          "source": "/link/lookup",
+          "function": { "functionId": "linkLookup", "region": "us-central1" }
+        },
         { "source": "**", "destination": "/index.html" }
       ],
       "headers": [

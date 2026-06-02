@@ -14,7 +14,6 @@ import {
   requestsProfile,
 } from '../services/identity';
 import { loadProfile } from '../services/profile';
-import { completeLink, vaultFingerprint } from '../services/linking';
 import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
@@ -42,7 +41,6 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
   const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } — same-device (deep-link) approval only
-  const [linkConfirm, setLinkConfirm] = useState(null); // { fingerprint } after linking a device (compare on both)
   const incomingHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
@@ -96,28 +94,6 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const handleQRScan = useCallback(
     async (rawValue, origin = 'qr') => {
       setShowScanner(false);
-
-      // A device-link QR ({kunjiLink:'v1'}) — transfer the master key to the new device.
-      try {
-        const maybeLink = JSON.parse(rawValue);
-        if (maybeLink?.kunjiLink === 'v1') {
-          try {
-            await completeLink(rawValue, cryptoKey);
-            setLinkConfirm({ fingerprint: await vaultFingerprint(cryptoKey) });
-          } catch (e) {
-            const m =
-              e.message === 'link_expired'
-                ? 'Link QR expired.'
-                : e.message === 'link_already_used'
-                  ? 'That link was already used.'
-                  : 'Linking failed: ' + e.message;
-            showToast(m, 'error');
-          }
-          return;
-        }
-      } catch {
-        /* not JSON / not a link QR — fall through to login parsing */
-      }
 
       try {
         const qr = parseQRPayload(rawValue);
@@ -431,28 +407,6 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         </Sheet>
       )}
 
-      {linkConfirm && (
-        <Sheet onClose={() => setLinkConfirm(null)} labelledBy="link-title">
-          <div className="flex items-center gap-2.5 mb-1">
-            <Shield size={18} className="text-success" />
-            <h2 id="link-title" className="text-lg font-semibold tracking-tight">
-              Device linked
-            </h2>
-          </div>
-          <p className="text-[14px] text-muted leading-relaxed mb-5">
-            Confirm this code matches the one shown on the new device. If it doesn't, that device
-            may have received the wrong key — don't approve it there.
-          </p>
-          <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink text-center mb-6">
-            {linkConfirm.fingerprint}
-          </div>
-          <div className="flex justify-end">
-            <Btn variant="primary" onClick={() => setLinkConfirm(null)}>
-              Done
-            </Btn>
-          </div>
-        </Sheet>
-      )}
     </div>
   );
 };

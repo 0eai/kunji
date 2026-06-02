@@ -56,3 +56,9 @@ export const deriveECDHSharedSecret = async (privateKey, publicKey) => {
     ['encrypt', 'decrypt'],
   );
 };
+
+// Raw ECDH shared bits (not an opaque AES key) — for deriving a short comparable code
+// (the link SAS). Both sides compute the same bits from (their priv, peer's pub).
+export const deriveECDHSharedBits = async (privateKey, publicKey) => {
+  return window.crypto.subtle.deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256);
+};

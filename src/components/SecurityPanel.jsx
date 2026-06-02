@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   KeyRound,
   Copy,
   CheckCircle2,
   AlertTriangle,
   Smartphone,
-  ScanLine,
   Lock,
   LogOut,
   Activity,
@@ -13,19 +12,16 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { exportRecoveryKey, resetUserVault } from '../services/vault';
-import { completeLink, vaultFingerprint } from '../services/linking';
 import { listenToActivityLog } from '../services/activityLog';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 import InstallButton from './InstallButton';
 import ProfileSettings from './ProfileSettings';
+import IssueLinkSheet from './IssueLinkSheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
-
-// Lazy: the camera scanner (jsqr) loads only when opened.
-const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
 const MIN_PASSPHRASE = 8;
 const CLEAR_MS = 60000;
@@ -98,8 +94,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   const [copied, setCopied] = useState(false);
   const clearTimer = useRef(null);
 
-  const [showScanner, setShowScanner] = useState(false);
-  const [linkConfirm, setLinkConfirm] = useState(null); // { fingerprint } — compare with the new device
+  const [showIssue, setShowIssue] = useState(false); // issuer sheet (show QR + code to the new device)
 
   useEffect(() => () => clearTimeout(clearTimer.current), []);
 
@@ -129,28 +124,6 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // useCallback so QRScannerOverlay's [onScan] effect doesn't restart the camera on re-render.
-  const handleLinkScan = useCallback(
-    async (raw) => {
-      setShowScanner(false);
-      try {
-        await completeLink(raw, cryptoKey);
-        setLinkConfirm({ fingerprint: await vaultFingerprint(cryptoKey) });
-      } catch (e) {
-        const msg =
-          e.message === 'link_expired'
-            ? 'Link QR expired.'
-            : e.message === 'invalid_link_qr'
-              ? 'Not a kunji device-link QR.'
-              : e.message === 'link_already_used'
-                ? 'That link was already used.'
-                : 'Linking failed: ' + e.message;
-        showToast(msg, 'error');
-      }
-    },
-    [cryptoKey, showToast],
-  );
-
   return (
     <Sheet onClose={onClose} labelledBy="security-title">
       <h2 id="security-title" className="text-lg font-semibold tracking-tight mb-5">
@@ -175,11 +148,11 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           onToggle={() => toggle('link')}
         >
           <p className="text-[13px] text-muted leading-relaxed mb-4">
-            Add another device to this identity. On the new device choose “Link from another
-            device”, then scan its QR here.
+            Add another device to this identity. This device shows a QR and a code; on the new
+            device choose “Link this device” and scan or enter it.
           </p>
-          <Btn variant="primary" onClick={() => setShowScanner(true)} className="w-full">
-            <ScanLine size={16} /> Scan device QR
+          <Btn variant="primary" onClick={() => setShowIssue(true)} className="w-full">
+            <Smartphone size={16} /> Show link code
           </Btn>
         </Row>
 
@@ -318,30 +291,12 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         </button>
       </div>
 
-      {showScanner && (
-        <Suspense fallback={<div className="fixed inset-0 z-[200] bg-black" />}>
-          <QRScannerOverlay onScan={handleLinkScan} onClose={() => setShowScanner(false)} />
-        </Suspense>
-      )}
-
-      {linkConfirm && (
-        <Sheet onClose={() => setLinkConfirm(null)} z={60} labelledBy="link-fp-title">
-          <h2 id="link-fp-title" className="text-lg font-semibold tracking-tight mb-1">
-            Device linked
-          </h2>
-          <p className="text-[14px] text-muted leading-relaxed mb-5">
-            Confirm this code matches the one on the new device. If it doesn't, don't approve it
-            there.
-          </p>
-          <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink text-center mb-6">
-            {linkConfirm.fingerprint}
-          </div>
-          <div className="flex justify-end">
-            <Btn variant="primary" onClick={() => setLinkConfirm(null)}>
-              Done
-            </Btn>
-          </div>
-        </Sheet>
+      {showIssue && (
+        <IssueLinkSheet
+          masterKey={cryptoKey}
+          userId={userId}
+          onClose={() => setShowIssue(false)}
+        />
       )}
 
       {showSignOut && (

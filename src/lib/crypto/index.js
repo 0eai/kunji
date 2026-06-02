@@ -35,6 +35,7 @@ export {
   importECDHPublicKey,
   importECDHPrivateKey,
   deriveECDHSharedSecret,
+  deriveECDHSharedBits,
 } from './ecdh';
 
 export {
