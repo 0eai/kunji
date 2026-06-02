@@ -81,8 +81,31 @@
         height: 56px;
       }
       .tile .btnimg {
-        width: 200px;
+        width: 184px;
         height: auto;
+      }
+      /* Live preview button — mirrors the rp.js widget so it auto-sizes perfectly. */
+      .kbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        border-radius: 999px;
+        padding: 11px 20px;
+        background: #f59e0b;
+        color: #1a1a18;
+      }
+      .kbtn.dark {
+        background: #1a1a18;
+        color: #faf9f6;
+      }
+      .kbtn .mark {
+        width: 18px;
+        height: 18px;
+        display: block;
       }
       .assets {
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -219,10 +242,24 @@
           </p>
           <div class="tiles">
             <div class="tile light">
-              <img class="btnimg" src="/brand/sign-in-with-kunji.svg" alt="Sign in with kunji (amber)" />
+              <span class="kbtn">
+                <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
+                  <g transform="rotate(-40 256 256)" fill="none" stroke="currentColor" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="240" cy="172" r="56" /><path d="M240 172 V398" /><path d="M240 334 L300 314" /><path d="M240 334 L300 358" />
+                  </g>
+                </svg>
+                Sign in with kunji
+              </span>
             </div>
             <div class="tile light">
-              <img class="btnimg" src="/brand/sign-in-with-kunji-dark.svg" alt="Sign in with kunji (dark)" />
+              <span class="kbtn dark">
+                <svg class="mark" viewBox="0 0 512 512" aria-hidden="true">
+                  <g transform="rotate(-40 256 256)" fill="none" stroke="currentColor" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="240" cy="172" r="56" /><path d="M240 172 V398" /><path d="M240 334 L300 314" /><path d="M240 334 L300 358" />
+                  </g>
+                </svg>
+                Sign in with kunji
+              </span>
             </div>
           </div>
           <ul class="rules">
