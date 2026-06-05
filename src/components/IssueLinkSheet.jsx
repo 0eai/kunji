@@ -3,6 +3,7 @@ import { ShieldCheck, Smartphone } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Spinner } from './ui/primitives';
 import { startLinkAsIssuer, watchForPeerKey, depositMasterKey } from '../services/linking';
+import { renderBrandedQr } from '../lib/brandedQr';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
 
@@ -14,9 +15,10 @@ const LINK_TTL_MS = 2 * 60 * 1000; // matches the link session TTL
 const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
   const { showToast } = useToast();
   const [phase, setPhase] = useState('issuing'); // issuing → waiting → verify → depositing → done → expired
-  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrData, setQrData] = useState('');
   const [code, setCode] = useState('');
   const [sas, setSas] = useState('');
+  const qrRef = useRef(null);
   const ctx = useRef({ linkId: null, privateKey: null, pubB: null });
   const unsubRef = useRef(null);
   const expiryRef = useRef(null);
@@ -32,20 +34,12 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
     let alive = true;
     (async () => {
       try {
-        const QRCode = (await import('qrcode')).default;
-        const { linkId, code: c, privateKey, qrData } = await startLinkAsIssuer();
+        const { linkId, code: c, privateKey, qrData: data } = await startLinkAsIssuer();
         if (!alive) return;
         ctx.current.linkId = linkId;
         ctx.current.privateKey = privateKey;
         setCode(c);
-        setQrDataUrl(
-          await QRCode.toDataURL(qrData, {
-            width: 256,
-            margin: 4,
-            errorCorrectionLevel: 'Q', // ~25% recovery — tolerates a small center badge
-            color: { dark: '#1a1a18', light: '#ffffff' },
-          }),
-        );
+        setQrData(data);
         setPhase('waiting');
         unsubRef.current = watchForPeerKey(
           linkId,
@@ -73,6 +67,11 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
       clearTimeout(expiryRef.current);
     };
   }, []);
+
+  // Render the brand-styled QR once the payload + the container are ready.
+  useEffect(() => {
+    if (qrData && qrRef.current) renderBrandedQr(qrRef.current, { data: qrData, size: 224 });
+  }, [qrData]);
 
   const approve = async () => {
     setPhase('depositing');
@@ -161,32 +160,8 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
           </p>
           <div className="flex justify-center mb-4">
             <div className="rounded-2xl border border-line p-4 bg-surface min-h-[208px] flex items-center justify-center">
-              {qrDataUrl ? (
-                <div className="relative inline-flex">
-                  <img src={qrDataUrl} alt="Device link QR" className="w-[200px] h-[200px]" />
-                  <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-line shadow-sm">
-                      <svg viewBox="0 0 512 512" className="w-5 h-5" aria-hidden="true">
-                        <g
-                          transform="rotate(-40 256 256)"
-                          fill="none"
-                          stroke="#1a1a18"
-                          strokeWidth="58"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <circle cx="240" cy="172" r="56" fill="#1a1a18" />
-                          <path d="M240 172 V398" />
-                          <path d="M240 334 L300 314" />
-                          <path d="M240 334 L300 358" />
-                        </g>
-                      </svg>
-                    </span>
-                  </span>
-                </div>
-              ) : (
-                <Spinner />
-              )}
+              <div ref={qrRef} aria-label="Device link QR" className="inline-flex" />
+              {!qrData && <Spinner />}
             </div>
           </div>
           {code && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import QRCode from 'qrcode';
+import QRCodeStyling from 'qr-code-styling';
 
 // The RP's identity. In production this is your real domain, hardcoded server-side.
 // Here it's the current origin (audience = hostname; callback is same-site via Hosting rewrite).
@@ -7,6 +7,38 @@ const AUDIENCE = window.location.hostname;
 const CALLBACK_URL = `${window.location.origin}/kunji/callback`;
 const APP_NAME = 'Kunji Demo';
 const KUNJI_APP_URL = 'https://app.kunji.cc';
+
+// Brand-styled QR: extra-rounded modules + the kunji app-icon logo (amber tile + dark key),
+// centered with a cleared quiet area. Pure presentation — `data` is the QR payload unchanged.
+const APP_ICON =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+      '<rect width="512" height="512" rx="116" fill="#f59e0b"/>' +
+      '<g transform="rotate(-40 256 256)" fill="none" stroke="#1c1606" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">' +
+      '<circle cx="240" cy="172" r="56" fill="#1c1606"/>' +
+      '<path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>' +
+      '</g></svg>',
+  );
+const renderBrandedQr = (el, data) => {
+  if (!el || !data) return;
+  const qr = new QRCodeStyling({
+    type: 'svg',
+    width: 240,
+    height: 240,
+    data,
+    margin: 8,
+    qrOptions: { errorCorrectionLevel: 'Q' },
+    backgroundOptions: { color: '#ffffff' },
+    dotsOptions: { type: 'extra-rounded', color: '#1a1a18' },
+    cornersSquareOptions: { type: 'extra-rounded', color: '#1a1a18' },
+    cornersDotOptions: { color: '#1a1a18' },
+    image: APP_ICON,
+    imageOptions: { imageSize: 0.35, margin: 4, hideBackgroundDots: true },
+  });
+  el.replaceChildren();
+  qr.append(el);
+};
 
 // base64url so it rides safely in a URL query param.
 const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -49,12 +81,19 @@ export default function LoginPage({ onSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [deepLink, setDeepLink] = useState('');
   const [code, setCode] = useState('');
-  const [qrUrl, setQrUrl] = useState('');
+  const [qrData, setQrData] = useState('');
+  const qrRef = useRef(null);
   // Show one method at a time; default to the one that fits the device.
   const [tab, setTab] = useState(() =>
     window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'otp',
   );
   const unsubRef = useRef(null);
+
+  // Render the styled QR when we have a payload and the QR tab is visible (so switching
+  // tabs re-renders into the freshly-mounted container).
+  useEffect(() => {
+    if (tab === 'qr' && qrData) renderBrandedQr(qrRef.current, qrData);
+  }, [tab, qrData]);
   const timerRef = useRef(null);
   const fallbackRef = useRef(null);
   const sessionIdRef = useRef(null);
@@ -150,14 +189,7 @@ export default function LoginPage({ onSuccess }) {
         scope: ['profile'],
       };
       if (CALLBACK_URL !== `https://${AUDIENCE}/kunji/callback`) qrPayload.callbackUrl = CALLBACK_URL;
-      setQrUrl(
-        await QRCode.toDataURL(JSON.stringify(qrPayload), {
-          width: 256,
-          margin: 4,
-          errorCorrectionLevel: 'Q', // ~25% recovery — tolerates a small center badge
-          color: { dark: '#1a1a18', light: '#ffffff' },
-        }),
-      );
+      setQrData(JSON.stringify(qrPayload));
       setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(JSON.stringify(payload))}`); // same-device: open kunji directly
       setStatus('scanning');
 
@@ -298,30 +330,7 @@ export default function LoginPage({ onSuccess }) {
                 ) : (
                   <div>
                     <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
-                      {qrUrl && (
-                        <div className="relative inline-flex">
-                          <img src={qrUrl} alt="Sign-in QR" className="w-[240px] h-[240px]" />
-                          <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <span className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-line shadow-sm">
-                              <svg viewBox="0 0 512 512" width="22" height="22" aria-hidden="true">
-                                <g
-                                  transform="rotate(-40 256 256)"
-                                  fill="none"
-                                  stroke="#1a1a18"
-                                  strokeWidth="58"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <circle cx="240" cy="172" r="56" fill="#1a1a18" />
-                                  <path d="M240 172 V398" />
-                                  <path d="M240 334 L300 314" />
-                                  <path d="M240 334 L300 358" />
-                                </g>
-                              </svg>
-                            </span>
-                          </span>
-                        </div>
-                      )}
+                      <div ref={qrRef} className="inline-flex" />
                     </div>
                     <p className="text-[13px] text-muted mt-4">
                       Scan with the kunji app on your phone.

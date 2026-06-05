@@ -1,8 +1,9 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ShieldCheck, ScanLine, Copy, CheckCircle2 } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Field } from './ui/primitives';
 import { parseAgentRequest, issueCapability } from '../services/capability';
+import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
 const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
@@ -26,8 +27,15 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null); // mint result
-  const [qrUrl, setQrUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const qrRef = useRef(null);
+
+  // Styled QR of the capability (no logo — it's a long opaque token; lighter EC).
+  useEffect(() => {
+    if (phase === 'issued' && result && qrRef.current) {
+      renderBrandedQr(qrRef.current, { data: result.capability, size: 200, withLogo: false, ec: 'M' });
+    }
+  }, [phase, result]);
 
   const ingest = (raw) => {
     setShowScanner(false);
@@ -50,12 +58,6 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
         agentPub: req.agentPub,
       });
       setResult(r);
-      const QRCode = (await import('qrcode')).default;
-      setQrUrl(
-        await QRCode.toDataURL(r.capability, { width: 256, margin: 4, errorCorrectionLevel: 'M' }).catch(
-          () => '',
-        ),
-      );
       setPhase('issued');
     } catch (e) {
       showToast('Could not authorize: ' + (e.message || e), 'error');
@@ -127,11 +129,9 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             Give this capability to the agent (copy it, or let it scan the code). It's scoped to{' '}
             <span className="font-mono text-ink">{req.audience}</span> and expires automatically.
           </p>
-          {qrUrl && (
-            <div className="flex justify-center mb-4">
-              <img src={qrUrl} alt="Capability QR" className="w-[200px] h-[200px] rounded-xl border border-line" />
-            </div>
-          )}
+          <div className="flex justify-center mb-4">
+            <div ref={qrRef} aria-label="Capability QR" className="rounded-xl border border-line p-2 bg-white" />
+          </div>
           <div className="flex items-start gap-3 border-y border-line py-3 mb-4">
             <code className="flex-1 text-[11px] font-mono text-ink break-all leading-relaxed max-h-24 overflow-y-auto">
               {result.capability}

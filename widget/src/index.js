@@ -15,7 +15,7 @@
  *        data-poll-url="/kunji/status"          GET ?sessionId= -> { status, sub }
  *        data-redirect="/dashboard"></div>      (optional; else listen for 'kunji:success')
  */
-import QRCode from 'qrcode';
+import QRCodeStyling from 'qr-code-styling';
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
 
 const APP_URL_DEFAULT = 'https://app.kunji.cc';
@@ -27,6 +27,39 @@ const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=
 const KEY_SVG = `<svg viewBox="0 0 512 512" aria-hidden="true"><g transform="rotate(-40 256 256)" fill="none" stroke="currentColor" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="240" cy="172" r="56" fill="currentColor"/><path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>
 </g></svg>`;
+
+// kunji app icon (amber tile + dark key) — embedded as the QR center logo.
+const APP_ICON =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
+      '<rect width="512" height="512" rx="116" fill="#f59e0b"/>' +
+      '<g transform="rotate(-40 256 256)" fill="none" stroke="#1c1606" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">' +
+      '<circle cx="240" cy="172" r="56" fill="#1c1606"/>' +
+      '<path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>' +
+      '</g></svg>',
+  );
+
+// Brand-styled QR: extra-rounded modules + the amber app-icon logo (cleared quiet area).
+function renderQr(el, data) {
+  if (!el || !data) return;
+  const qr = new QRCodeStyling({
+    type: 'svg',
+    width: 224,
+    height: 224,
+    data,
+    margin: 8,
+    qrOptions: { errorCorrectionLevel: 'Q' },
+    backgroundOptions: { color: '#ffffff' },
+    dotsOptions: { type: 'extra-rounded', color: '#1a1a18' },
+    cornersSquareOptions: { type: 'extra-rounded', color: '#1a1a18' },
+    cornersDotOptions: { color: '#1a1a18' },
+    image: APP_ICON,
+    imageOptions: { imageSize: 0.35, margin: 4, hideBackgroundDots: true },
+  });
+  el.replaceChildren();
+  qr.append(el);
+}
 
 const CSS = `
 :host { all: initial; }
@@ -77,13 +110,8 @@ const CSS = `
 .tab.on { color:#1a1a18; border-color:#d97706; }
 
 .panel { min-height: 248px; }
-.qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:14px; background:#fff; }
-.qrbox img { display:block; width:224px; height:224px; }
-.qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  width:38px; height:38px; display:flex; align-items:center; justify-content:center;
-  background:#fff; border:1px solid #e7e5e0; border-radius:9px; color:#1a1a18;
-  box-shadow:0 1px 2px rgba(0,0,0,.06); }
-.qrlogo svg { width:22px; height:22px; }
+.qrbox { display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:14px; background:#fff; line-height:0; }
+.qrbox svg { display:block; width:224px; height:224px; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }
 .otp { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
   font-size:38px; letter-spacing:.16em; color:#1a1a18; margin-top:6px; }
@@ -253,15 +281,6 @@ function openModal(opts, sourceEl) {
     // javascript:/data:/http: so a hostile data-app-url can't inject a scheme.
     const safeAppUrl = /^https:\/\//i.test(opts.appUrl) ? opts.appUrl : APP_URL_DEFAULT;
     const deepLink = `${safeAppUrl}/?approve=${b64url(JSON.stringify(payload))}`;
-    let qrImg = '';
-    try {
-      qrImg = await QRCode.toDataURL(qrData, {
-        width: 256,
-        margin: 4,
-        errorCorrectionLevel: 'Q', // ~25% recovery — tolerates a small center badge
-        color: { dark: '#1a1a18', light: '#ffffff' },
-      });
-    } catch {}
     // Accept the OTP only if it's strictly digits, so it can never carry markup.
     const code = /^\d{4,10}$/.test(session.code) ? session.code : '';
 
@@ -297,7 +316,7 @@ function openModal(opts, sourceEl) {
           ${
             tab === 'qr' || !code
               ? `
-            <div class="qrbox">${qrImg ? `<img src="${qrImg}" alt="Sign-in QR"><span class="qrlogo">${KEY_SVG}</span>` : ''}</div>
+            <div class="qrbox"></div>
             <p class="cap">Scan with the kunji app on your phone.</p>
           `
               : `
@@ -312,6 +331,8 @@ function openModal(opts, sourceEl) {
         <p class="expiry"></p>`;
 
       sheet.querySelector('.x').onclick = close;
+      const box = sheet.querySelector('.qrbox');
+      if (box) renderQr(box, qrData); // styled QR + embedded amber logo
       sheet.querySelectorAll('.tab').forEach(
         (b) =>
           (b.onclick = () => {
