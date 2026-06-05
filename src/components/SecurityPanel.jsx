@@ -11,8 +11,9 @@ import {
   ChevronRight,
   UserCircle,
 } from 'lucide-react';
-import { exportRecoveryKey, resetUserVault } from '../services/vault';
-import { listenToActivityLog } from '../services/activityLog';
+import { exportRecoveryKey, resetUserVault, changePasskey } from '../services/vault';
+import { listenToActivityLog, logActivity } from '../services/activityLog';
+import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
@@ -56,6 +57,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
   const [open, setOpen] = useState({
     profile: false,
+    changekey: false,
     link: false,
     recovery: false,
     activity: false,
@@ -96,7 +98,41 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
   const [showIssue, setShowIssue] = useState(false); // issuer sheet (show QR + code to the new device)
 
+  const [curKey, setCurKey] = useState('');
+  const [newKey, setNewKey] = useState('');
+  const [newKey2, setNewKey2] = useState('');
+  const [changing, setChanging] = useState(false);
+
   useEffect(() => () => clearTimeout(clearTimer.current), []);
+
+  const handleChangePasskey = async () => {
+    if (newKey.length < MIN_PASSKEY_LENGTH) {
+      showToast(`New passkey must be at least ${MIN_PASSKEY_LENGTH} characters.`, 'error');
+      return;
+    }
+    if (getStrength(newKey).label === 'Weak') {
+      showToast('Choose a stronger passkey.', 'error');
+      return;
+    }
+    if (newKey !== newKey2) {
+      showToast('New passkeys do not match.', 'error');
+      return;
+    }
+    setChanging(true);
+    try {
+      await changePasskey(userId, cryptoKey, curKey, newKey);
+      logActivity(userId, 'Passkey changed', 'success', 'Lock', cryptoKey);
+      showToast('Passkey updated.');
+      setCurKey('');
+      setNewKey('');
+      setNewKey2('');
+      setOpen((o) => ({ ...o, changekey: false }));
+    } catch (e) {
+      showToast(e.message || 'Could not change passkey.', 'error');
+    } finally {
+      setChanging(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (passkey.length < MIN_PASSPHRASE || passphrase.length < MIN_PASSPHRASE) {
@@ -139,6 +175,58 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           onToggle={() => toggle('profile')}
         >
           <ProfileSettings userId={userId} cryptoKey={cryptoKey} />
+        </Row>
+
+        <Row
+          icon={Lock}
+          title="Change passkey"
+          open={open.changekey}
+          onToggle={() => toggle('changekey')}
+        >
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Set a new passkey for this device. Your recovery key and any other linked devices keep
+            their own passkeys — only this device changes.
+          </p>
+          <div className="space-y-4">
+            <PasswordField
+              label="Current passkey"
+              value={curKey}
+              onChange={(e) => setCurKey(e.target.value)}
+            />
+            <div>
+              <PasswordField
+                label={`New passkey (min ${MIN_PASSKEY_LENGTH})`}
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+              />
+              {newKey && (
+                <div className="mt-2">
+                  <div className="h-1 rounded-full bg-line overflow-hidden">
+                    <div
+                      className={`h-full ${getStrength(newKey).color} transition-all`}
+                      style={{ width: getStrength(newKey).width }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted mt-1">{getStrength(newKey).label}</p>
+                </div>
+              )}
+            </div>
+            <PasswordField
+              label="Confirm new passkey"
+              value={newKey2}
+              onChange={(e) => setNewKey2(e.target.value)}
+            />
+            <div className="pt-1">
+              <Btn
+                variant="primary"
+                onClick={handleChangePasskey}
+                disabled={changing || !curKey || !newKey || !newKey2}
+                className="w-full"
+              >
+                {changing ? 'Updating…' : 'Update passkey'}
+              </Btn>
+            </div>
+          </div>
         </Row>
 
         <Row

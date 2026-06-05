@@ -17,6 +17,7 @@ import {
   argon2DocFields,
 } from '../lib/crypto';
 import { resetUserVault } from '../services/vault';
+import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
 import InstallButton from './InstallButton';
@@ -41,22 +42,6 @@ const getDelay = (failCount) => {
   return delays[Math.min(failCount - 1, delays.length - 1)];
 };
 
-const getStrength = (passkey) => {
-  if (!passkey || passkey.length === 0) return { label: '', color: '', width: '0%' };
-  let score = 0;
-  if (passkey.length >= 8) score++;
-  if (passkey.length >= 12) score++;
-  if (passkey.length >= 16) score++;
-  if (/[A-Z]/.test(passkey) && /[a-z]/.test(passkey)) score++;
-  if (/[0-9]/.test(passkey)) score++;
-  if (/[^A-Za-z0-9]/.test(passkey)) score++;
-  if (score <= 2) return { label: 'Weak', color: 'bg-danger', width: '25%' };
-  if (score <= 3) return { label: 'Fair', color: 'bg-accent-fill', width: '50%' };
-  if (score <= 4) return { label: 'Strong', color: 'bg-accent', width: '75%' };
-  return { label: 'Very strong', color: 'bg-success', width: '100%' };
-};
-
-const MIN_PASSKEY_LENGTH = 10;
 
 const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const { showToast } = useToast();

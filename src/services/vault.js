@@ -59,6 +59,34 @@ export const provisionVaultFromMasterKey = async (userId, masterKey, newPasskey)
 };
 
 /**
+ * Change this device's vault passkey. Requires the CURRENT passkey (re-auth: verifies it
+ * by re-deriving the existing wrap and decrypting), then re-wraps the already-unlocked
+ * master key under the NEW passkey with fresh V2 (Argon2id) params. The master key — and
+ * therefore the vaultId and every connected app — is unchanged; only the local wrap
+ * changes, so other linked devices keep their own passkeys.
+ */
+export const changePasskey = async (userId, masterKey, currentPasskey, newPasskey) => {
+  const userDocRef = doc(db, 'users', userId);
+  const userDoc = await getDoc(userDocRef);
+  if (!userDoc.exists()) throw new Error('No vault found.');
+
+  const data = userDoc.data();
+  const { encryptionSalt, encryptedMasterKey, kdf, iterations } = data;
+
+  // Verify the current passkey by re-deriving its wrapper and decrypting the blob.
+  const wrapperKey =
+    kdf === 'argon2id'
+      ? await deriveKeyArgon2id(currentPasskey, encryptionSalt, argon2ParamsFromDoc(data))
+      : await deriveKeyFromPasskey(currentPasskey, encryptionSalt, iterations || getDefaultIterations());
+  const ok = await decryptData(encryptedMasterKey, wrapperKey);
+  if (!ok) throw new Error('Current passkey is incorrect.');
+
+  // Re-wrap the in-memory master key under the new passkey (same path as device-link
+  // provisioning: fresh salt + V2 Argon2id params + reset lockout counters).
+  await provisionVaultFromMasterKey(userId, masterKey, newPasskey);
+};
+
+/**
  * Generate a recovery key that can restore this vault on any device.
  * The master key is re-wrapped with an Argon2id key derived from a SEPARATE
  * recovery passphrase, so the recovery string is useless without that passphrase.
