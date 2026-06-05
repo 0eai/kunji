@@ -10,6 +10,7 @@ import {
   Activity,
   ChevronRight,
   UserCircle,
+  Bot,
 } from 'lucide-react';
 import { exportRecoveryKey, resetUserVault, changePasskey } from '../services/vault';
 import { listenToActivityLog, logActivity } from '../services/activityLog';
@@ -20,6 +21,7 @@ import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 import InstallButton from './InstallButton';
 import ProfileSettings from './ProfileSettings';
 import IssueLinkSheet from './IssueLinkSheet';
+import AuthorizeAgentSheet from './AuthorizeAgentSheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
@@ -59,6 +61,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     profile: false,
     changekey: false,
     link: false,
+    agent: false,
     recovery: false,
     activity: false,
   });
@@ -97,6 +100,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   const clearTimer = useRef(null);
 
   const [showIssue, setShowIssue] = useState(false); // issuer sheet (show QR + code to the new device)
+  const [showAgent, setShowAgent] = useState(false); // authorize-an-agent (capability) sheet
 
   const [curKey, setCurKey] = useState('');
   const [newKey, setNewKey] = useState('');
@@ -245,6 +249,21 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         </Row>
 
         <Row
+          icon={Bot}
+          title="Authorize an agent"
+          open={open.agent}
+          onToggle={() => toggle('agent')}
+        >
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Let an AI agent act for you at one app, within a scope you approve and for a limited time
+            — without giving it any of your keys.
+          </p>
+          <Btn variant="primary" onClick={() => setShowAgent(true)} className="w-full">
+            <Bot size={16} /> Authorize an agent
+          </Btn>
+        </Row>
+
+        <Row
           icon={KeyRound}
           title="Export recovery key"
           open={open.recovery}
@@ -384,6 +403,14 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           masterKey={cryptoKey}
           userId={userId}
           onClose={() => setShowIssue(false)}
+        />
+      )}
+
+      {showAgent && (
+        <AuthorizeAgentSheet
+          userId={userId}
+          masterKey={cryptoKey}
+          onClose={() => setShowAgent(false)}
         />
       )}
 

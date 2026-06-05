@@ -20,6 +20,10 @@
         "source": "/kunji/callback",
         "function": { "functionId": "kunjiCallback", "region": "us-central1" }
       },
+      {
+        "source": "/kunji/agent",
+        "function": { "functionId": "kunjiAgent", "region": "us-central1" }
+      },
       { "source": "**", "destination": "/index.html" }
     ],
     "headers": [

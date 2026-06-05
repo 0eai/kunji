@@ -3,6 +3,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 import { verifyAssertion } from './verify.js';
+import { verifyCapabilityAssertion } from './capability.js';
 
 initializeApp();
 const db = getFirestore();
@@ -153,5 +154,43 @@ export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '2
     res.json({ status: 'ok' });
   } catch {
     res.status(500).json({ error: 'callback_failed' });
+  }
+});
+
+// Agentic delegation: an AGENT presents a capability (minted by the user's wallet) + a
+// holder-of-key proof for this session's challenge. Verified locally like §6, but the
+// principal acts via a scoped, expiring, revocable capability instead of a fresh approval.
+// See docs/agentic-delegation.md.
+export const kunjiAgent = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  const { sessionId, capability, agentProof } = req.body || {};
+  if (!sessionId || !capability || !agentProof) return res.status(400).json({ error: 'malformed_request' });
+  const ref = sessionRef(sessionId);
+
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const session = snap.exists ? snap.data() : null;
+      if (!session) return { ok: false, error: 'unknown_session' };
+      if (Date.now() > session.expiresAt) return { ok: false, error: 'session_expired' };
+      const r = await verifyCapabilityAssertion({
+        capability,
+        agentProof,
+        audience: session.audience,
+        challenge: session.challenge,
+        // Read the denylist THROUGH the transaction so a concurrent revocation joins the
+        // read set (forces a retry) — no TOCTOU between the check and the approve.
+        isRevoked: async (jti) =>
+          (await tx.get(db.collection('revokedCapabilities').doc(String(jti)))).exists,
+      });
+      if (!r.ok) return r;
+      if (session.status !== 'pending') return { ok: false, error: 'session_consumed' };
+      tx.update(ref, { status: 'approved', sub: r.sub, scope: r.scope, agent: true });
+      return r;
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ status: 'ok' });
+  } catch {
+    res.status(500).json({ error: 'agent_failed' });
   }
 });
