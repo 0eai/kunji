@@ -25,7 +25,7 @@ const sessionRef = (id) => db.collection('loginSessions').doc(id);
 // The audience we sign/verify = our own host (custom domain in prod), not the client's word.
 const audienceOf = (req) => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0];
 
-export const createSession = onRequest({ cors: true }, async (req, res) => {
+export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const audience = audienceOf(req);
   if (!audience) return res.status(400).json({ error: 'no_host' });
@@ -45,7 +45,7 @@ export const createSession = onRequest({ cors: true }, async (req, res) => {
   res.json({ sessionId, challenge, audience, expiresAt });
 });
 
-export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
+export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const assertion = req.body || {};
   const sessionId = assertion?.signedPayload?.sessionId;
@@ -91,7 +91,7 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
   }
 });
 
-export const getSessionStatus = onRequest({ cors: true }, async (req, res) => {
+export const getSessionStatus = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   const snap = await sessionRef(String(req.query.sessionId || '')).get();
   if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
   const s = snap.data();

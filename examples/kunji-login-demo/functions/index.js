@@ -64,7 +64,7 @@ const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
 // frontend can supply them. A PRODUCTION relying party MUST hardcode its own audience
 // and callbackUrl server-side and ignore the body — otherwise a caller can mint
 // sessions claiming an arbitrary domain.
-export const createSession = onRequest({ cors: true }, async (req, res) => {
+export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const { audience, callbackUrl } = req.body || {};
   if (!audience || !callbackUrl)
@@ -92,7 +92,7 @@ export const createSession = onRequest({ cors: true }, async (req, res) => {
 
 // Device-authorization: kunji resolves a 6-digit code to the pending session so it
 // can sign the challenge. Returns the challenge/callback (NOT an approval).
-export const lookupSession = onRequest({ cors: true }, async (req, res) => {
+export const lookupSession = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
   if (await globalFailuresExceeded()) return res.status(429).json({ error: 'rate_limited' });
 
@@ -119,7 +119,7 @@ export const lookupSession = onRequest({ cors: true }, async (req, res) => {
 
 // Poll endpoint for the drop-in widget (rp.js): resolve a sessionId to its status.
 // Read-only; the doc holds no secrets (just status + the per-app sub).
-export const getSessionStatus = onRequest({ cors: true }, async (req, res) => {
+export const getSessionStatus = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   const sessionId = String(req.query.sessionId || '');
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
   const snap = await sessionRef(sessionId).get();
@@ -130,7 +130,7 @@ export const getSessionStatus = onRequest({ cors: true }, async (req, res) => {
 });
 
 // The wallet POSTs the signed assertion here (spec §5.2). Full §6 verification.
-export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
+export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const assertion = req.body || {};
   const sessionId = assertion?.signedPayload?.sessionId;

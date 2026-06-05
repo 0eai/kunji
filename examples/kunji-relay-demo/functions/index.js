@@ -19,7 +19,7 @@ initializeApp();
 const db = getFirestore();
 const sessionRef = (id) => db.collection('relaySessions').doc(id);
 
-export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
+export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const assertion = req.body || {};
   const sessionId = assertion?.signedPayload?.sessionId;

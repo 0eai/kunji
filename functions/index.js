@@ -30,7 +30,9 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/; // a Firestore-doc-id-safe appId (64-h
 const MAX_DOC_BYTES = 16 * 1024;
 const MAX_PROFILE_BYTES = 64 * 1024; // profile may carry a small encrypted avatar
 
-export const vaultWrite = onRequest({ cors: true }, async (req, res) => {
+// `maxInstances` caps 2nd-gen scale so a flood can't run up compute/spend without bound;
+// the caps leave ample headroom for real traffic. Scale-to-zero kept (no minInstances).
+export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const {
     vaultId,
@@ -160,12 +162,14 @@ const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
   });
 };
 
-export const linkLookup = onRequest({ cors: true }, async (req, res) => {
-  if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
-  if (await globalFailuresExceeded()) return res.status(429).json({ error: 'rate_limited' });
-
+export const linkLookup = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 }, async (req, res) => {
+  // Reject malformed input BEFORE the Firestore-backed rate limiter, so obviously-bad
+  // spam can't generate rate-limit writes (the limiter would otherwise be a cost vector).
   const code = String(req.query.code || '');
   if (!CODE.test(code)) return res.status(400).json({ error: 'bad_code' });
+
+  if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
+  if (await globalFailuresExceeded()) return res.status(429).json({ error: 'rate_limited' });
 
   const q = await db.collection('linkSessions').where('code', '==', code).limit(1).get();
   const doc = q.docs[0];

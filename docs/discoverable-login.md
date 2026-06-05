@@ -322,6 +322,11 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 
 **Future (explicitly out of scope now):**
 
+- **Agentic delegation** — letting an autonomous agent act for the user via a user-approved,
+  holder-of-key, scoped, revocable **capability** the wallet signs with the per-app key (never the
+  keys themselves), plus an MCP signing bridge. Preserves the §8 per-app unlinkability and the
+  human-approval trust root. Design draft: [`agentic-delegation.md`](./agentic-delegation.md) — not
+  implemented; review before building.
 - Kunji provisioning the app's encryption key → single-passphrase UX (collapses the §9.2 two-passphrase seam).
 - Local/LAN app login (loopback or same-device `postMessage` channel).
 - Verified claims (e.g. an attested email) — today all shared `claims` are self-asserted only.
