@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agentic delegation — kunji for AI agents</title>
+    <meta
+      name="description"
+      content="Let an AI agent act for a user at your app via a user-authorized, holder-of-key, scoped, expiring capability — never the user's keys. Plus a drop-in MCP bridge."
+    />
+    <meta name="theme-color" content="#faf9f6" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+
+    <meta property="og:title" content="Agentic delegation — kunji for AI agents" />
+    <meta
+      property="og:description"
+      content="Authorize an AI agent to act for you at an app — scoped, expiring, revocable, holder-of-key, never holding your keys."
+    />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:type" content="website" />
+
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/">
+          <img src="/icon.svg" alt="" />
+          <span>kunji</span>
+        </a>
+        <nav class="nav">
+          <a class="navlink" href="/developers">Protocol</a>
+          <a class="navlink" href="/developers/firebase">Firebase</a>
+          <a class="navlink" href="/developers/try">Try it</a>
+        </nav>
+      </header>
+
+      <main class="guide">
+        <p class="kicker">FOR DEVELOPERS · EXPERIMENTAL</p>
+        <h1>Sign in with an agent</h1>
+        <p class="lead">
+          Let an AI agent act for a user at your app — within a scope they approve, for a limited
+          time, revocably — <b>without ever giving the agent the user's keys.</b> The user authorizes
+          a <b>capability</b> in their wallet; the agent presents it with a proof it signs itself; you
+          verify both locally, exactly like a normal <a class="back" href="/developers">sign-in →</a>.
+          Human approval stays the root of trust.
+        </p>
+
+        <!-- What it is -->
+        <section class="sec">
+          <div class="sec-label">What it is</div>
+          <p>
+            A normal sign-in is a person tapping <em>Approve</em>. A delegated sign-in is a person
+            authorizing an <b>agent</b> to sign in for them — once, with a capability that is bound to
+            <em>one</em> app, a chosen <b>scope</b>, and an <b>expiry</b>. The agent holds its own
+            keypair; the capability is useless to anyone who doesn't hold that agent key
+            (<b>holder-of-key</b>), so it isn't a bearer token to steal. Your app still only ever sees
+            the same per-app <code class="k">sub</code> — no new identifier, nothing correlatable.
+          </p>
+        </section>
+
+        <!-- The capability -->
+        <section class="sec">
+          <div class="sec-label">The capability</div>
+          <p>
+            An EdDSA <b>JWT signed by the user's per-app key</b> (the key behind their
+            <code class="k">sub</code>), bound to the agent's public key via the
+            <code class="k">cnf</code> claim. Self-verifying: the signing key rides in the header, and
+            you bind it by checking <code class="k">sub === SHA-256(publicKey)</code>.
+          </p>
+          <pre><code>{
+  "aud":   "yourapp.com",                 // one app only
+  "sub":   "hex SHA-256 of the per-app public key",   // the sub you already know
+  "scope": ["login"],                     // least privilege; your app interprets it
+  "iat": 1750000000, "exp": 1750003600,   // short-lived
+  "jti": "…",                             // revocation id
+  "cnf": { "jwk": { "kty":"OKP","crv":"Ed25519","x":"…agent public key…" } }
+}</code></pre>
+          <p class="note">
+            Signed by the per-app key, so a forged capability only ever authenticates the forger's
+            <em>own</em> <code class="k">sub</code> — never a victim's. Scope, audience, expiry and the
+            <code class="k">cnf</code> key are all inside the signature.
+          </p>
+        </section>
+
+        <!-- How it works -->
+        <section class="sec">
+          <div class="sec-label">How it works</div>
+          <ol class="flow">
+            <li>
+              <span
+                ><b>The agent asks</b> for a capability (an <code class="k">audience</code> +
+                <code class="k">scope</code>) and presents its own public key.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>The user approves</b> in the kunji wallet — Security → <em>Authorize an agent</em>
+                — choosing a scope and TTL. The wallet signs the capability with the per-app key.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>The agent signs your challenge</b> with <em>its own</em> key (a holder-of-key
+                proof) and submits the capability + proof to your callback.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>You verify</b> both locally — the capability chains to the user's
+                <code class="k">sub</code>; the proof matches the <code class="k">cnf</code> key and
+                your fresh challenge; scope / audience / expiry / revocation all hold.</span
+              >
+            </li>
+            <li>
+              <span
+                ><b>You start a scoped session</b> for that <code class="k">sub</code>, marked as an
+                agent and limited to the granted scope.</span
+              >
+            </li>
+          </ol>
+          <p class="note">
+            Same trust model as §6: no kunji backend in the path, single-use per session, challenge-
+            bound. The only new principal is the agent's key — and it can't widen what the user
+            granted.
+          </p>
+        </section>
+
+        <!-- For relying parties -->
+        <section class="sec">
+          <div class="sec-label">For relying parties</div>
+          <p>
+            Add one endpoint that verifies a capability + proof against a session, then approves it.
+            The verifier is the same EdDSA/JWT scheme as the assertion — drop in the reference
+            <code class="k">verifyCapabilityAssertion</code> and a
+            <code class="k">revokedCapabilities</code> denylist.
+          </p>
+          <pre><code>// POST /kunji/agent  ← agent posts { capability, agentProof } for a session
+app.post('/kunji/agent', async (req, res) =&gt; {
+  const { sessionId, capability, agentProof } = req.body || {};
+  const session = await db.get(`loginSessions/${sessionId}`);
+
+  const r = await verifyCapabilityAssertion({       // see functions/capability.js
+    capability, agentProof,
+    audience:   session.audience,                   // YOUR domain
+    challenge:  session.challenge,                  // the fresh per-session nonce
+    isRevoked:  (jti) =&gt; db.has(`revokedCapabilities/${jti}`),
+  });
+  if (!r.ok) return res.status(400).json({ error: r.error });
+
+  // single-use: approve the session, keyed by sub, limited to the granted scope
+  await db.update(`loginSessions/${sessionId}`,
+    { status: 'approved', sub: r.sub, scope: r.scope, agent: true });
+  res.json({ status: 'ok' });
+});</code></pre>
+          <p class="note">
+            <b>Revoke</b> by adding a capability's <code class="k">jti</code> to your denylist; short
+            TTLs are the safety net. Enforce <code class="k">scope</code> on every agent action — a
+            capability is permission to do a <em>specific</em> thing, not full account access.
+          </p>
+        </section>
+
+        <!-- MCP bridge -->
+        <section class="sec">
+          <div class="sec-label">The MCP bridge — drive it from an AI runtime</div>
+          <p>
+            <code class="k">examples/kunji-mcp</code> is a local
+            <a class="back" href="https://modelcontextprotocol.io" target="_blank" rel="noopener"
+              >MCP</a
+            >
+            server that lets Claude (or any MCP client) act for you via a capability. The agent's key
+            lives only on your machine; nothing but a scoped capability ever leaves the wallet.
+          </p>
+          <pre><code>claude mcp add kunji -- node /path/to/examples/kunji-mcp/server.js</code></pre>
+          <ul class="checklist">
+            <li><span><code class="k">kunji_authorize(audience, scope)</code> — returns the request you approve in the wallet.</span></li>
+            <li><span><code class="k">kunji_set_capability(capability)</code> — stores it (validated: holder-of-key + expiry).</span></li>
+            <li><span><code class="k">kunji_login(baseUrl)</code> — signs in at the app as the authorized agent.</span></li>
+            <li><span><code class="k">kunji_status</code> — the agent's public key + the loaded capability.</span></li>
+          </ul>
+        </section>
+
+        <!-- Reference -->
+        <section class="sec">
+          <div class="sec-label">Reference</div>
+          <p class="note">
+            Full design + threat model:
+            <a
+              class="back"
+              href="https://github.com/0eai/kunji/blob/HEAD/docs/agentic-delegation.md"
+              target="_blank"
+              rel="noopener"
+              >docs/agentic-delegation.md</a
+            >. Reference code:
+            <a
+              class="back"
+              href="https://github.com/0eai/kunji/blob/HEAD/src/lib/capability.js"
+              target="_blank"
+              rel="noopener"
+              >src/lib/capability.js</a
+            >
+            (mint / proof / verify),
+            <code class="k">kunji-login-demo/functions/capability.js</code> (RP verifier), and
+            <code class="k">examples/kunji-mcp</code> (the bridge). Experimental — the scope vocabulary
+            and transport are still settling.
+          </p>
+          <div class="cta-row" style="margin-top: 20px">
+            <a class="cta" href="https://app.kunji.cc">
+              Open kunji
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </a>
+            <a class="ghost" href="/developers">← Back to the guide</a>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>A zero-knowledge identity wallet</span>
+        <span class="sep">·</span>
+        <a href="/developers">Protocol</a>
+        <span class="sep">·</span>
+        <a href="/developers/firebase">Firebase</a>
+        <span class="sep">·</span>
+        <a href="/developers/try">Try it</a>
+        <span class="sep">·</span>
+        <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
+        <span class="sep">·</span>
+        <a href="https://app.kunji.cc">app.kunji.cc</a>
+      </footer>
+    </div>
+  </body>
+</html>

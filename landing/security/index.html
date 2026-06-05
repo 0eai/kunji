@@ -166,8 +166,12 @@
               There's no signup — an anonymous session bootstraps your vault. Your apps list syncs
               across your devices via a
               <b>vault id derived from your master key</b>, so only devices holding the key can find
-              and decrypt it. You add a device by scanning a QR that transfers the master key over
-              an <code class="k">ECDH</code>-encrypted channel, and a separately-encrypted
+              and decrypt it. You add a device by <b>scanning a QR or entering a short code</b>; the
+              master key travels over an <code class="k">ECDH</code>-encrypted channel, and
+              <b>both devices show a matching confirmation code you compare before the key is
+              released</b> — so a substituted key is caught. You can also
+              <b>change a device's passkey</b> any time (it re-wraps the vault under the new passkey;
+              your recovery key and other linked devices are unaffected), and a separately-encrypted
               <b>recovery key</b> restores everything if you lose every device. In the login path,
               <b>kunji shares no database with apps and runs no backend</b> — the wallet signs
               locally and posts straight to the app.

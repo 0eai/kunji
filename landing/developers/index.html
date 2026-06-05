@@ -33,6 +33,7 @@
         </a>
         <nav class="nav">
           <a class="navlink" href="/developers/firebase">Firebase</a>
+          <a class="navlink" href="/developers/agents">Agents</a>
           <a class="navlink" href="/developers/try">Try it</a>
         </nav>
       </header>
@@ -303,13 +304,14 @@ const token = await admin.auth().createCustomToken(session.sub, {
             kunji authenticates; <b>your app owns the profile.</b> You get a stable, anonymous
             <code class="k">sub</code> — not a Google-style verified name/email/photo. So you never
             show a blank avatar, every <code class="k">sub</code> maps to a friendly
-            <b>default name + identicon</b>, derived right from the <code class="k">sub</code> you
-            already have (distinct per app, stable, unlinkable — no PII, no extra call):
+            <b>default name + key-sigil avatar</b> (a key-shaped mark derived from the
+            <code class="k">sub</code> you already have — distinct per app, stable, unlinkable; no
+            PII, no extra call):
           </p>
           <pre><code>// rp.js exposes the helper — no assertion change needed
-const { name, avatarDataUri } = kunji.handle(sub);
-profileEl.textContent = name;          // e.g. "Wandering Fox 42"
-imgEl.src = avatarDataUri;             // kunji-themed identicon</code></pre>
+const { name, avatarSvg, avatarDataUri } = kunji.handle(sub);
+profileEl.textContent = name;          // e.g. "Amber Marlowe"
+imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also available)</code></pre>
           <p class="note">
             If the user shared a custom profile, prefer <code class="k">claims</code> — but render it
             as untrusted: HTML-escape <code class="k">name</code>, show <code class="k">picture</code>
@@ -418,6 +420,8 @@ imgEl.src = avatarDataUri;             // kunji-themed identicon</code></pre>
         <span>A zero-knowledge identity wallet</span>
         <span class="sep">·</span>
         <a href="/developers/firebase">Firebase</a>
+        <span class="sep">·</span>
+        <a href="/developers/agents">Agents</a>
         <span class="sep">·</span>
         <a href="/developers/try">Try it</a>
         <span class="sep">·</span>

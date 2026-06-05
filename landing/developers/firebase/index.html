@@ -33,6 +33,7 @@
         </a>
         <nav class="nav">
           <a class="navlink" href="/developers">Protocol</a>
+          <a class="navlink" href="/developers/agents">Agents</a>
           <a class="navlink" href="/developers/try">Try it</a>
         </nav>
       </header>
@@ -199,7 +200,7 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
 });</code></pre>
             <p class="note">
               <b>Showing the user:</b> you get a stable <code class="k">sub</code>, not a verified
-              name/photo — your app owns the profile. Render a default name + identicon with
+              name/photo — your app owns the profile. Render a default name + key-sigil avatar with
               <code class="k">kunji.handle(sub)</code> (from rp.js); if the user shared
               <code class="k">claims</code>, prefer it but treat it as untrusted (HTML-escape the
               name, render the picture client-side only). Keep unverified claims out of the custom
