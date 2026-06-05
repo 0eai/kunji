@@ -141,8 +141,9 @@ export default function LoginPage({ onSuccess }) {
       const qrData = JSON.stringify(payload);
       setQrUrl(
         await QRCode.toDataURL(qrData, {
-          width: 200,
+          width: 224,
           margin: 1,
+          errorCorrectionLevel: 'H', // ~30% recovery — tolerates the center brand badge
           color: { dark: '#1a1a18', light: '#ffffff' },
         }),
       );
@@ -287,7 +288,28 @@ export default function LoginPage({ onSuccess }) {
                   <div>
                     <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
                       {qrUrl && (
-                        <img src={qrUrl} alt="Sign-in QR" className="w-[200px] h-[200px]" />
+                        <div className="relative inline-flex">
+                          <img src={qrUrl} alt="Sign-in QR" className="w-[224px] h-[224px]" />
+                          <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="flex items-center justify-center w-12 h-12 rounded-lg bg-white border border-line shadow-sm">
+                              <svg viewBox="0 0 512 512" width="28" height="28" aria-hidden="true">
+                                <g
+                                  transform="rotate(-40 256 256)"
+                                  fill="none"
+                                  stroke="#1a1a18"
+                                  strokeWidth="58"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <circle cx="240" cy="172" r="56" fill="#1a1a18" />
+                                  <path d="M240 172 V398" />
+                                  <path d="M240 334 L300 314" />
+                                  <path d="M240 334 L300 358" />
+                                </g>
+                              </svg>
+                            </span>
+                          </span>
+                        </div>
                       )}
                     </div>
                     <p className="text-[13px] text-muted mt-4">

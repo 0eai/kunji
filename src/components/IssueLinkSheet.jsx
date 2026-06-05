@@ -42,6 +42,7 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
           await QRCode.toDataURL(qrData, {
             width: 224,
             margin: 1,
+            errorCorrectionLevel: 'H', // ~30% recovery — tolerates the center brand badge
             color: { dark: '#1a1a18', light: '#ffffff' },
           }),
         );
@@ -161,7 +162,28 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
           <div className="flex justify-center mb-4">
             <div className="rounded-2xl border border-line p-4 bg-surface min-h-[208px] flex items-center justify-center">
               {qrDataUrl ? (
-                <img src={qrDataUrl} alt="Device link QR" className="w-[176px] h-[176px]" />
+                <div className="relative inline-flex">
+                  <img src={qrDataUrl} alt="Device link QR" className="w-[176px] h-[176px]" />
+                  <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-line shadow-sm">
+                      <svg viewBox="0 0 512 512" className="w-6 h-6" aria-hidden="true">
+                        <g
+                          transform="rotate(-40 256 256)"
+                          fill="none"
+                          stroke="#1a1a18"
+                          strokeWidth="58"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="240" cy="172" r="56" fill="#1a1a18" />
+                          <path d="M240 172 V398" />
+                          <path d="M240 334 L300 314" />
+                          <path d="M240 334 L300 358" />
+                        </g>
+                      </svg>
+                    </span>
+                  </span>
+                </div>
               ) : (
                 <Spinner />
               )}

@@ -77,8 +77,13 @@ const CSS = `
 .tab.on { color:#1a1a18; border-color:#d97706; }
 
 .panel { min-height: 248px; }
-.qrbox { display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:14px; background:#fff; }
+.qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:14px; background:#fff; }
 .qrbox img { display:block; width:196px; height:196px; }
+.qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+  background:#fff; border:1px solid #e7e5e0; border-radius:10px; color:#1a1a18;
+  box-shadow:0 1px 2px rgba(0,0,0,.06); }
+.qrlogo svg { width:26px; height:26px; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }
 .otp { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
   font-size:38px; letter-spacing:.16em; color:#1a1a18; margin-top:6px; }
@@ -235,6 +240,7 @@ function openModal(opts, sourceEl) {
       qrImg = await QRCode.toDataURL(qrData, {
         width: 196,
         margin: 1,
+        errorCorrectionLevel: 'H', // ~30% recovery — tolerates the center brand badge
         color: { dark: '#1a1a18', light: '#ffffff' },
       });
     } catch {}
@@ -273,7 +279,7 @@ function openModal(opts, sourceEl) {
           ${
             tab === 'qr' || !code
               ? `
-            <div class="qrbox">${qrImg ? `<img src="${qrImg}" alt="Sign-in QR">` : ''}</div>
+            <div class="qrbox">${qrImg ? `<img src="${qrImg}" alt="Sign-in QR"><span class="qrlogo">${KEY_SVG}</span>` : ''}</div>
             <p class="cap">Scan with the kunji app on your phone.</p>
           `
               : `
