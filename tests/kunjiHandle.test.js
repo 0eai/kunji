@@ -5,12 +5,14 @@ import {
   deriveAvatarDataUri,
   deriveHandle,
 } from '../src/lib/kunjiHandle.js';
-import { ADJECTIVES, NOUNS } from '../src/lib/kunjiHandle.wordlists.js';
+import { ADJECTIVES, NAMES } from '../src/lib/kunjiHandle.wordlists.js';
 
 // Two arbitrary but fixed 64-hex subs (shape of SHA-256 hex).
 const SUB_A = 'a'.repeat(64);
 const SUB_B = '0123456789abcdef'.repeat(4);
 const SUB_C = 'f0e1d2c3b4a5968778695a4b3c2d1e0fa1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+const lower = (arr) => arr.map((w) => w.toLowerCase());
 
 describe('deriveName', () => {
   it('is deterministic for the same sub', () => {
@@ -25,13 +27,13 @@ describe('deriveName', () => {
     expect(deriveName(SUB_C)).toBe(deriveName(SUB_C.toUpperCase()));
   });
 
-  it('reads as "Adjective Noun NN" drawn from the wordlists', () => {
+  it('reads as "Adjective Surname" drawn from the wordlists', () => {
     const name = deriveName(SUB_B);
-    const [adj, noun, num] = name.split(' ');
-    expect(ADJECTIVES.map((w) => w.toLowerCase())).toContain(adj.toLowerCase());
-    expect(NOUNS.map((w) => w.toLowerCase())).toContain(noun.toLowerCase());
-    expect(Number(num)).toBeGreaterThanOrEqual(0);
-    expect(Number(num)).toBeLessThan(100);
+    // surnames may contain a space (e.g. "Dela Cruz"), so split off the adjective only.
+    const [adj, ...rest] = name.split(' ');
+    const surname = rest.join(' ');
+    expect(lower(ADJECTIVES)).toContain(adj.toLowerCase());
+    expect(lower(NAMES)).toContain(surname.toLowerCase());
   });
 });
 
@@ -41,23 +43,16 @@ describe('deriveAvatarSvg', () => {
     expect(svg).toBe(deriveAvatarSvg(SUB_B));
     expect(svg.startsWith('<svg')).toBe(true);
     expect(svg.endsWith('</svg>')).toBe(true);
-    expect(svg).toContain('viewBox="0 0 100 100"');
+    expect(svg).toContain('viewBox="0 0 96 96"');
     // No external references or script context.
     expect(svg).not.toMatch(/<script|href=|xlink/i);
   });
 
-  it('is left-right mirrored about the center column', () => {
+  it('renders the key sigil (seal disc + embossed key shaft)', () => {
     const svg = deriveAvatarSvg(SUB_C);
-    // Body cells only (skip the leading background rect, which has no x=).
-    const cells = [...svg.matchAll(/<rect x="(\d+)" y="(\d+)"/g)].map((m) => ({
-      x: +m[1],
-      y: +m[2],
-    }));
-    expect(cells.length).toBeGreaterThan(0);
-    const key = (c) => `${c.x},${c.y}`;
-    const present = new Set(cells.map(key));
-    // Mirror of x about the grid is (84 - x) for SIZE=100, CELL=16, PAD=10.
-    for (const c of cells) expect(present.has(`${84 - c.x},${c.y}`)).toBe(true);
+    // the wax-seal disc (r=46) and at least the key shaft rect are always present.
+    expect(svg).toContain('<circle cx="48" cy="48" r="46"');
+    expect(svg).toContain('<rect');
   });
 
   it('differs across subs', () => {

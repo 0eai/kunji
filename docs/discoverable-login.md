@@ -230,26 +230,34 @@ exports.kunjiPoll = onCall(async ({ sessionId }) => {
 ### 8.1 Default pseudonymous identity (derived from `sub`)
 
 So an app never has to show a blank placeholder or a raw hex `sub`, every `sub` maps to a friendly
-**display name** and a kunji-themed **identicon** — both pure, deterministic functions of `sub`
+**display name** and a kunji **key-sigil** avatar — both pure, deterministic functions of `sub`
 (which the RP already has). No PII, no extra round-trip, no kunji infrastructure: distinct per app,
 stable per app, unlinkable across apps. The RP renders them itself (`window.kunji.handle(sub)` from
 `rp.js`, or by reimplementing the algorithm below). The canonical implementation is
-`src/lib/kunjiHandle.js` + `src/lib/kunjiHandle.wordlists.js`.
+`src/lib/kunjiHandle.js` + `src/lib/kunjiHandle.wordlists.js`; `window.kunji.handle(sub)` returns
+`{ name, avatarSvg, avatarDataUri }`.
 
-Algorithm (treat `sub` as a lowercase hex string; slices are parsed as base-16 integers):
+Algorithm (treat `sub` as 32 bytes = the 64-hex digest; both halves are used independently):
 
-- **Name** = `"{Adjective} {Noun} {NN}"` where
-  `Adjective = ADJECTIVES[int(sub[0:8]) % ADJECTIVES.length]`,
-  `Noun = NOUNS[int(sub[8:16]) % NOUNS.length]`, `NN = int(sub[16:20]) % 100` (a small
-  collision-reducing discriminator; `sub` remains the real key — names may collide, that's fine).
+- **Name** = `"{Adjective} {Surname}"` where, reading from byte offset 16 (so the name varies
+  independently of the sigil, which reads from the front),
+  `Adjective = ADJECTIVES[idx % ADJECTIVES.length]` and `Surname = NAMES[idx % NAMES.length]` (each
+  `idx` consumes two bytes, big-endian). `sub` remains the real key — names may collide, that's fine.
   The two wordlists are the canonical lists in `kunjiHandle.wordlists.js`.
-- **Identicon** = a 5×5 left-right-mirrored SVG grid on warm paper (`#faf9f6`). A cell `(col,row)`
-  for `col∈{0,1,2}` is filled when `int(sub[24 + col*5 + row]) ≥ 8`, mirrored to `col 3,4`; the fill
-  color is `PALETTE[int(sub[40:42]) % PALETTE.length]`.
+- **Key-sigil** = a fixed-treatment **amber wax-seal disc** (vertical gradient + darker rim, hue/
+  saturation/lightness drifting slightly within the amber family) bearing an **embossed ink key**.
+  A sequential byte-reader over `sub` (from the front) sets the key geometry: bow ring radius + hole,
+  an inner motif (`none|dot|diamond|cross|ring`), shaft width, and 4–6 bit-teeth cut from a
+  deterministic pattern (the tip tooth always present). Output is a self-contained `viewBox="0 0 96
+  96"` SVG (no script/external refs); the amber treatment is **fixed** (not theme-dependent) so every
+  RP renders the same sigil. The sigil doubles as a visual key-fingerprint. See `keySigilSVG` in
+  `kunjiHandle.js` for the exact geometry — RPs should call `window.kunji.handle(sub)` rather than
+  reimplement it.
 
 ⚠️ This algorithm + the wordlists are a **rendering contract** shared by the wallet, `rp.js`, and any
 third-party RP. Changing them re-skins every user's default name/avatar (cosmetic — never a lockout,
-since `sub` is unchanged), so treat any change as a versioned break.
+since `sub` is unchanged), so treat any change as a versioned break. (The v0.1.x key-sigil + surname
+identity replaced an earlier grid-identicon + "Adjective Noun NN" scheme — a one-time re-skin.)
 
 If the user shared a custom profile, the assertion carries `claims` (§5.2) — prefer it over the
 default, but render it as untrusted input (§6.8).
