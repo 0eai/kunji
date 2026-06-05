@@ -24,7 +24,8 @@ import { verifyAssertion } from './verify.js';
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const hex = (n) => randomBytes(n).toString('hex');
+// base64url session id / challenge — ~30% shorter than hex (leaner QR), same entropy.
+const token = (n) => randomBytes(n).toString('base64url');
 
 // In-memory store. A real RP uses its own DB; the shape is the same.
 const sessions = new Map(); // sessionId → { challenge, audience, callbackUrl, status, sub, claims, expiresAt }
@@ -102,8 +103,8 @@ const handler = async (req, res) => {
   if (req.method === 'POST' && path === '/api/session') {
     sweep();
     const { audience, callbackUrl } = originOf(req);
-    const sessionId = hex(16);
-    const challenge = hex(32);
+    const sessionId = token(16);
+    const challenge = token(32);
     const expiresAt = Date.now() + SESSION_TTL_MS;
     sessions.set(sessionId, {
       challenge,

@@ -8,7 +8,10 @@ import { verifyCapabilityAssertion } from './capability.js';
 initializeApp();
 const db = getFirestore();
 const SESSION_TTL_MS = 2 * 60 * 1000;
-const hex = (n) => randomBytes(n).toString('hex');
+// Short, url-safe session id / challenge (base64url is ~30% shorter than hex → leaner QR;
+// same entropy). They're opaque tokens the wallet only echoes back, and `-_` are valid
+// Firestore doc-ids.
+const token = (n) => randomBytes(n).toString('base64url');
 const sessionRef = (id) => db.collection('loginSessions').doc(id);
 
 // A globally-unique 6-digit code (equality-only query → no composite index needed).
@@ -71,8 +74,8 @@ export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '2
   if (!audience || !callbackUrl)
     return res.status(400).json({ error: 'audience and callbackUrl required' });
 
-  const sessionId = hex(16);
-  const challenge = hex(32);
+  const sessionId = token(16);
+  const challenge = token(32);
   const code = await freshCode();
   const expiresAt = Date.now() + SESSION_TTL_MS;
   // `ttl` lets Firestore's TTL policy auto-delete the doc ~5 min after expiry,

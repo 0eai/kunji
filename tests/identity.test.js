@@ -44,6 +44,23 @@ describe('parseQRPayload', () => {
     expect(() => parseQRPayload(validQR({ callbackUrl: 'https://api.app.com/cb' }))).not.toThrow();
   });
 
+  it('derives the same-site callback when the lean QR omits it', () => {
+    const parsed = parseQRPayload(validQR({ callbackUrl: undefined }));
+    expect(parsed.callbackUrl).toBe('https://app.com/kunji/callback');
+  });
+
+  it('parses a lean QR without mode (defaults to discoverable)', () => {
+    expect(() => parseQRPayload(validQR({ mode: undefined }))).not.toThrow();
+  });
+
+  it('rejects a non-discoverable mode when present', () => {
+    expect(() => parseQRPayload(validQR({ mode: 'pre-registered' }))).toThrow('invalid_qr');
+  });
+
+  it('still parses a full QR with explicit mode + callbackUrl (backward compatible)', () => {
+    expect(parseQRPayload(validQR()).callbackUrl).toBe('https://app.com/kunji/callback');
+  });
+
   it('rejects non-JSON', () => {
     expect(() => parseQRPayload('not json')).toThrow('invalid_qr');
   });

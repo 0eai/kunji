@@ -123,7 +123,9 @@ export default function LoginPage({ onSuccess }) {
       setCode(code || '');
       sessionIdRef.current = sessionId; // stashed for RESUME_KEY only when "Open kunji" is tapped
 
-      // 2. Build the v2 discoverable payload — one shape, two transports (QR + deep link).
+      // 2. Build the v2 discoverable payload. The full payload (with returnUrl) rides the
+      //    same-device deep link; a LEAN payload powers the QR (drop returnUrl + mode, and
+      //    omit callbackUrl when it's the derived default) so the QR stays low-density.
       const payload = {
         kunjiAuth: 'v2',
         mode: 'discoverable',
@@ -138,16 +140,25 @@ export default function LoginPage({ onSuccess }) {
         // optional, so we always fall back to the default identity derived from `sub`.
         scope: ['profile'],
       };
-      const qrData = JSON.stringify(payload);
+      const qrPayload = {
+        kunjiAuth: 'v2',
+        sessionId,
+        challenge,
+        audience: AUDIENCE,
+        appName: APP_NAME,
+        expiresAt,
+        scope: ['profile'],
+      };
+      if (CALLBACK_URL !== `https://${AUDIENCE}/kunji/callback`) qrPayload.callbackUrl = CALLBACK_URL;
       setQrUrl(
-        await QRCode.toDataURL(qrData, {
-          width: 224,
-          margin: 1,
-          errorCorrectionLevel: 'H', // ~30% recovery — tolerates the center brand badge
+        await QRCode.toDataURL(JSON.stringify(qrPayload), {
+          width: 256,
+          margin: 4,
+          errorCorrectionLevel: 'Q', // ~25% recovery — tolerates a small center badge
           color: { dark: '#1a1a18', light: '#ffffff' },
         }),
       );
-      setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(qrData)}`); // same-device: open kunji directly
+      setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(JSON.stringify(payload))}`); // same-device: open kunji directly
       setStatus('scanning');
 
       // Countdown — pauses while the tab is hidden; on expiry we stop and show a
@@ -289,10 +300,10 @@ export default function LoginPage({ onSuccess }) {
                     <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
                       {qrUrl && (
                         <div className="relative inline-flex">
-                          <img src={qrUrl} alt="Sign-in QR" className="w-[224px] h-[224px]" />
+                          <img src={qrUrl} alt="Sign-in QR" className="w-[240px] h-[240px]" />
                           <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <span className="flex items-center justify-center w-12 h-12 rounded-lg bg-white border border-line shadow-sm">
-                              <svg viewBox="0 0 512 512" width="28" height="28" aria-hidden="true">
+                            <span className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-line shadow-sm">
+                              <svg viewBox="0 0 512 512" width="22" height="22" aria-hidden="true">
                                 <g
                                   transform="rotate(-40 256 256)"
                                   fill="none"

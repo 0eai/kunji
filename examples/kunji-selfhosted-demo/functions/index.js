@@ -20,7 +20,8 @@ import { verifyAssertion } from './verify.js';
 initializeApp();
 const db = getFirestore();
 const SESSION_TTL_MS = 2 * 60 * 1000;
-const hex = (n) => randomBytes(n).toString('hex');
+// base64url session id / challenge — ~30% shorter than hex (leaner QR), same entropy.
+const token = (n) => randomBytes(n).toString('base64url');
 const sessionRef = (id) => db.collection('loginSessions').doc(id);
 // The audience we sign/verify = our own host (custom domain in prod), not the client's word.
 const audienceOf = (req) => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0];
@@ -29,8 +30,8 @@ export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '2
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const audience = audienceOf(req);
   if (!audience) return res.status(400).json({ error: 'no_host' });
-  const sessionId = hex(16);
-  const challenge = hex(32);
+  const sessionId = token(16);
+  const challenge = token(32);
   const expiresAt = Date.now() + SESSION_TTL_MS;
   await sessionRef(sessionId).set({
     challenge,

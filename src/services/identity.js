@@ -155,11 +155,14 @@ export const deriveSubFromPublicKey = async (publicKeyBase64) => {
 
 /**
  * Parse a v2 discoverable-login QR payload.
- * Shape: { kunjiAuth:'v2', mode:'discoverable', sessionId, challenge, audience,
- *          callbackUrl, appName?, iconUrl?, expiresAt, scope?: string[] }
- * The callbackUrl must be same-site as the audience and HTTPS (localhost may use HTTP).
- * `scope` is an optional list of OAuth-style scopes the RP requests (e.g. ['profile']);
- * the wallet only ever uses it to OFFER a consent toggle — claims stay opt-in.
+ * Shape: { kunjiAuth:'v2', sessionId, challenge, audience, expiresAt,
+ *          mode?, callbackUrl?, appName?, iconUrl?, returnUrl?, scope?: string[] }
+ * `mode` and `callbackUrl` are OPTIONAL (lean QR): `mode` defaults to 'discoverable', and an
+ * omitted `callbackUrl` derives the same-site default `https://{audience}/kunji/callback`.
+ * RPs with a non-default callback (custom path, or a decoupled host like the relay) include it.
+ * The (provided or derived) callbackUrl must be same-site as the audience and HTTPS (localhost
+ * may use HTTP). `scope` is an optional list of requested scopes (e.g. ['profile']) the wallet
+ * only uses to OFFER a consent toggle. Older full QRs still parse (backward compatible).
  */
 export const parseQRPayload = (rawValue) => {
   let parsed;
@@ -171,11 +174,10 @@ export const parseQRPayload = (rawValue) => {
 
   if (
     parsed?.kunjiAuth !== 'v2' ||
-    parsed.mode !== 'discoverable' ||
+    (parsed.mode !== undefined && parsed.mode !== 'discoverable') ||
     !parsed.sessionId ||
     !parsed.challenge ||
     !parsed.audience ||
-    !parsed.callbackUrl ||
     !parsed.expiresAt
   ) {
     throw new Error('invalid_qr');
@@ -188,13 +190,17 @@ export const parseQRPayload = (rawValue) => {
     throw new Error('invalid_qr');
   }
 
-  assertSameSiteCallback(parsed.audience, parsed.callbackUrl);
+  // callbackUrl is optional: when omitted, derive the same-site default. The derived value is
+  // always same-site as the (signed, user-shown) audience, so it can't be relayed cross-site.
+  const callbackUrl =
+    parsed.callbackUrl || `https://${normalizeHost(parsed.audience)}/kunji/callback`;
+  assertSameSiteCallback(parsed.audience, callbackUrl);
 
   if (Date.now() > parsed.expiresAt) {
     throw new Error('expired_qr');
   }
 
-  return parsed;
+  return { ...parsed, callbackUrl };
 };
 
 /** Does this parsed QR / session request the user's profile (Layer 2 consent)? */

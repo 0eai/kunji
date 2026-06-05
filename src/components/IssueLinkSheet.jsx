@@ -40,9 +40,9 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
         setCode(c);
         setQrDataUrl(
           await QRCode.toDataURL(qrData, {
-            width: 224,
-            margin: 1,
-            errorCorrectionLevel: 'H', // ~30% recovery — tolerates the center brand badge
+            width: 256,
+            margin: 4,
+            errorCorrectionLevel: 'Q', // ~25% recovery — tolerates a small center badge
             color: { dark: '#1a1a18', light: '#ffffff' },
           }),
         );
@@ -163,10 +163,10 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
             <div className="rounded-2xl border border-line p-4 bg-surface min-h-[208px] flex items-center justify-center">
               {qrDataUrl ? (
                 <div className="relative inline-flex">
-                  <img src={qrDataUrl} alt="Device link QR" className="w-[176px] h-[176px]" />
+                  <img src={qrDataUrl} alt="Device link QR" className="w-[200px] h-[200px]" />
                   <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-line shadow-sm">
-                      <svg viewBox="0 0 512 512" className="w-6 h-6" aria-hidden="true">
+                    <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-line shadow-sm">
+                      <svg viewBox="0 0 512 512" className="w-5 h-5" aria-hidden="true">
                         <g
                           transform="rotate(-40 256 256)"
                           fill="none"

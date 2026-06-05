@@ -112,13 +112,10 @@ Steps in words:
 ```json
 {
   "kunjiAuth": "v2",
-  "mode": "discoverable",
   "sessionId": "8f3c…",
-  "challenge": "64-hex-byte nonce",
+  "challenge": "random nonce (hex or base64url — opaque to the wallet)",
   "audience": "cloq.cc",
-  "callbackUrl": "https://api.cloq.cc/kunji/callback",
   "appName": "cloq",
-  "iconUrl": "https://cloq.cc/icon.png",
   "expiresAt": 1750000000000,
   "scope": ["profile"]
 }
@@ -126,8 +123,21 @@ Steps in words:
 
 Rules:
 
+- Required: `kunjiAuth:"v2"`, `sessionId`, `challenge`, `audience`, `expiresAt`.
+- **Lean QR (recommended).** `mode`, `callbackUrl`, `returnUrl` are **optional** — omit them to keep
+  the QR low-density:
+  - `mode` defaults to `"discoverable"` (the only v2 mode).
+  - `callbackUrl`, when omitted, the wallet derives **`https://{audience}/kunji/callback`** (the
+    common same-origin case). RPs whose callback differs — a custom path, or a decoupled host like
+    the relay demo, or local `http://localhost:PORT` dev — **MUST include `callbackUrl`** explicitly.
+  - `returnUrl` is a same-device-only convenience; put it in the `?approve=` **deep-link** payload,
+    not the QR (it's the longest, most variable field). Older/full QRs that still carry these fields
+    parse unchanged — this is a backward-compatible relaxation of v2, no version bump.
+- `sessionId`/`challenge` are opaque tokens the wallet only echoes back; the RP picks the encoding.
+  **base64url** is ~30% shorter than hex for the same entropy (a leaner QR) — recommended.
 - `audience` is the domain the user is logging into. Kunji **displays it** and **signs it** (anti-relay).
-- `callbackUrl` MUST be same-site as `audience` (kunji rejects if the host doesn't match `audience`).
+- The provided-or-derived `callbackUrl` MUST be same-site as `audience` (kunji rejects otherwise); a
+  derived callback is same-site by construction, so it can't be relayed cross-site.
 - No `registeredAppId`, no `ownerUid` — discoverable login is user-agnostic.
 - `scope` (optional, string array) — OAuth-style scopes the RP requests. Only `"profile"` is
   defined: it asks the wallet to **offer** sharing the user's custom name/avatar. The wallet shows

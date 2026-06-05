@@ -37,7 +37,8 @@ initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SESSION_TTL_MS = 2 * 60 * 1000;
-const hex = (n) => randomBytes(n).toString('hex');
+// base64url session id / challenge — ~30% shorter than hex (leaner QR), same entropy.
+const token = (n) => randomBytes(n).toString('base64url');
 
 // Sessions we created, each with a live Firestore listener. /kunji/status reads this
 // cache (no per-poll Firestore reads), and we tear the listener down once resolved.
@@ -51,8 +52,8 @@ const detach = (id) => {
 };
 
 const startSession = async () => {
-  const sessionId = hex(16);
-  const challenge = hex(32);
+  const sessionId = token(16);
+  const challenge = token(32);
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const ref = db.collection('relaySessions').doc(sessionId);
   await ref.set({

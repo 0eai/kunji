@@ -52,7 +52,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
       setResult(r);
       const QRCode = (await import('qrcode')).default;
       setQrUrl(
-        await QRCode.toDataURL(r.capability, { width: 224, margin: 1, errorCorrectionLevel: 'M' }).catch(
+        await QRCode.toDataURL(r.capability, { width: 256, margin: 4, errorCorrectionLevel: 'M' }).catch(
           () => '',
         ),
       );

@@ -78,12 +78,12 @@ const CSS = `
 
 .panel { min-height: 248px; }
 .qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:14px; background:#fff; }
-.qrbox img { display:block; width:196px; height:196px; }
+.qrbox img { display:block; width:224px; height:224px; }
 .qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  width:44px; height:44px; display:flex; align-items:center; justify-content:center;
-  background:#fff; border:1px solid #e7e5e0; border-radius:10px; color:#1a1a18;
+  width:38px; height:38px; display:flex; align-items:center; justify-content:center;
+  background:#fff; border:1px solid #e7e5e0; border-radius:9px; color:#1a1a18;
   box-shadow:0 1px 2px rgba(0,0,0,.06); }
-.qrlogo svg { width:26px; height:26px; }
+.qrlogo svg { width:22px; height:22px; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }
 .otp { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
   font-size:38px; letter-spacing:.16em; color:#1a1a18; margin-top:6px; }
@@ -217,6 +217,8 @@ function openModal(opts, sourceEl) {
       return;
     }
 
+    const scope = parseScope(opts.scope);
+    // Full payload — rides the same-device deep link, where length is free.
     const payload = {
       kunjiAuth: 'v2',
       mode: 'discoverable',
@@ -228,19 +230,35 @@ function openModal(opts, sourceEl) {
       expiresAt: session.expiresAt,
       returnUrl: location.href,
     };
-    const scope = parseScope(opts.scope);
     if (scope.length) payload.scope = scope;
-    const qrData = JSON.stringify(payload);
+
+    // Lean QR payload — drop returnUrl + mode (the wallet defaults mode), and omit callbackUrl
+    // when it's the derived default (https://{audience}/kunji/callback) so the QR stays small.
+    // A custom/decoupled callback (localhost dev, the relay) is kept. Keeps the QR scannable.
+    const qrPayload = {
+      kunjiAuth: 'v2',
+      sessionId: session.sessionId,
+      challenge: session.challenge,
+      audience: opts.audience,
+      appName: opts.appName,
+      expiresAt: session.expiresAt,
+    };
+    if (scope.length) qrPayload.scope = scope;
+    if (opts.callbackUrl !== `https://${opts.audience}/kunji/callback`) {
+      qrPayload.callbackUrl = opts.callbackUrl;
+    }
+    const qrData = JSON.stringify(qrPayload);
+
     // Only ever build the deep link against an https wallet URL — reject
     // javascript:/data:/http: so a hostile data-app-url can't inject a scheme.
     const safeAppUrl = /^https:\/\//i.test(opts.appUrl) ? opts.appUrl : APP_URL_DEFAULT;
-    const deepLink = `${safeAppUrl}/?approve=${b64url(qrData)}`;
+    const deepLink = `${safeAppUrl}/?approve=${b64url(JSON.stringify(payload))}`;
     let qrImg = '';
     try {
       qrImg = await QRCode.toDataURL(qrData, {
-        width: 196,
-        margin: 1,
-        errorCorrectionLevel: 'H', // ~30% recovery — tolerates the center brand badge
+        width: 256,
+        margin: 4,
+        errorCorrectionLevel: 'Q', // ~25% recovery — tolerates a small center badge
         color: { dark: '#1a1a18', light: '#ffffff' },
       });
     } catch {}
