@@ -88,8 +88,13 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   `kunji-selfhosted-demo` (production self-hosted: own Firebase + custom domain + custom token, on-prem
   worker on a dynamic IP). The last three are **not** deployed into `kunji-cc` — selfhosted in
   particular needs its own project (it mints Auth users / writes `users/{sub}`); don't deploy it here.
-- `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check).
-- `docs/discoverable-login.md` — the full login protocol spec.
+  `kunji-mcp` is a local **MCP bridge** (stdio server) that lets an AI runtime act for a user via a
+  user-authorized, holder-of-key **capability** — never the keys (agentic delegation, Phase 4).
+- `src/lib/capability.js` — agentic-delegation capability tokens (EdDSA-JWT, holder-of-key); see
+  `docs/agentic-delegation.md`. RP verifier mirrored in `examples/kunji-login-demo/functions/capability.js`.
+- `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
+  capability mint/verify + wallet↔RP parity).
+- `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 

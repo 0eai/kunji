@@ -64,15 +64,20 @@ RP-side `jti` denylist (keeps kunji backendless) + a short default TTL as the sa
 `rateBudget` is RP-enforced and ties directly into the function cost-hardening
 (`docs/ops-cost-controls.md`) since agent traffic is automated.
 
-## MCP bridge (how an AI runtime drives kunji)
-A kunji **MCP server / local signing agent** exposes tools to an AI runtime (e.g. Claude), e.g.:
+## MCP bridge (how an AI runtime drives kunji) — IMPLEMENTED
+A kunji **MCP server / local signing agent** exposes tools to an AI runtime (e.g. Claude). Built at
+**`examples/kunji-mcp/`** (stdio MCP server, `@modelcontextprotocol/sdk`):
 
-- `kunji.request_capability(audience, scope)` → triggers a **human approval** in the wallet, returns a
-  capability;
-- `kunji.sign(challenge)` → signs a challenge **only within a granted capability**.
+- `kunji_authorize(audience, scope)` → returns the request the user approves in the wallet;
+- `kunji_set_capability(capability)` → stores the wallet-issued capability (validated holder-of-key +
+  expiry);
+- `kunji_login(baseUrl)` → signs the RP challenge with the agent key **only within the granted
+  capability** and submits it;
+- `kunji_status` → the agent's public key + the loaded capability.
 
-The runtime never receives keys; every sensitive op is gated by a pre-authorized capability or a live
-human approval. This is the practical "make agents work with kunji" surface.
+The runtime never receives keys; the agent's keypair lives only on the local machine; every sensitive
+op is gated by a pre-authorized capability or a live human approval. This is the practical "make
+agents work with kunji" surface.
 
 ## Open decisions (resolve before building)
 - **Token format** — compact JWT-like vs macaroon/biscuit (the latter allows offline *attenuation*:
@@ -83,6 +88,14 @@ human approval. This is the practical "make agents work with kunji" surface.
 - **Agent-traffic lane** — whether agent calls get an App Check exemption (revisits the deferred App
   Check decision in `docs/ops-cost-controls.md`).
 
-## Next step
-After this design is reviewed/approved, spin out an implementation plan: capability signer + RP
-verifier (+ `tests/`), the wallet grant UI, and the MCP server — each behind the human-approval root.
+## Status — implemented (v0.1.9 + MCP bridge)
+- **Protocol core**: `src/lib/capability.js` (mint / agent-proof / verify) + `tests/capability.test.js`.
+- **Wallet grant UI**: `src/services/capability.js` + `src/components/AuthorizeAgentSheet.jsx`
+  (Security → "Authorize an agent").
+- **RP verification**: `examples/kunji-login-demo/functions/capability.js` + the `/kunji/agent`
+  endpoint + a `revokedCapabilities` denylist; `tests/capability.parity.test.js` cross-checks
+  wallet-mint ↔ RP-verify. Headless demo: `examples/kunji-login-demo/agent-sim.js`.
+- **MCP bridge**: `examples/kunji-mcp/` (see its README).
+
+Still open / deferred: the `scope` vocabulary, capability transport automation (today: wallet display
++ paste/QR), macaroon-style attenuation, and the agent-traffic App Check lane.

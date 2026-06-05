@@ -1,0 +1,14 @@
+{
+  "name": "kunji-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "kunji MCP bridge — let an AI runtime act for a user via a user-authorized, scoped, holder-of-key capability (never the user's keys).",
+  "bin": { "kunji-mcp": "./server.js" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "@noble/curves": "^2.0.1",
+    "zod": "^3.23.8"
+  }
+}
