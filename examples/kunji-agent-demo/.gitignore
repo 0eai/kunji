@@ -1,0 +1,5 @@
+node_modules/
+.agent-key
+.mcp-state.json
+cert.pem
+key.pem

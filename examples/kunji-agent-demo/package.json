@@ -1,0 +1,14 @@
+{
+  "name": "kunji-agent-demo",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Framework-free, Firebase-free kunji relying party that accepts both human logins and agent (capability) logins.",
+  "scripts": {
+    "start": "node server.js",
+    "agent": "node agent-sim.js"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1"
+  }
+}

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 // Wallet (browser) mint/proof ↔ RP (Node) verifier — guards against the two
 // implementations drifting, the way verify.test.js does for the §6 assertion.
 import { mintCapability, buildAgentProof } from '../src/lib/capability.js';
@@ -66,5 +68,15 @@ describe('capability parity (wallet mint → RP verify)', () => {
       challenge: CHALLENGE,
     });
     expect(r).toMatchObject({ ok: false, error: 'bad_agent_proof' });
+  });
+
+  // kunji-agent-demo ships its own copy of the RP verifier (it's a plain-Node RP with no shared
+  // import path). The parity above only exercises the kunji-login-demo copy — so guard that the
+  // agent-demo copy stays byte-identical to it, and the parity guarantee carries over.
+  it('kunji-agent-demo/capability.js is byte-identical to the guarded login-demo copy', () => {
+    const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    expect(read('../examples/kunji-agent-demo/capability.js')).toBe(
+      read('../examples/kunji-login-demo/functions/capability.js'),
+    );
   });
 });
