@@ -24,14 +24,14 @@ const INK = '#1a1a18';
  * app icon (default); set false for long opaque payloads. EC defaults to 'Q' (the lean v2
  * payload keeps density low even with the cleared logo area).
  */
-export const renderBrandedQr = (el, { data, size = 256, withLogo = true, ec = 'Q' }) => {
+export const renderBrandedQr = (el, { data, size = 256, withLogo = true, ec = 'Q', margin = 8 }) => {
   if (!el || !data) return;
   const qr = new QRCodeStyling({
     type: 'svg',
     width: size,
     height: size,
     data,
-    margin: 8,
+    margin,
     qrOptions: { errorCorrectionLevel: ec },
     backgroundOptions: { color: '#ffffff' },
     dotsOptions: { type: 'extra-rounded', color: INK },

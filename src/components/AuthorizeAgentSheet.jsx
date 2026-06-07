@@ -33,7 +33,15 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
   // Styled QR of the capability (no logo — it's a long opaque token; lighter EC).
   useEffect(() => {
     if (phase === 'issued' && result && qrRef.current) {
-      renderBrandedQr(qrRef.current, { data: result.capability, size: 200, withLogo: false, ec: 'M' });
+      // Long JWT → keep modules legible: bigger, EC 'L' (fewer modules), no internal margin
+      // (the container's white padding is the single quiet zone — avoids a double frame).
+      renderBrandedQr(qrRef.current, {
+        data: result.capability,
+        size: 240,
+        withLogo: false,
+        ec: 'L',
+        margin: 0,
+      });
     }
   }, [phase, result]);
 
@@ -130,7 +138,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             <span className="font-mono text-ink">{req.audience}</span> and expires automatically.
           </p>
           <div className="flex justify-center mb-4">
-            <div ref={qrRef} aria-label="Capability QR" className="rounded-xl border border-line p-2 bg-white" />
+            <div ref={qrRef} aria-label="Capability QR" className="rounded-xl border border-line p-3 bg-white" />
           </div>
           <div className="flex items-start gap-3 border-y border-line py-3 mb-4">
             <code className="flex-1 text-[11px] font-mono text-ink break-all leading-relaxed max-h-24 overflow-y-auto">
