@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Activity } from 'lucide-react';
 import Sheet from './ui/Sheet';
+import { Monogram } from './ui/primitives';
 import { listenToActivityLog } from '../services/activityLog';
 import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 
@@ -29,8 +30,19 @@ const ActivitySheet = ({ userId, cryptoKey, onClose }) => {
             const Icon = activityIcon(e.icon);
             return (
               <div key={e.id} className="flex items-center gap-3 py-3">
-                <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
-                <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
+                {e.domain ? (
+                  <Monogram name={e.domain} seed={e.domain} size="sm" />
+                ) : (
+                  <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-ink truncate">{e.action}</p>
+                  {(e.device || e.ip) && (
+                    <p className="text-[11px] text-faint truncate">
+                      {[e.device, e.ip].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
                 <span className="text-[11px] font-mono text-faint shrink-0 tabular">
                   {relTime(e.createdAt)}
                 </span>

@@ -77,7 +77,7 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
     setPhase('depositing');
     try {
       await depositMasterKey(ctx.current.linkId, ctx.current.privateKey, masterKey, ctx.current.pubB);
-      logActivity(userId, 'Device Linked', 'success', 'Smartphone');
+      logActivity(userId, 'Device Linked', 'success', 'Smartphone', masterKey);
       setPhase('done');
     } catch (e) {
       showToast('Failed to link: ' + e.message, 'error');

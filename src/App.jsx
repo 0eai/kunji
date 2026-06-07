@@ -139,7 +139,7 @@ export default function App() {
         user={user}
         onUnlock={(key) => {
           unlockVault(key);
-          logActivity(user.uid, 'Vault Unlocked', 'success', 'Unlock');
+          logActivity(user.uid, 'Vault Unlocked', 'success', 'Unlock', key);
         }}
         initialMessage={lockReason || ''}
       />

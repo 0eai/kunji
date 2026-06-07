@@ -111,7 +111,7 @@ const LinkDeviceScreen = ({ user, onUnlock, onCancel }) => {
     setPhase('saving');
     try {
       await provisionVaultFromMasterKey(user.uid, masterKeyRef.current, passkey);
-      logActivity(user.uid, 'Device Linked', 'success', 'Smartphone');
+      logActivity(user.uid, 'Device Linked', 'success', 'Smartphone', masterKeyRef.current);
       onUnlock(masterKeyRef.current);
     } catch (err) {
       showToast('Failed to save: ' + err.message, 'error');

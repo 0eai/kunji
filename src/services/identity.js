@@ -8,6 +8,7 @@ import {
   signWithEd25519,
 } from '../lib/crypto';
 import { normalizeDomain } from '../lib/crypto/helpers';
+import { setSessionIp } from '../lib/sessionMeta';
 
 // Vault writes go through a signed-writes Cloud Function (rules deny direct client
 // writes). Same-origin via Hosting rewrite in production; override for local dev.
@@ -47,6 +48,9 @@ const callVaultWrite = async (vaultId, cryptoKey, op, appId, docPayload) => {
     const e = await resp.json().catch(() => ({}));
     throw new Error('vault_write_failed:' + (e.error || resp.status));
   }
+  // The function echoes our public IP; cache it so the shared activity log can record it.
+  const data = await resp.json().catch(() => ({}));
+  if (data?.ip) setSessionIp(data.ip);
 };
 import { logActivity } from './activityLog';
 

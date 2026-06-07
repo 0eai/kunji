@@ -5,7 +5,7 @@
 // vault PUBLIC key, signatures, and already-encrypted app blobs.
 import { onRequest } from 'firebase-functions/v2/https';
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ed25519 } from '@noble/curves/ed25519.js';
 
 initializeApp();
@@ -46,14 +46,16 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
   } = req.body || {};
 
   // `kind` selects the target collection: undefined/'app' → apps/{appId} (back-compat,
-  // existing clients omit it), 'profile' → profile/self (the user's custom profile).
+  // existing clients omit it), 'profile' → profile/self (the user's custom profile),
+  // 'activity' → activity/{appId} (append-only, encrypted, shared-across-devices log).
   const isProfile = kind === 'profile';
+  const isActivity = kind === 'activity';
 
   // 1. shape
   if (
     !HEX64.test(vaultId || '') ||
     !SAFE_ID.test(appId || '') ||
-    (kind !== undefined && kind !== 'app' && kind !== 'profile') ||
+    (kind !== undefined && kind !== 'app' && kind !== 'profile' && kind !== 'activity') ||
     (op !== 'set' && op !== 'delete') ||
     !publicKey ||
     !signedToken ||
@@ -90,7 +92,12 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
   const vaultRef = db.collection('vaults').doc(vaultId);
   const targetRef = isProfile
     ? vaultRef.collection('profile').doc('self')
-    : vaultRef.collection('apps').doc(appId);
+    : isActivity
+      ? vaultRef.collection('activity').doc(appId)
+      : vaultRef.collection('apps').doc(appId);
+  // Activity entries self-prune via a Firestore TTL policy on `expiresAt` (a non-sensitive
+  // timestamp; the payload itself stays encrypted). 90 days.
+  const ACTIVITY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
   try {
     await db.runTransaction(async (tx) => {
       const meta = await tx.get(vaultRef);
@@ -108,7 +115,10 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
         const createdAt = existing?.exists
           ? existing.data().createdAt
           : FieldValue.serverTimestamp();
-        tx.set(targetRef, { ...docPayload, createdAt });
+        const extra = isActivity
+          ? { expiresAt: Timestamp.fromMillis(Date.now() + ACTIVITY_TTL_MS) }
+          : {};
+        tx.set(targetRef, { ...docPayload, createdAt, ...extra });
       }
     });
   } catch (e) {
@@ -116,7 +126,9 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
     return res.status(500).json({ error: 'write_failed' });
   }
 
-  res.json({ status: 'ok' });
+  // Echo the caller IP (the TCP peer — we see it inherently). The activity client encrypts it
+  // into the entry client-side; the function NEVER persists it. Harmless for app/profile writes.
+  res.json({ status: 'ok', ip: req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || null });
 });
 
 // ── Device-link code lookup ──────────────────────────────────────────────────
