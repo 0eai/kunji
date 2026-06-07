@@ -196,8 +196,9 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             Authorize an agent
           </h2>
           <p className="text-[14px] text-muted leading-relaxed mb-5">
-            Let an AI agent act for you at one app, within a scope you approve, without giving it any
-            of your keys. Scan or paste the agent's request to begin.
+            Let an agent — an AI assistant, script, or service — act for you at one app, within a
+            scope you approve, without giving it any of your keys. Scan or paste the agent's request
+            to begin.
           </p>
           <Btn variant="primary" onClick={() => setShowScanner(true)} className="w-full mb-4">
             <ScanLine size={16} /> Scan agent request

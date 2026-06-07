@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { ScanLine, Lock, Shield, Settings } from 'lucide-react';
+import { ScanLine, Lock, Shield, Settings, Bot } from 'lucide-react';
 import {
   listenToApps,
   deleteApp,
@@ -19,9 +19,11 @@ import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import SecurityPanel from './SecurityPanel';
+import AgentsSheet from './AgentsSheet';
 import CodeEntryModal from './CodeEntryModal';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Btn } from './ui/primitives';
+import { listAgents } from '../services/capability';
 import { useToast } from '../contexts/ToastContext';
 
 // Lazy: the camera scanner (jsqr) loads only when opened.
@@ -36,6 +38,8 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
 
   const [showScanner, setShowScanner] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
+  const [agentCount, setAgentCount] = useState(0); // active (non-expired) authorized agents
   const [pendingSession, setPendingSession] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
@@ -66,6 +70,17 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       .then(setProfile)
       .catch(() => setProfile(null));
   }, [vaultId, cryptoKey]);
+
+  // Active-agents count — drives the header chip. listAgents already drops expired ones, so the
+  // length is the live count. Re-run after the agents/security sheets close (either can change it).
+  const refreshAgents = useCallback(() => {
+    listAgents(cryptoKey)
+      .then((a) => setAgentCount(a.length))
+      .catch(() => setAgentCount(0));
+  }, [cryptoKey]);
+  useEffect(() => {
+    if (cryptoKey) refreshAgents();
+  }, [cryptoKey, refreshAgents]);
 
   // One-time: bring forward apps registered before the move to vaultId storage.
   useEffect(() => {
@@ -216,6 +231,16 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           </div>
         </div>
         <div className="flex items-center gap-0.5 -mr-2">
+          {agentCount > 0 && (
+            <button
+              onClick={() => setShowAgents(true)}
+              title={`${agentCount} active agent${agentCount > 1 ? 's' : ''}`}
+              aria-label={`${agentCount} active agent${agentCount > 1 ? 's' : ''} — manage`}
+              className="inline-flex items-center gap-1 mr-1 px-2.5 py-1 rounded-full text-[12px] font-medium bg-accent-soft text-accent hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <Bot size={14} strokeWidth={1.75} /> {agentCount}
+            </button>
+          )}
           <button
             onClick={() => setShowScanner(true)}
             title="Scan a code"
@@ -346,7 +371,21 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           userId={user.uid}
           cryptoKey={cryptoKey}
           onLock={onLock}
-          onClose={() => setShowSecurity(false)}
+          onClose={() => {
+            setShowSecurity(false);
+            refreshAgents();
+          }}
+        />
+      )}
+
+      {showAgents && (
+        <AgentsSheet
+          userId={user.uid}
+          masterKey={cryptoKey}
+          onClose={() => {
+            setShowAgents(false);
+            refreshAgents();
+          }}
         />
       )}
 

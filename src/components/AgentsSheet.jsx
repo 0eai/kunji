@@ -35,7 +35,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
   const revoke = async (a) => {
     setRevoking(a.jti);
     try {
-      await revokeAgent(masterKey, { jti: a.jti, audience: a.audience });
+      await revokeAgent(userId, masterKey, { jti: a.jti, audience: a.audience });
       showToast('Agent revoked.');
       setAgents((list) => (list || []).filter((x) => x.jti !== a.jti));
     } catch (e) {
@@ -54,8 +54,9 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
         </h2>
       </div>
       <p className="text-[14px] text-muted leading-relaxed mb-5">
-        AI agents you've authorized to act for you at an app, within a scope and for a limited time —
-        never holding your keys. Revoke any one to cut it off at apps that honor revocation.
+        Agents — an AI assistant, script, or service — you've authorized to act for you at an app,
+        within a scope and for a limited time, never holding your keys. Revoke any one to cut it off
+        at apps that honor revocation.
       </p>
 
       {agents === null ? (

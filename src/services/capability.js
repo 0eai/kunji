@@ -172,9 +172,10 @@ export const listAgents = async (cryptoKey) => {
  * publish it to the public revocations/{jti} denylist (cooperating RPs verify the signature
  * against the capability's own key, so only the issuer can revoke). Then drop the list record.
  */
-export const revokeAgent = async (cryptoKey, { jti, audience }) => {
+export const revokeAgent = async (userId, cryptoKey, { jti, audience }) => {
   const { secretKey } = await deriveAppKeyPair(cryptoKey, audience);
   const sig = signMessageEd25519(revokeMessage(jti), secretKey);
   await setDoc(doc(db, 'revocations', jti), { jti, sig, revokedAt: Date.now() });
   await agentVaultWrite(cryptoKey, 'delete', jti, null);
+  await logActivity(userId, `Revoked an agent for ${audience}`, 'info', 'ShieldX', cryptoKey);
 };

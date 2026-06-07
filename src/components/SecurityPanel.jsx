@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   KeyRound,
   Smartphone,
@@ -21,6 +21,7 @@ import RecoveryKeySheet from './RecoveryKeySheet';
 import ActivitySheet from './ActivitySheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, Btn } from './ui/primitives';
+import { listAgents } from '../services/capability';
 import { useToast } from '../contexts/ToastContext';
 
 const SIGNOUT_CONFIRM = 'SIGN OUT';
@@ -84,6 +85,17 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
   const [showIssue, setShowIssue] = useState(false); // issuer sheet (show QR + code to the new device)
   const [showAgent, setShowAgent] = useState(false); // authorize-an-agent (capability) sheet
+
+  // Active-agents count for the row badge — listAgents already drops expired ones.
+  const [agentCount, setAgentCount] = useState(0);
+  const refreshAgents = useCallback(() => {
+    listAgents(cryptoKey)
+      .then((a) => setAgentCount(a.length))
+      .catch(() => setAgentCount(0));
+  }, [cryptoKey]);
+  useEffect(() => {
+    if (cryptoKey) refreshAgents();
+  }, [cryptoKey, refreshAgents]);
   const [showChangeKey, setShowChangeKey] = useState(false); // change-passkey sheet
   const [showProfile, setShowProfile] = useState(false); // edit-profile sheet
   const [showRecovery, setShowRecovery] = useState(false); // export-recovery-key sheet
@@ -145,11 +157,12 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         <Row
           icon={Bot}
           title="Authorized agents"
+          count={agentCount || undefined}
           open={open.agent}
           onToggle={() => toggle('agent')}
         >
           <p className="text-[13px] text-muted leading-relaxed mb-4">
-            AI agents you've authorized to act for you at an app — within a scope and for a limited
+            Agents you've authorized to act for you at an app — within a scope and for a limited
             time, never holding your keys. Review them and revoke any one.
           </p>
           <Btn variant="primary" onClick={() => setShowAgent(true)} className="w-full">
@@ -243,7 +256,14 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
       )}
 
       {showAgent && (
-        <AgentsSheet userId={userId} masterKey={cryptoKey} onClose={() => setShowAgent(false)} />
+        <AgentsSheet
+          userId={userId}
+          masterKey={cryptoKey}
+          onClose={() => {
+            setShowAgent(false);
+            refreshAgents();
+          }}
+        />
       )}
 
       {showChangeKey && (
