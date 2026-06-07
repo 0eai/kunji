@@ -56,12 +56,19 @@ export function buildAgentProof(agentSecretKey, { audience, challenge, capJti, n
   );
 }
 
+// The signed revocation message — MUST match the wallet (src/services/capability.js revokeMessage).
+export const revokeMessage = (jti) => `kunji-revoke-v1:${jti}`;
+
 /**
  * Verify a capability + the agent's proof against a session challenge.
- * `isRevoked(jti)` (optional, may be async) enforces a revocation denylist.
+ * `isRevoked(jti)` (optional, may be async) enforces a simple operator denylist (existence).
+ * `getRevocation(jti)` (optional, may be async) returns the kunji-hosted signed revocation
+ * `{ sig }|null`; a revocation counts ONLY if `sig` (over revokeMessage(jti)) verifies against
+ * the capability's OWN key — so only the issuing per-app key can revoke (a forged/bogus entry is
+ * ignored).
  * @returns {Promise<{ ok:true, sub, scope, jti } | { ok:false, error }>}
  */
-export async function verifyCapabilityAssertion({ capability, agentProof, audience, challenge, now = Date.now(), isRevoked }) {
+export async function verifyCapabilityAssertion({ capability, agentProof, audience, challenge, now = Date.now(), isRevoked, getRevocation }) {
   let cap;
   try {
     cap = decodeJWS(capability);
@@ -86,6 +93,20 @@ export async function verifyCapabilityAssertion({ capability, agentProof, audien
   if (!Array.isArray(c.scope) || c.scope.length === 0) return { ok: false, error: 'no_scope' };
   if (typeof c.exp !== 'number' || now > c.exp * 1000) return { ok: false, error: 'capability_expired' };
   if (isRevoked && (await isRevoked(c.jti))) return { ok: false, error: 'capability_revoked' };
+  if (getRevocation) {
+    const rev = await getRevocation(c.jti);
+    // Only honor a revocation signed by the capability's OWN per-app key (issuer-bound).
+    if (rev?.sig) {
+      try {
+        const sigBytes = new Uint8Array(Buffer.from(String(rev.sig), 'base64'));
+        if (ed25519.verify(sigBytes, enc(revokeMessage(c.jti)), appPubBytes)) {
+          return { ok: false, error: 'capability_revoked' };
+        }
+      } catch {
+        /* malformed revocation → ignore (the short TTL is the backstop) */
+      }
+    }
+  }
 
   let agentPubBytes;
   try {

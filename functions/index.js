@@ -47,15 +47,17 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
 
   // `kind` selects the target collection: undefined/'app' → apps/{appId} (back-compat,
   // existing clients omit it), 'profile' → profile/self (the user's custom profile),
-  // 'activity' → activity/{appId} (append-only, encrypted, shared-across-devices log).
+  // 'activity' → activity/{appId} (append-only, encrypted, shared-across-devices log),
+  // 'agent' → agents/{appId} (encrypted authorized-agent metadata; appId = capability jti).
   const isProfile = kind === 'profile';
   const isActivity = kind === 'activity';
+  const isAgent = kind === 'agent';
 
   // 1. shape
   if (
     !HEX64.test(vaultId || '') ||
     !SAFE_ID.test(appId || '') ||
-    (kind !== undefined && kind !== 'app' && kind !== 'profile' && kind !== 'activity') ||
+    (kind !== undefined && !['app', 'profile', 'activity', 'agent'].includes(kind)) ||
     (op !== 'set' && op !== 'delete') ||
     !publicKey ||
     !signedToken ||
@@ -94,7 +96,9 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
     ? vaultRef.collection('profile').doc('self')
     : isActivity
       ? vaultRef.collection('activity').doc(appId)
-      : vaultRef.collection('apps').doc(appId);
+      : isAgent
+        ? vaultRef.collection('agents').doc(appId)
+        : vaultRef.collection('apps').doc(appId);
   // Activity entries self-prune via a Firestore TTL policy on `expiresAt` (a non-sensitive
   // timestamp; the payload itself stays encrypted). 90 days.
   const ACTIVITY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -141,8 +145,10 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
 // function only READS them (Admin SDK), never the master key.
 const CODE = /^\d{8}$/;
 
-const rateLimited = async (ip, max = 10, windowMs = 60 * 1000) => {
-  const ref = db.collection('rateLimits').doc(`link_${(ip || 'unknown').replace(/[^\w.:-]/g, '_')}`);
+const rateLimited = async (ip, max = 10, windowMs = 60 * 1000, prefix = 'link') => {
+  const ref = db
+    .collection('rateLimits')
+    .doc(`${prefix}_${(ip || 'unknown').replace(/[^\w.:-]/g, '_')}`);
   const now = Date.now();
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -195,3 +201,35 @@ export const linkLookup = onRequest({ cors: true, maxInstances: 5, memory: '256M
   // Only the issuer's public key + the (secret) doc id — never any key material.
   res.json({ linkId: doc.id, pubA: s.pubA });
 });
+
+// ── Agent capability relay ───────────────────────────────────────────────────
+// The MCP bridge is NOT Firebase-authed, so it can't read Firestore directly (unlike the
+// device-link joiner). This public, rate-limited function lets it POLL for the capability
+// the wallet deposited into agentSessions/{sessionId}. The wallet writes the doc directly
+// (authed, under firestore.rules); the capability is ECDH-encrypted to the agent's transport
+// key, so this only ever returns ciphertext (+ the wallet's ephemeral pub + audience). The
+// sessionId is a 256-bit unguessable id; per-IP rate-limiting bounds abuse.
+const HEX64_SESSION = /^[0-9a-f]{64}$/i;
+
+export const agentCapabilityPoll = onRequest(
+  { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
+  async (req, res) => {
+    const sessionId = String(req.query.sessionId || '');
+    if (!HEX64_SESSION.test(sessionId)) return res.status(400).json({ error: 'bad_session' });
+
+    if (await rateLimited(req.ip, 30, 60 * 1000, 'agent'))
+      return res.status(429).json({ error: 'rate_limited' });
+
+    const snap = await db.collection('agentSessions').doc(sessionId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+    const s = snap.data();
+    if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired' });
+
+    // Ciphertext only — the agent decrypts with its transport private key.
+    res.json({
+      walletPubE: s.walletPubE,
+      encryptedCapability: s.encryptedCapability,
+      audience: s.audience,
+    });
+  },
+);

@@ -82,8 +82,16 @@ agents work with kunji" surface.
 ## Open decisions (resolve before building)
 - **Token format** — compact JWT-like vs macaroon/biscuit (the latter allows offline *attenuation*:
   an agent can narrow but never widen a capability).
-- **Capability transport** to the agent (QR / paste / deep link / MCP channel).
-- **Revocation ownership** — RP `jti` denylist vs short-TTL-only (backendless tension).
+- ~~**Capability transport** to the agent~~ — **RESOLVED (v0.6.0):** the agent presents an ECDH
+  transport key + session id in its request; the wallet deposits the capability **ECDH-encrypted** into
+  a short-TTL `agentSessions/{id}` relay; the agent polls the public `agentCapabilityPoll` function and
+  decrypts. Paste/QR remains a fallback. (`src/services/capability.js` `depositAgentCapability`,
+  `examples/kunji-mcp` `awaitCapability`.)
+- ~~**Revocation ownership**~~ — **RESOLVED (v0.7.0):** issuer-signed, kunji-hosted denylist. The wallet
+  signs `kunji-revoke-v1:{jti}` with the per-app key and publishes the (public-read) `revocations/{jti}`;
+  a cooperating RP honors it only if the signature verifies against the **capability's own key** (so only
+  the issuer can revoke; forged entries are ignored). A short default TTL stays as the backstop for RPs
+  that don't check. (`src/services/capability.js` `revokeAgent` ↔ verifier `getRevocation`.)
 - **`scope` vocabulary** — the least-privilege action set apps and agents agree on.
 - **Agent-traffic lane** — whether agent calls get an App Check exemption (revisits the deferred App
   Check decision in `docs/ops-cost-controls.md`).

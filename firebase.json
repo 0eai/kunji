@@ -13,6 +13,10 @@
           "source": "/link/lookup",
           "function": { "functionId": "linkLookup", "region": "us-central1" }
         },
+        {
+          "source": "/agent/capability",
+          "function": { "functionId": "agentCapabilityPoll", "region": "us-central1" }
+        },
         { "source": "**", "destination": "/index.html" }
       ],
       "headers": [

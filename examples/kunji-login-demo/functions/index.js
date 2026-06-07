@@ -185,6 +185,12 @@ export const kunjiAgent = onRequest({ cors: true, maxInstances: 5, memory: '256M
         // read set (forces a retry) — no TOCTOU between the check and the approve.
         isRevoked: async (jti) =>
           (await tx.get(db.collection('revokedCapabilities').doc(String(jti)))).exists,
+        // kunji-hosted, issuer-signed revocations — the user revoking from their wallet. The
+        // verifier only honors it if the signature checks out against the capability's own key.
+        getRevocation: async (jti) => {
+          const d = await tx.get(db.collection('revocations').doc(String(jti)));
+          return d.exists ? d.data() : null;
+        },
       });
       if (!r.ok) return r;
       if (session.status !== 'pending') return { ok: false, error: 'session_consumed' };

@@ -7,7 +7,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { agentRequest, setCapability, currentCapability, login } from './capability-client.js';
+import {
+  agentRequest,
+  setCapability,
+  currentCapability,
+  login,
+  awaitCapability,
+} from './capability-client.js';
 
 const server = new McpServer({ name: 'kunji', version: '0.1.0' });
 
@@ -20,8 +26,10 @@ server.registerTool(
     title: 'Request kunji authorization',
     description:
       'Begin authorization to act for the user at an app. Returns a request the USER must approve ' +
-      'in their kunji wallet (Security → Authorize an agent). After they approve, they paste the ' +
-      'capability back via kunji_set_capability. The agent never receives the user\'s keys.',
+      'in their kunji wallet (Security → Authorize an agent). On approval the wallet delivers the ' +
+      'capability back automatically over an encrypted relay — then call kunji_await_capability to ' +
+      'receive it (no copy/paste). kunji_set_capability remains as a manual fallback. The agent ' +
+      "never receives the user's keys.",
     inputSchema: {
       audience: z.string().describe("The app's domain to act at, e.g. 'example.com'."),
       scope: z.array(z.string()).optional().describe("Requested scopes, e.g. ['login']. Defaults to ['login']."),
@@ -29,11 +37,40 @@ server.registerTool(
   },
   async ({ audience, scope }) => {
     try {
-      const req = agentRequest(audience, scope);
+      const req = await agentRequest(audience, scope);
       return text(
         `Ask the user to authorize this in their kunji wallet → Security → "Authorize an agent" ` +
-          `(scan or paste), then approve and paste the capability back to you for kunji_set_capability:\n\n` +
+          `(scan or paste), then Approve. The wallet delivers the capability back to you securely — ` +
+          `call kunji_await_capability next (or kunji_set_capability to paste it manually):\n\n` +
           JSON.stringify(req),
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  'kunji_await_capability',
+  {
+    title: 'Receive the authorized capability',
+    description:
+      'After the user approves kunji_authorize in their wallet, the wallet relays the capability back ' +
+      'encrypted to this agent. This polls for it, decrypts it with the agent transport key, validates ' +
+      'it (holder-of-key + expiry), and stores it — no copy/paste. Blocks briefly while waiting for approval.',
+    inputSchema: {
+      sessionId: z
+        .string()
+        .optional()
+        .describe('The session id from kunji_authorize. Defaults to the most recent authorization.'),
+    },
+  },
+  async ({ sessionId }) => {
+    try {
+      const cap = await awaitCapability(sessionId);
+      return text(
+        `Capability received and stored. audience=${cap.audience}, scope=${JSON.stringify(cap.scope)}, ` +
+          `expires=${new Date(cap.exp * 1000).toISOString()}. You can now kunji_login.`,
       );
     } catch (e) {
       return fail(e);

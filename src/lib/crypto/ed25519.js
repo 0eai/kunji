@@ -82,6 +82,14 @@ export const signWithEd25519 = (payload, secretKey) => {
   return bufferToBase64(sig.buffer ?? sig);
 };
 
+// Sign the raw UTF-8 bytes of a fixed message string (no JSON wrapping) → std-base64 sig.
+// Used for the capability revocation message ("kunji-revoke-v1:{jti}"); the RP verifies the
+// same bytes against the capability's own key, so no canonical-JSON contract is involved.
+export const signMessageEd25519 = (message, secretKey) => {
+  const sig = ed25519.sign(new TextEncoder().encode(String(message)), secretKey);
+  return bufferToBase64(sig.buffer ?? sig);
+};
+
 export const verifyEd25519Signature = (payload, signatureBase64, publicKey) => {
   try {
     const msg = new TextEncoder().encode(canonicalJson(payload));

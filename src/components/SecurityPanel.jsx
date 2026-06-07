@@ -14,7 +14,7 @@ import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import InstallButton from './InstallButton';
 import IssueLinkSheet from './IssueLinkSheet';
-import AuthorizeAgentSheet from './AuthorizeAgentSheet';
+import AgentsSheet from './AgentsSheet';
 import ChangePasskeySheet from './ChangePasskeySheet';
 import ProfileSheet from './ProfileSheet';
 import RecoveryKeySheet from './RecoveryKeySheet';
@@ -144,16 +144,16 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
         <Row
           icon={Bot}
-          title="Authorize an agent"
+          title="Authorized agents"
           open={open.agent}
           onToggle={() => toggle('agent')}
         >
           <p className="text-[13px] text-muted leading-relaxed mb-4">
-            Let an AI agent act for you at one app, within a scope you approve and for a limited time
-            — without giving it any of your keys.
+            AI agents you've authorized to act for you at an app — within a scope and for a limited
+            time, never holding your keys. Review them and revoke any one.
           </p>
           <Btn variant="primary" onClick={() => setShowAgent(true)} className="w-full">
-            <Bot size={16} /> Authorize an agent
+            <Bot size={16} /> Manage agents
           </Btn>
         </Row>
 
@@ -243,11 +243,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
       )}
 
       {showAgent && (
-        <AuthorizeAgentSheet
-          userId={userId}
-          masterKey={cryptoKey}
-          onClose={() => setShowAgent(false)}
-        />
+        <AgentsSheet userId={userId} masterKey={cryptoKey} onClose={() => setShowAgent(false)} />
       )}
 
       {showChangeKey && (

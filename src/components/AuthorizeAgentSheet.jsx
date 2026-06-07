@@ -2,7 +2,12 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ShieldCheck, ScanLine, Copy, CheckCircle2 } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Field } from './ui/primitives';
-import { parseAgentRequest, issueCapability } from '../services/capability';
+import {
+  parseAgentRequest,
+  issueCapability,
+  depositAgentCapability,
+  recordAgent,
+} from '../services/capability';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -28,6 +33,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null); // mint result
   const [copied, setCopied] = useState(false);
+  const [delivered, setDelivered] = useState(false); // v2: relayed to the agent automatically
   const qrRef = useRef(null);
 
   // Styled QR of the capability (no logo — it's a long opaque token; lighter EC).
@@ -67,6 +73,26 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
       });
       setResult(r);
       setPhase('issued');
+      // Record the capability metadata so it shows in "Authorized agents" (and can be revoked).
+      // Best-effort — never block the issuance flow on it.
+      recordAgent(masterKey, {
+        jti: r.jti,
+        audience: req.audience,
+        scope: req.scope,
+        exp: r.exp,
+        agentPub: req.agentPub,
+      }).catch((e) => console.warn('recordAgent failed:', e));
+      // v2: deliver the capability to the agent over the encrypted relay (no manual copy).
+      // Best-effort — on any failure the user still has the QR + copy fallback below.
+      if (req.sessionId && req.transportPub) {
+        try {
+          await depositAgentCapability(req.sessionId, req.transportPub, r.capability, req.audience);
+          setDelivered(true);
+        } catch (e) {
+          showToast('Authorized, but auto-delivery failed — copy or scan it below.', 'error');
+          console.warn('Agent capability relay failed:', e);
+        }
+      }
     } catch (e) {
       showToast('Could not authorize: ' + (e.message || e), 'error');
     } finally {
@@ -134,9 +160,19 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             </h2>
           </div>
           <p className="text-[14px] text-muted leading-relaxed mb-4">
-            Give this capability to the agent (copy it, or let it scan the code). It's scoped to{' '}
+            {delivered ? (
+              <>Sent to the agent securely. It's scoped to </>
+            ) : (
+              <>Give this capability to the agent (copy it, or let it scan the code). It's scoped to </>
+            )}
             <span className="font-mono text-ink">{req.audience}</span> and expires automatically.
           </p>
+          {delivered && (
+            <div className="flex items-center gap-2 text-[13px] text-success mb-4">
+              <CheckCircle2 size={15} className="shrink-0" />
+              <span>Delivered to the agent — no copying needed. The QR/token below is a backup.</span>
+            </div>
+          )}
           <div className="flex justify-center mb-4">
             <div ref={qrRef} aria-label="Capability QR" className="rounded-xl border border-line p-3 bg-white" />
           </div>

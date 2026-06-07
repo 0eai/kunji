@@ -48,5 +48,6 @@ export {
   importEd25519SecretKey,
   importEd25519PublicKey,
   signWithEd25519,
+  signMessageEd25519,
   verifyEd25519Signature,
 } from './ed25519';

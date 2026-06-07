@@ -22,6 +22,49 @@ const enc = (s) => new TextEncoder().encode(s);
 const loadState = () => (existsSync(STATE) ? JSON.parse(readFileSync(STATE, 'utf8')) : {});
 const saveState = (s) => writeFileSync(STATE, JSON.stringify(s, null, 2));
 
+// kunji app origin that hosts the capability relay (agentCapabilityPoll). Override for local dev.
+const KUNJI_APP_URL = (process.env.KUNJI_APP_URL || 'https://app.kunji.cc').replace(/\/$/, '');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── ECDH P-256 + AES-GCM, mirroring src/lib/crypto/{ecdh,aes}.js byte-for-byte (SPKI pubkeys,
+// ECDH→AES-GCM-256 via WebCrypto deriveKey, {iv,data} std-base64), using Node's built-in
+// WebCrypto — so a capability the wallet ECDH-encrypts decrypts here. The transport key is
+// ephemeral per kunji_authorize; the persistent holder-of-key agent key (Ed25519) is separate.
+const subtle = globalThis.crypto.subtle;
+const genECDH = () =>
+  subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey', 'deriveBits']);
+const exportSpkiB64 = async (pub) => Buffer.from(await subtle.exportKey('spki', pub)).toString('base64');
+const exportPkcs8B64 = async (priv) => Buffer.from(await subtle.exportKey('pkcs8', priv)).toString('base64');
+const importSpki = (b64) =>
+  subtle.importKey('spki', Buffer.from(b64, 'base64'), { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+const importPkcs8 = (b64) =>
+  subtle.importKey('pkcs8', Buffer.from(b64, 'base64'), { name: 'ECDH', namedCurve: 'P-256' }, true, [
+    'deriveKey',
+    'deriveBits',
+  ]);
+const deriveShared = (priv, pub) =>
+  subtle.deriveKey({ name: 'ECDH', public: pub }, priv, { name: 'AES-GCM', length: 256 }, false, [
+    'decrypt',
+  ]);
+const aesGcmDecrypt = async ({ iv, data }, key) => {
+  const pt = await subtle.decrypt(
+    { name: 'AES-GCM', iv: Buffer.from(iv, 'base64') },
+    key,
+    Buffer.from(data, 'base64'),
+  );
+  return JSON.parse(Buffer.from(pt).toString('utf8')); // encryptData JSON-stringifies; undo it
+};
+
+/**
+ * Decrypt a capability the wallet ECDH-encrypted to our transport key. Pure (no I/O) so the
+ * wallet↔bridge crypto parity is unit-testable. Returns the capability JWT string.
+ */
+export const decryptRelayedCapability = async ({ transportPrivB64, walletPubE, encryptedCapability }) => {
+  const priv = await importPkcs8(transportPrivB64);
+  const shared = await deriveShared(priv, await importSpki(walletPubE));
+  return aesGcmDecrypt(encryptedCapability, shared);
+};
+
 /**
  * The agent's persistent Ed25519 keypair. The wallet binds capabilities to this key
  * (holder-of-key); the private key never leaves this machine and is never transmitted.
@@ -49,13 +92,63 @@ const buildAgentProof = (sk, { audience, challenge, capJti }) =>
     sk,
   );
 
-/** The request the user authorizes in their kunji wallet (Security → Authorize an agent). */
-export const agentRequest = (audience, scope) => ({
-  kunjiCap: 'v1',
-  audience,
-  scope: scope && scope.length ? scope : ['login'],
-  agentPub: agentPubB64(),
-});
+/**
+ * The request the user authorizes in their kunji wallet (Security → Authorize an agent).
+ * v2 carries an ephemeral ECDH transport key + a session id so the wallet can deliver the
+ * minted capability back over the encrypted relay — no manual copy. The transport private
+ * key is held locally (per session) until awaitCapability consumes it.
+ */
+export const agentRequest = async (audience, scope) => {
+  const { publicKey, privateKey } = await genECDH();
+  const transportPub = await exportSpkiB64(publicKey);
+  const sessionId = randomBytes(32).toString('hex');
+  const st = loadState();
+  saveState({
+    ...st,
+    lastSessionId: sessionId,
+    relays: { ...(st.relays || {}), [sessionId]: { transportPriv: await exportPkcs8B64(privateKey) } },
+  });
+  return {
+    kunjiCap: 'v2',
+    audience,
+    scope: scope && scope.length ? scope : ['login'],
+    agentPub: agentPubB64(),
+    transportPub,
+    sessionId,
+  };
+};
+
+/**
+ * Poll the relay for the capability the wallet deposited after the user approved, decrypt it
+ * with our transport key, and validate+store it (same checks as kunji_set_capability). No copy.
+ */
+export const awaitCapability = async (sessionId, { tries = 15, intervalMs = 2000 } = {}) => {
+  const st = loadState();
+  const sid = sessionId || st.lastSessionId;
+  const relay = sid && st.relays?.[sid];
+  if (!relay) throw new Error('No pending authorization. Call kunji_authorize first.');
+
+  for (let i = 0; i < tries; i++) {
+    const resp = await fetch(`${KUNJI_APP_URL}/agent/capability?sessionId=${sid}`);
+    if (resp.status === 410) throw new Error('Authorization expired before it was approved — re-run kunji_authorize.');
+    if (resp.ok) {
+      const { walletPubE, encryptedCapability } = await resp.json();
+      const capability = await decryptRelayedCapability({
+        transportPrivB64: relay.transportPriv,
+        walletPubE,
+        encryptedCapability,
+      }); // → the JWT string
+      const cap = setCapability(capability); // holder-of-key + expiry validation, then persist
+      const next = loadState();
+      delete next.relays?.[sid];
+      saveState(next);
+      return cap;
+    }
+    // 404 = not approved yet; 429 = backing off — wait and retry.
+    await sleep(intervalMs);
+  }
+  throw new Error('Timed out waiting for approval. Approve it in the wallet, then call kunji_await_capability again.');
+};
 
 /** Ingest + validate a capability the user pasted from the wallet, binding it to our key. */
 export const setCapability = (capability) => {

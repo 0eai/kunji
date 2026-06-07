@@ -52,5 +52,30 @@ service cloud.firestore {
     match /loginSessions/{sessionId} {
       allow read, write: if false;
     }
+
+    // Agent capability relay. The wallet (authed) deposits the ECDH-encrypted capability in a
+    // single write-once create; the (unauthenticated) MCP bridge reads it ONLY via the
+    // agentCapabilityPoll function (Admin), so no client read here. The doc holds only
+    // ciphertext + the wallet's ephemeral pub + audience — never the master key or plaintext.
+    match /agentSessions/{sessionId} {
+      allow create: if request.auth != null
+        && 'walletPubE' in request.resource.data
+        && 'encryptedCapability' in request.resource.data
+        && 'audience' in request.resource.data
+        && 'expiresAt' in request.resource.data;
+      allow read, update, delete: if false;
+    }
+
+    // Capability revocations. Public-readable so any relying party can check a capability's
+    // jti; write-once create by an authed wallet. Forgery is a non-issue: the RP verifies `sig`
+    // (over "kunji-revoke-v1:{jti}") against the CAPABILITY'S OWN key, so a revocation not signed
+    // by the issuing per-app key is ignored. Carries no secret — only {jti, sig, revokedAt}.
+    match /revocations/{jti} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && 'jti' in request.resource.data
+        && 'sig' in request.resource.data;
+      allow update, delete: if false;
+    }
   }
 }
