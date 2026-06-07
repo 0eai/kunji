@@ -60,7 +60,8 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     recovery: false,
     activity: false,
   });
-  const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  // Single-open accordion: expanding one row collapses the rest; re-clicking closes it.
+  const toggle = (k) => setOpen((o) => ({ [k]: !o[k] }));
 
   const [theme, setTheme] = useState(getThemePref());
 
