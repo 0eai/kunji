@@ -388,10 +388,13 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
         <section class="sec">
           <div class="sec-label">Reference</div>
           <p class="note">
-            Four complete, working relying parties live in the kunji repo —
+            Five complete, working relying parties live in the kunji repo —
             <code class="k">kunji-login-demo</code> (Firebase),
             <code class="k">kunji-node-demo</code> (plain Node — no Firebase, no framework, with a
-            wallet simulator), and two for local / self-hosted setups with no tunnel:
+            wallet simulator),
+            <code class="k">kunji-agent-demo</code> (plain Node, also accepts
+            <a href="/developers/agents">agent logins</a> via <code class="k">POST /kunji/agent</code>),
+            and two for local / self-hosted setups with no tunnel:
             <code class="k">kunji-relay-demo</code> (test with a real phone) and
             <code class="k">kunji-selfhosted-demo</code> (your own Firebase + an on-prem worker on a
             dynamic IP). All implement the full <code class="k">verifyAssertion</code>. Try the hosted

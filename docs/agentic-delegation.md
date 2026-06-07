@@ -1,9 +1,9 @@
-# Agentic delegation — design spec (DRAFT / not implemented)
+# Agentic delegation — design + protocol (implemented)
 
-> Status: **design only.** No code, no protocol change yet. This captures how an autonomous AI agent
-> could act for a kunji user **without compromising security or anonymity**, for review before any
-> implementation. The login protocol today is `docs/discoverable-login.md` (§6 assertion, §8.1
-> default identity); this extends it.
+> Status: **implemented.** This captures how an autonomous AI agent acts for a kunji user **without
+> compromising security or anonymity** — and now ships: see "Status — implemented" below and
+> `src/lib/capability.js`. It extends the login protocol in `docs/discoverable-login.md` (§6
+> assertion, §8.1 default identity).
 
 ## Why
 
@@ -100,10 +100,13 @@ agents work with kunji" surface.
 - **Protocol core**: `src/lib/capability.js` (mint / agent-proof / verify) + `tests/capability.test.js`.
 - **Wallet grant UI**: `src/services/capability.js` + `src/components/AuthorizeAgentSheet.jsx`
   (Security → "Authorize an agent").
-- **RP verification**: `examples/kunji-login-demo/functions/capability.js` + the `/kunji/agent`
-  endpoint + a `revokedCapabilities` denylist; `tests/capability.parity.test.js` cross-checks
-  wallet-mint ↔ RP-verify. Headless demo: `examples/kunji-login-demo/agent-sim.js`.
-- **MCP bridge**: `examples/kunji-mcp/` (see its README).
+- **RP verification**: `examples/kunji-login-demo/functions/capability.js` (Firebase) and
+  `examples/kunji-agent-demo/capability.js` (plain Node, no Firebase — `POST /kunji/agent` on top of
+  the §6 login RP) + a `revokedCapabilities` denylist; `tests/capability.parity.test.js` cross-checks
+  wallet-mint ↔ RP-verify. Headless demos: `examples/kunji-login-demo/agent-sim.js` and
+  `examples/kunji-agent-demo/agent-sim.js`.
+- **MCP bridge**: `examples/kunji-mcp/` (see its README) — runnable end-to-end against
+  `examples/kunji-agent-demo` with zero infra.
 
 Still open / deferred: the `scope` vocabulary, capability transport automation (today: wallet display
 + paste/QR), macaroon-style attenuation, and the agent-traffic App Check lane.

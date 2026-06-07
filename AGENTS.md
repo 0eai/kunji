@@ -84,9 +84,11 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `widget/` — `rp.js` source (built with esbuild into `landing/`).
 - `examples/` — reference relying parties: `kunji-login-demo` (Firebase; same project `kunji-cc`,
   site `kunji-demo`, default functions codebase), `kunji-node-demo` (plain Node, no Firebase),
+  `kunji-agent-demo` (plain Node, no Firebase — like `kunji-node-demo` but also accepts **agent**
+  capability logins via `POST /kunji/agent`; the runnable target for `kunji-mcp` / `agent-sim.js`),
   `kunji-relay-demo` (local RP + thin public callback Function, for real-phone testing with no tunnel),
   `kunji-selfhosted-demo` (production self-hosted: own Firebase + custom domain + custom token, on-prem
-  worker on a dynamic IP). The last three are **not** deployed into `kunji-cc` — selfhosted in
+  worker on a dynamic IP). The last four are **not** deployed into `kunji-cc` — selfhosted in
   particular needs its own project (it mints Auth users / writes `users/{sub}`); don't deploy it here.
   `kunji-mcp` is a local **MCP bridge** (stdio server) that lets an AI runtime act for a user via a
   user-authorized, holder-of-key **capability** — never the keys (agentic delegation, Phase 4).

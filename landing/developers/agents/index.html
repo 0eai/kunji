@@ -39,7 +39,7 @@
       </header>
 
       <main class="guide">
-        <p class="kicker">FOR DEVELOPERS · EXPERIMENTAL</p>
+        <p class="kicker">FOR DEVELOPERS</p>
         <h1>Sign in with an agent</h1>
         <p class="lead">
           Let an AI agent act for a user at your app — within a scope they approve, for a limited
@@ -203,9 +203,11 @@ app.post('/kunji/agent', async (req, res) =&gt; {
               >src/lib/capability.js</a
             >
             (mint / proof / verify),
-            <code class="k">kunji-login-demo/functions/capability.js</code> (RP verifier), and
-            <code class="k">examples/kunji-mcp</code> (the bridge). Experimental — the scope vocabulary
-            and transport are still settling.
+            <code class="k">kunji-login-demo/functions/capability.js</code> (RP verifier),
+            <code class="k">examples/kunji-agent-demo</code> (a plain-Node RP you can run — no
+            Firebase — that accepts agent logins via <code class="k">POST /kunji/agent</code>), and
+            <code class="k">examples/kunji-mcp</code> (the bridge). The scope vocabulary and transport
+            are still settling.
           </p>
           <div class="cta-row" style="margin-top: 20px">
             <a class="cta" href="https://app.kunji.cc">

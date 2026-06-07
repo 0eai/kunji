@@ -43,7 +43,11 @@ Fastest path — the drop-in widget:
 
 - **Protocol & message formats:** [`docs/discoverable-login.md`](docs/discoverable-login.md)
 - **Guides:** [kunji.cc/developers](https://kunji.cc/developers) · [Firebase end-to-end](https://kunji.cc/developers/firebase) · [try it live](https://kunji.cc/developers/try)
-- **Working reference RPs:** [`examples/kunji-login-demo/`](examples/kunji-login-demo) (Firebase) · [`examples/kunji-node-demo/`](examples/kunji-node-demo) (plain Node — no Firebase, no framework) · [`examples/kunji-relay-demo/`](examples/kunji-relay-demo) (local server + Firebase relay — real phone, no tunnel) · [`examples/kunji-selfhosted-demo/`](examples/kunji-selfhosted-demo) (own Firebase + on-prem worker on a dynamic IP)
+- **Working reference RPs:** [`examples/kunji-login-demo/`](examples/kunji-login-demo) (Firebase) · [`examples/kunji-node-demo/`](examples/kunji-node-demo) (plain Node — no Firebase, no framework) · [`examples/kunji-agent-demo/`](examples/kunji-agent-demo) (plain Node + agent logins — `POST /kunji/agent`) · [`examples/kunji-relay-demo/`](examples/kunji-relay-demo) (local server + Firebase relay — real phone, no tunnel) · [`examples/kunji-selfhosted-demo/`](examples/kunji-selfhosted-demo) (own Firebase + on-prem worker on a dynamic IP)
+
+### Let an agent sign in for you
+
+Beyond human login, kunji supports **agentic delegation**: a user authorizes an agent (an AI assistant, script, or service) to act for them at one app via a **scoped, expiring, revocable, holder-of-key capability** — the agent never receives the user's keys. See [`docs/agentic-delegation.md`](docs/agentic-delegation.md) and the [agents guide](https://kunji.cc/developers/agents). Run it end-to-end with [`examples/kunji-agent-demo/`](examples/kunji-agent-demo) (the RP) + [`examples/kunji-mcp/`](examples/kunji-mcp) (the MCP bridge for AI runtimes).
 
 ## Repository layout
 
@@ -57,7 +61,8 @@ landing/                 static marketing site + /developers + /security guides
   rp.js, rp.v1.js        built "Sign in with kunji" widget (source in widget/)
 widget/                  widget source; esbuild → landing/rp.js
 examples/                 reference relying parties: kunji-login-demo (Firebase), kunji-node-demo
-                          (plain Node), kunji-relay-demo (local + relay), kunji-selfhosted-demo
+                          (plain Node), kunji-agent-demo (plain Node + agent logins), kunji-relay-demo
+                          (local + relay), kunji-selfhosted-demo; kunji-mcp (MCP bridge for AI runtimes)
 docs/discoverable-login.md  the v2 discoverable-login protocol
 firestore.rules          Firestore security rules
 firebase.json            Hosting: app / landing / redirect targets
