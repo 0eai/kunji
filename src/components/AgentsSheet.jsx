@@ -23,6 +23,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
   const [agents, setAgents] = useState(null); // null = loading
   const [showAuthorize, setShowAuthorize] = useState(false);
   const [revoking, setRevoking] = useState('');
+  const [confirm, setConfirm] = useState(null); // agent pending revoke confirmation
 
   const refresh = useCallback(() => {
     listAgents(masterKey)
@@ -38,8 +39,10 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
       await revokeAgent(userId, masterKey, { jti: a.jti, audience: a.audience });
       showToast('Agent revoked.');
       setAgents((list) => (list || []).filter((x) => x.jti !== a.jti));
+      return true;
     } catch (e) {
       showToast('Could not revoke: ' + (e.message || e), 'error');
+      return false;
     } finally {
       setRevoking('');
     }
@@ -75,13 +78,12 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
                 </p>
               </div>
               <button
-                onClick={() => revoke(a)}
-                disabled={!!revoking}
-                className="shrink-0 inline-flex items-center gap-1 text-[13px] font-medium text-danger hover:opacity-80 disabled:opacity-40 transition-opacity"
+                onClick={() => setConfirm(a)}
+                className="shrink-0 inline-flex items-center gap-1 text-[13px] font-medium text-danger hover:opacity-80 transition-opacity"
                 title="Revoke"
               >
                 <Trash2 size={15} />
-                {revoking === a.jti ? 'Revoking…' : 'Revoke'}
+                Revoke
               </button>
             </div>
           ))}
@@ -101,6 +103,36 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
             refresh(); // a newly-authorized agent should appear in the list
           }}
         />
+      )}
+
+      {confirm && (
+        <Sheet onClose={() => !revoking && setConfirm(null)} z={70} labelledBy="revoke-title">
+          <div className="flex items-center gap-2.5 mb-3">
+            <Trash2 size={18} className="text-danger" />
+            <h2 id="revoke-title" className="text-lg font-semibold tracking-tight">
+              Revoke this agent?
+            </h2>
+          </div>
+          <p className="text-[14px] text-muted leading-relaxed mb-5">
+            It will no longer be able to act for you at{' '}
+            <span className="font-mono text-ink">{confirm.audience}</span> — you'd need to authorize a
+            new one. Apps that honor revocation reject it on its next attempt.
+          </p>
+          <div className="flex items-center justify-end gap-1">
+            <Btn variant="quiet" onClick={() => setConfirm(null)} disabled={!!revoking}>
+              Cancel
+            </Btn>
+            <Btn
+              variant="danger"
+              onClick={async () => {
+                if (await revoke(confirm)) setConfirm(null);
+              }}
+              disabled={!!revoking}
+            >
+              {revoking ? 'Revoking…' : 'Revoke'}
+            </Btn>
+          </div>
+        </Sheet>
       )}
     </Sheet>
   );
