@@ -8,10 +8,11 @@
  * wallet POSTs straight to /kunji/callback, and an agent POSTs straight to /kunji/agent.
  *
  * Endpoints (the agent endpoint is the only addition over kunji-node-demo):
- *   POST /api/session    → { sessionId, challenge, audience, callbackUrl, expiresAt }
+ *   POST /api/session    → { sessionId, challenge, audience, callbackUrl, expiresAt, code }
  *   POST /kunji/callback ← a HUMAN's signed assertion; runs §6 verification
  *   POST /kunji/agent    ← an AGENT's { sessionId, capability, agentProof }; capability + proof
  *   GET  /kunji/status?sessionId= → { status, sub, claims, scope, agent }
+ *   GET  /kunji/session?code=     → resolve a 6-digit OTP code → its pending session (rate-limited)
  *   GET  /*              → the static frontend (public/index.html)
  *
  * Swapping the Map for Postgres/Redis and `http` for Express is a 1:1 mapping.
@@ -32,10 +33,54 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const token = (n) => randomBytes(n).toString('base64url');
 
 // In-memory store. A real RP uses its own DB; the shape is the same.
-const sessions = new Map(); // sessionId → { challenge, audience, callbackUrl, status, sub, claims, scope, agent, expiresAt }
+const sessions = new Map(); // sessionId → { challenge, audience, callbackUrl, status, sub, claims, scope, agent, code, expiresAt }
+const codeToSession = new Map(); // 6-digit OTP code → sessionId (so the wallet can resolve by code)
 const sweep = () => {
   const now = Date.now();
-  for (const [id, s] of sessions) if (now > s.expiresAt + 5 * 60_000) sessions.delete(id);
+  for (const [id, s] of sessions) {
+    if (now > s.expiresAt + 5 * 60_000) {
+      sessions.delete(id);
+      if (s.code) codeToSession.delete(s.code);
+    }
+  }
+};
+
+// A 6-digit OTP code unique among active sessions (so the wallet's "Sign in with a code" works
+// without scanning). The code space is small — the lookup below is rate-limited. Demo-grade; see
+// examples/kunji-login-demo + the S5 audit note for the production lens (per-code attempt cap, etc.).
+const allocCode = () => {
+  for (let i = 0; i < 12; i++) {
+    const code = String(100000 + (randomBytes(4).readUInt32BE(0) % 900000)); // always 6 digits
+    if (!codeToSession.has(code)) return code;
+  }
+  return null; // give up — astronomically unlikely; the QR still works
+};
+
+// In-memory rate limit for the code lookup: per-IP sliding window + a global failed-lookup cap.
+const LOOKUP_MAX = 10;
+const LOOKUP_WINDOW = 60_000;
+const ipHits = new Map(); // ip → { start, count }
+let globalFails = { start: 0, count: 0 };
+const clientIp = (req) =>
+  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+const rateLimited = (ip) => {
+  const now = Date.now();
+  const d = ipHits.get(ip);
+  if (!d || now - d.start > LOOKUP_WINDOW) {
+    ipHits.set(ip, { start: now, count: 1 });
+    return false;
+  }
+  if (d.count >= LOOKUP_MAX) return true;
+  d.count += 1;
+  return false;
+};
+const globalFailExceeded = () => {
+  if (Date.now() - globalFails.start > LOOKUP_WINDOW) globalFails = { start: Date.now(), count: 0 };
+  return globalFails.count >= 60;
+};
+const bumpGlobalFail = () => {
+  if (Date.now() - globalFails.start > LOOKUP_WINDOW) globalFails = { start: Date.now(), count: 0 };
+  globalFails.count += 1;
 };
 
 // Operator revocation denylist (a capability jti the RP refuses). Mirrors the Firestore
@@ -116,6 +161,7 @@ const handler = async (req, res) => {
     const { audience, callbackUrl } = originOf(req);
     const sessionId = token(16);
     const challenge = token(32);
+    const code = allocCode(); // 6-digit OTP alternative to scanning
     const expiresAt = Date.now() + SESSION_TTL_MS;
     sessions.set(sessionId, {
       challenge,
@@ -126,9 +172,11 @@ const handler = async (req, res) => {
       claims: null,
       scope: null,
       agent: false,
+      code,
       expiresAt,
     });
-    return json(res, 200, { sessionId, challenge, audience, callbackUrl, expiresAt });
+    if (code) codeToSession.set(code, sessionId);
+    return json(res, 200, { sessionId, challenge, audience, callbackUrl, expiresAt, code });
   }
 
   // 2a. A HUMAN's wallet POSTs the signed assertion here. Verify + consume atomically.
@@ -179,6 +227,31 @@ const handler = async (req, res) => {
     const s = sessions.get(url.searchParams.get('sessionId') || '');
     if (!s) return json(res, 404, { error: 'unknown_session' });
     return json(res, 200, { status: s.status, sub: s.sub, claims: s.claims, scope: s.scope, agent: s.agent });
+  }
+
+  // 3b. Resolve a 6-digit OTP code → its pending session, so the wallet can sign without scanning
+  // (the wallet's lookupSessionByCode → GET https://{audience}/kunji/session?code=). Returns the
+  // same fields parseQRPayload yields. Rate-limited; reject malformed input before the limiter.
+  if (req.method === 'GET' && path === '/kunji/session') {
+    const code = url.searchParams.get('code') || '';
+    if (!/^\d{6}$/.test(code)) return json(res, 400, { error: 'bad_code' });
+    if (rateLimited(clientIp(req)) || globalFailExceeded())
+      return json(res, 429, { error: 'rate_limited' });
+    sweep();
+    const sessionId = codeToSession.get(code);
+    const s = sessionId && sessions.get(sessionId);
+    if (!s || s.status !== 'pending') {
+      bumpGlobalFail();
+      return json(res, 404, { error: 'invalid_code' });
+    }
+    if (Date.now() > s.expiresAt) return json(res, 410, { error: 'expired_code' });
+    return json(res, 200, {
+      sessionId,
+      challenge: s.challenge,
+      audience: s.audience,
+      callbackUrl: s.callbackUrl,
+      expiresAt: s.expiresAt,
+    });
   }
 
   // 4. Static frontend + its externalized script.

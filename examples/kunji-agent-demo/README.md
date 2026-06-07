@@ -50,6 +50,12 @@ TLS_KEY=./key.pem TLS_CERT=./cert.pem npm start
 Open `http://localhost:3000`, click **Sign in with kunji**, and approve in your wallet. The page
 shows your per-app identity (the default `kunji.handle(sub)` name + icon, or a profile you shared).
 
+The dialog offers **QR**, an **OTP** code (type it into the wallet), and a same-device **Sign in with
+kunji** button. Note: the phone-facing paths (QR scan + OTP) only work end-to-end when the wallet can
+reach this RP — i.e. when it's served over **HTTPS at a real host** (see §1's mkcert/tunnel steps).
+On plain `http://localhost` the production wallet can't reach it, so use the **same-device button** or
+the agent path below.
+
 ## 3. Agent login — two ways
 
 Either way, the capability's **`audience` must equal this RP's hostname** (`localhost` by default;
