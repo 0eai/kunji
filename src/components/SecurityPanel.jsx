@@ -1,9 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   KeyRound,
-  Copy,
-  CheckCircle2,
-  AlertTriangle,
   Smartphone,
   Lock,
   LogOut,
@@ -11,34 +8,25 @@ import {
   ChevronRight,
   UserCircle,
   Bot,
-  Download,
 } from 'lucide-react';
-import {
-  exportRecoveryKey,
-  resetUserVault,
-  changePasskey,
-  buildRecoveryEnvelope,
-  recoveryFileName,
-} from '../services/vault';
-import { listenToActivityLog, logActivity } from '../services/activityLog';
-import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
+import { resetUserVault } from '../services/vault';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
-import { activityIcon, TYPE_COLOR, relTime } from '../lib/activityFormat';
 import InstallButton from './InstallButton';
-import ProfileSettings from './ProfileSettings';
 import IssueLinkSheet from './IssueLinkSheet';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
+import ChangePasskeySheet from './ChangePasskeySheet';
+import ProfileSheet from './ProfileSheet';
+import RecoveryKeySheet from './RecoveryKeySheet';
+import ActivitySheet from './ActivitySheet';
 import Sheet from './ui/Sheet';
-import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
+import { SectionLabel, Field, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
-const MIN_PASSPHRASE = 12;
-const CLEAR_MS = 60000;
 const SIGNOUT_CONFIRM = 'SIGN OUT';
 
 // Navigable hairline row that expands in place. Optional `count` shows a badge so you
-// can see there's content (e.g. activity) without expanding.
+// can see there's content without expanding.
 const Row = ({ icon: Icon, title, count, open, onToggle, children }) => (
   <div>
     <button
@@ -76,12 +64,6 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
   const [theme, setTheme] = useState(getThemePref());
 
-  const [events, setEvents] = useState([]);
-  useEffect(() => {
-    const unsub = listenToActivityLog(userId, setEvents, 30, cryptoKey);
-    return unsub;
-  }, [userId, cryptoKey]);
-
   const [showSignOut, setShowSignOut] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [signingOut, setSigningOut] = useState(false);
@@ -99,109 +81,12 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     }
   };
 
-  const [passkey, setPasskey] = useState('');
-  const [passphrase, setPassphrase] = useState('');
-  const [recoveryKey, setRecoveryKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const clearTimer = useRef(null);
-
   const [showIssue, setShowIssue] = useState(false); // issuer sheet (show QR + code to the new device)
   const [showAgent, setShowAgent] = useState(false); // authorize-an-agent (capability) sheet
-
-  const [curKey, setCurKey] = useState('');
-  const [newKey, setNewKey] = useState('');
-  const [newKey2, setNewKey2] = useState('');
-  const [changing, setChanging] = useState(false);
-
-  useEffect(() => () => clearTimeout(clearTimer.current), []);
-
-  const handleChangePasskey = async () => {
-    if (newKey.length < MIN_PASSKEY_LENGTH) {
-      showToast(`New passkey must be at least ${MIN_PASSKEY_LENGTH} characters.`, 'error');
-      return;
-    }
-    if (getStrength(newKey).label === 'Weak') {
-      showToast('Choose a stronger passkey.', 'error');
-      return;
-    }
-    if (newKey !== newKey2) {
-      showToast('New passkeys do not match.', 'error');
-      return;
-    }
-    setChanging(true);
-    try {
-      await changePasskey(userId, cryptoKey, curKey, newKey);
-      logActivity(userId, 'Passkey changed', 'success', 'Lock', cryptoKey);
-      showToast('Passkey updated.');
-      setCurKey('');
-      setNewKey('');
-      setNewKey2('');
-      setOpen((o) => ({ ...o, changekey: false }));
-    } catch (e) {
-      showToast(e.message || 'Could not change passkey.', 'error');
-    } finally {
-      setChanging(false);
-    }
-  };
-
-  const handleGenerate = async () => {
-    // Passkey correctness is verified by decryption inside exportRecoveryKey, so this is just a
-    // non-empty guard — don't length-gate it (a legacy passkey may predate MIN_PASSKEY_LENGTH).
-    // The recovery passphrase is the lock on a downloadable, offline-attackable file, so it gets
-    // the higher MIN_PASSPHRASE floor.
-    if (!passkey) {
-      showToast('Enter your current passkey.', 'error');
-      return;
-    }
-    if (passphrase.length < MIN_PASSPHRASE) {
-      showToast(`Recovery passphrase must be at least ${MIN_PASSPHRASE} characters.`, 'error');
-      return;
-    }
-    setBusy(true);
-    try {
-      const key = await exportRecoveryKey(userId, passkey, passphrase);
-      setRecoveryKey(key);
-      setPasskey('');
-      setPassphrase('');
-      clearTimeout(clearTimer.current);
-      clearTimer.current = setTimeout(() => setRecoveryKey(''), CLEAR_MS);
-    } catch (e) {
-      showToast(e.message || 'Failed to generate recovery key.', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copyKey = () => {
-    navigator.clipboard.writeText(recoveryKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Download the recovery blob as a small .kunji file. Web Share first (iOS Safari ignores
-  // <a download> and opens inline; the share sheet routes to "Save to Files"), anchor fallback.
-  const downloadKey = async () => {
-    const file = new File([buildRecoveryEnvelope(recoveryKey)], recoveryFileName(new Date()), {
-      type: 'application/octet-stream',
-    });
-    try {
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file] });
-        return;
-      }
-    } catch {
-      // user cancelled the share sheet, or share failed — fall through to the download anchor
-    }
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
+  const [showChangeKey, setShowChangeKey] = useState(false); // change-passkey sheet
+  const [showProfile, setShowProfile] = useState(false); // edit-profile sheet
+  const [showRecovery, setShowRecovery] = useState(false); // export-recovery-key sheet
+  const [showActivity, setShowActivity] = useState(false); // recent-activity sheet
 
   return (
     <Sheet onClose={onClose} labelledBy="security-title">
@@ -217,7 +102,13 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           open={open.profile}
           onToggle={() => toggle('profile')}
         >
-          <ProfileSettings userId={userId} cryptoKey={cryptoKey} />
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Set an optional custom name and photo to share, per app, when one asks. Off by default —
+            apps otherwise see a random, unlinkable identity.
+          </p>
+          <Btn variant="primary" onClick={() => setShowProfile(true)} className="w-full">
+            <UserCircle size={16} /> Edit profile
+          </Btn>
         </Row>
 
         <Row
@@ -230,46 +121,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             Set a new passkey for this device. Your recovery key and any other linked devices keep
             their own passkeys — only this device changes.
           </p>
-          <div className="space-y-4">
-            <PasswordField
-              label="Current passkey"
-              value={curKey}
-              onChange={(e) => setCurKey(e.target.value)}
-            />
-            <div>
-              <PasswordField
-                label={`New passkey (min ${MIN_PASSKEY_LENGTH})`}
-                value={newKey}
-                onChange={(e) => setNewKey(e.target.value)}
-              />
-              {newKey && (
-                <div className="mt-2">
-                  <div className="h-1 rounded-full bg-line overflow-hidden">
-                    <div
-                      className={`h-full ${getStrength(newKey).color} transition-all`}
-                      style={{ width: getStrength(newKey).width }}
-                    />
-                  </div>
-                  <p className="text-[11px] text-muted mt-1">{getStrength(newKey).label}</p>
-                </div>
-              )}
-            </div>
-            <PasswordField
-              label="Confirm new passkey"
-              value={newKey2}
-              onChange={(e) => setNewKey2(e.target.value)}
-            />
-            <div className="pt-1">
-              <Btn
-                variant="primary"
-                onClick={handleChangePasskey}
-                disabled={changing || !curKey || !newKey || !newKey2}
-                className="w-full"
-              >
-                {changing ? 'Updating…' : 'Update passkey'}
-              </Btn>
-            </div>
-          </div>
+          <Btn variant="primary" onClick={() => setShowChangeKey(true)} className="w-full">
+            <Lock size={16} /> Change passkey
+          </Btn>
         </Row>
 
         <Row
@@ -312,98 +166,23 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             A cold backup that restores your vault if you lose every device. Encrypted with a
             separate passphrase — store the key and passphrase apart.
           </p>
-          {!recoveryKey ? (
-            <div className="space-y-4">
-              <PasswordField
-                label="Current passkey"
-                value={passkey}
-                onChange={(e) => setPasskey(e.target.value)}
-              />
-              <div>
-                <PasswordField
-                  label={`Recovery passphrase (min ${MIN_PASSPHRASE})`}
-                  value={passphrase}
-                  onChange={(e) => setPassphrase(e.target.value)}
-                />
-                {passphrase && (
-                  <div className="mt-2">
-                    <div className="h-1 rounded-full bg-line overflow-hidden">
-                      <div
-                        className={`h-full ${getStrength(passphrase).color} transition-all`}
-                        style={{ width: getStrength(passphrase).width }}
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted mt-1">{getStrength(passphrase).label}</p>
-                  </div>
-                )}
-              </div>
-              <div className="pt-1">
-                <Btn variant="primary" onClick={handleGenerate} disabled={busy} className="w-full">
-                  {busy ? 'Generating…' : 'Generate recovery key'}
-                </Btn>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 text-[13px] text-accent">
-                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                <p>
-                  Save this now — the on-screen key clears in 60s. A downloaded file persists, so
-                  store it somewhere safe: anyone with the file <em>and</em> your recovery passphrase
-                  can restore your vault. Keep the two apart.
-                </p>
-              </div>
-              <div className="flex items-start gap-3 border-y border-line py-3.5">
-                <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed tabular">
-                  {recoveryKey}
-                </code>
-                <button
-                  onClick={copyKey}
-                  className="shrink-0 text-muted hover:text-ink transition-colors"
-                  title="Copy"
-                >
-                  {copied ? (
-                    <CheckCircle2 size={15} className="text-success" />
-                  ) : (
-                    <Copy size={15} />
-                  )}
-                </button>
-              </div>
-              <Btn variant="primary" onClick={downloadKey} className="w-full">
-                <Download size={16} /> Download file
-              </Btn>
-              <Btn variant="quiet" onClick={() => setRecoveryKey('')} className="w-full">
-                Done
-              </Btn>
-            </div>
-          )}
+          <Btn variant="primary" onClick={() => setShowRecovery(true)} className="w-full">
+            <KeyRound size={16} /> Export recovery key
+          </Btn>
         </Row>
 
         <Row
           icon={Activity}
           title="Recent activity"
-          count={events.length || null}
           open={open.activity}
           onToggle={() => toggle('activity')}
         >
-          {events.length === 0 ? (
-            <p className="text-[13px] text-faint">No activity on this device yet.</p>
-          ) : (
-            <div className="divide-y divide-line border-t border-line max-h-64 overflow-y-auto">
-              {events.map((e) => {
-                const Icon = activityIcon(e.icon);
-                return (
-                  <div key={e.id} className="flex items-center gap-3 py-3">
-                    <Icon size={14} className={`${TYPE_COLOR[e.type] || 'text-muted'} shrink-0`} />
-                    <span className="text-[13px] text-ink flex-1 truncate">{e.action}</span>
-                    <span className="text-[11px] font-mono text-faint shrink-0 tabular">
-                      {relTime(e.createdAt)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Sign-ins, approvals, and security events recorded on this device.
+          </p>
+          <Btn variant="primary" onClick={() => setShowActivity(true)} className="w-full">
+            <Activity size={16} /> View activity
+          </Btn>
         </Row>
       </div>
 
@@ -467,6 +246,30 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           userId={userId}
           masterKey={cryptoKey}
           onClose={() => setShowAgent(false)}
+        />
+      )}
+
+      {showChangeKey && (
+        <ChangePasskeySheet
+          userId={userId}
+          masterKey={cryptoKey}
+          onClose={() => setShowChangeKey(false)}
+        />
+      )}
+
+      {showProfile && (
+        <ProfileSheet userId={userId} cryptoKey={cryptoKey} onClose={() => setShowProfile(false)} />
+      )}
+
+      {showRecovery && (
+        <RecoveryKeySheet userId={userId} onClose={() => setShowRecovery(false)} />
+      )}
+
+      {showActivity && (
+        <ActivitySheet
+          userId={userId}
+          cryptoKey={cryptoKey}
+          onClose={() => setShowActivity(false)}
         />
       )}
 

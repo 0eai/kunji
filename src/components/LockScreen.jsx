@@ -61,6 +61,8 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   const [isLinking, setIsLinking] = useState(false);
   const [recoveryInput, setRecoveryInput] = useState('');
   const [recoveryPassphrase, setRecoveryPassphrase] = useState('');
+  const [recoveryStep, setRecoveryStep] = useState('key'); // 'key' (verify) → 'passkey' (re-wrap)
+  const recoveredRef = useRef(null); // { masterKeyJWK, masterKey } carried between the two steps
 
   const [showReset, setShowReset] = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
@@ -128,15 +130,102 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
     }
   };
 
+  // Record a failed unlock/recovery attempt: bump the (soft, client-side) lockout counter and
+  // surface the cooldown. Shared by the unlock catch and the recovery-step-1 verifier.
+  const registerFailure = async (failMessage = 'Incorrect Passkey') => {
+    setIsDeriving(false);
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      const currentData = userDoc.exists() ? userDoc.data() : {};
+      const newFailCount = (currentData.failedAttempts || 0) + 1;
+      const delay = getDelay(newFailCount);
+      const newLockoutUntil = delay > 0 ? Date.now() + delay * 1000 : 0;
+      await setDoc(
+        userDocRef,
+        { failedAttempts: newFailCount, lockoutUntil: newLockoutUntil },
+        { merge: true },
+      );
+      setFailCount(newFailCount);
+      if (delay > 0) {
+        setCooldownEnd(newLockoutUntil);
+        setStatus(`Too many attempts. Wait ${delay}s`);
+      } else setStatus(failMessage);
+    } catch {
+      setStatus(failMessage);
+    }
+    setErrorShake(true);
+    logActivity(user.uid, 'Failed Passkey Attempt', 'danger', 'AlertTriangle');
+    setTimeout(() => setErrorShake(false), 500);
+  };
+
+  // Recovery step 1: decrypt the recovery key/file (and validate it against this vault) BEFORE
+  // asking for a new passkey, so a wrong key/passphrase fails here. Stashes the master key for step 2.
+  const verifyRecovery = async () => {
+    setIsDeriving(true);
+    setErrorShake(false);
+    setStatus('Verifying recovery key...');
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      const userData = userDoc.exists() ? userDoc.data() : {};
+      if (userData.lockoutUntil && userData.lockoutUntil > Date.now()) {
+        const remaining = Math.ceil((userData.lockoutUntil - Date.now()) / 1000);
+        setCooldownEnd(userData.lockoutUntil);
+        setStatus(`Too many attempts. Wait ${remaining}s`);
+        setIsDeriving(false);
+        return;
+      }
+      let masterKeyJWK;
+      try {
+        const trimmed = recoveryInput.trim();
+        if (trimmed.startsWith('v2:')) {
+          const payload = JSON.parse(atob(trimmed.slice(3)));
+          // Recovery blobs carry their own Argon2id params (legacy if absent).
+          const { salt: rSalt, argon2: rArgon, ...encryptedJWK } = payload;
+          const rParams = rArgon
+            ? { memorySize: rArgon.m, iterations: rArgon.t, parallelism: rArgon.p }
+            : ARGON2_LEGACY;
+          const recoveryWrapperKey = await deriveKeyArgon2id(recoveryPassphrase, rSalt, rParams);
+          masterKeyJWK = await decryptData(encryptedJWK, recoveryWrapperKey);
+          if (!masterKeyJWK) throw new Error('INVALID_RECOVERY_PASSPHRASE');
+        } else {
+          masterKeyJWK = JSON.parse(atob(trimmed));
+        }
+      } catch (e) {
+        if (e.message === 'INVALID_RECOVERY_PASSPHRASE') throw e;
+        throw new Error('INVALID_RECOVERY_KEY');
+      }
+      const masterKey = await importMasterKey(masterKeyJWK);
+      if (userData.encryptedValidator) {
+        const check = await decryptData(userData.encryptedValidator, masterKey);
+        if (!check || check.check !== 'VALID') throw new Error('INTEGRITY_FAIL');
+      }
+      recoveredRef.current = { masterKeyJWK, masterKey };
+      setRecoveryStep('passkey');
+      setStatus('');
+      setIsDeriving(false);
+    } catch {
+      await registerFailure('Incorrect recovery key or passphrase');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (cooldownRemaining > 0) return;
+
+    // Recovery is two steps: verify the recovery key/passphrase first, then set a new passkey.
+    if (isRecovering && recoveryStep === 'key') {
+      verifyRecovery();
+      return;
+    }
+
     if (keyInput.length < MIN_PASSKEY_LENGTH) {
       setStatus(`Passkey must be at least ${MIN_PASSKEY_LENGTH} characters`);
       setErrorShake(true);
       setTimeout(() => setErrorShake(false), 500);
       return;
     }
-    if (cooldownRemaining > 0) return;
 
     setIsDeriving(true);
     setErrorShake(false);
@@ -200,8 +289,14 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         setFailCount(0);
         onUnlock(masterKey);
       }
-      // Recovery
+      // Recovery — step 2: re-wrap the master key (already decrypted + validated in step 1,
+      // verifyRecovery) under the new passkey. recoveredRef is guaranteed set when we reach here.
       else if (isRecovering) {
+        if (!recoveredRef.current) {
+          setRecoveryStep('key');
+          setIsDeriving(false);
+          return;
+        }
         setStatus('Recovering vault...');
         if (keyInput !== confirmKeyInput) {
           setStatus('New passkeys do not match');
@@ -217,31 +312,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           setIsDeriving(false);
           return;
         }
-        let masterKeyJWK;
-        try {
-          const trimmed = recoveryInput.trim();
-          if (trimmed.startsWith('v2:')) {
-            const payload = JSON.parse(atob(trimmed.slice(3)));
-            // Recovery blobs carry their own Argon2id params (legacy if absent).
-            const { salt: rSalt, argon2: rArgon, ...encryptedJWK } = payload;
-            const rParams = rArgon
-              ? { memorySize: rArgon.m, iterations: rArgon.t, parallelism: rArgon.p }
-              : ARGON2_LEGACY;
-            const recoveryWrapperKey = await deriveKeyArgon2id(recoveryPassphrase, rSalt, rParams);
-            masterKeyJWK = await decryptData(encryptedJWK, recoveryWrapperKey);
-            if (!masterKeyJWK) throw new Error('INVALID_RECOVERY_PASSPHRASE');
-          } else {
-            masterKeyJWK = JSON.parse(atob(trimmed));
-          }
-        } catch (e) {
-          if (e.message === 'INVALID_RECOVERY_PASSPHRASE') throw e;
-          throw new Error('INVALID_RECOVERY_KEY');
-        }
-        const masterKey = await importMasterKey(masterKeyJWK);
-        if (userData.encryptedValidator) {
-          const check = await decryptData(userData.encryptedValidator, masterKey);
-          if (!check || check.check !== 'VALID') throw new Error('INTEGRITY_FAIL');
-        }
+        const { masterKeyJWK, masterKey } = recoveredRef.current;
         setStatus('Securing with new passkey...');
         const newSalt = generateSalt();
         const newWrapperKey = await deriveKeyArgon2id(keyInput, newSalt); // V2
@@ -258,6 +329,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           },
           { merge: true },
         );
+        recoveredRef.current = null;
         setFailCount(0);
         onUnlock(masterKey);
       }
@@ -308,34 +380,26 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         onUnlock(masterKey);
       }
     } catch {
-      setIsDeriving(false);
-      try {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-        const currentData = userDoc.exists() ? userDoc.data() : {};
-        const newFailCount = (currentData.failedAttempts || 0) + 1;
-        const delay = getDelay(newFailCount);
-        const newLockoutUntil = delay > 0 ? Date.now() + delay * 1000 : 0;
-        await setDoc(
-          userDocRef,
-          { failedAttempts: newFailCount, lockoutUntil: newLockoutUntil },
-          { merge: true },
-        );
-        setFailCount(newFailCount);
-        if (delay > 0) {
-          setCooldownEnd(newLockoutUntil);
-          setStatus(`Too many attempts. Wait ${delay}s`);
-        } else setStatus('Incorrect Passkey');
-      } catch {
-        setStatus('Incorrect Passkey');
-      }
-      setErrorShake(true);
-      logActivity(user.uid, 'Failed Passkey Attempt', 'danger', 'AlertTriangle');
-      setTimeout(() => setErrorShake(false), 500);
+      await registerFailure();
     }
   };
 
   const strength = isNewUser || isRecovering ? getStrength(keyInput) : null;
+
+  // Recovery step 1 is "ready" once there's a key and (for v2 keys) a passphrase.
+  const onRecoveryKeyStep = isRecovering && recoveryStep === 'key';
+  const recoveryReady =
+    recoveryInput.trim().length > 0 &&
+    (!recoveryInput.trim().startsWith('v2:') || recoveryPassphrase.length > 0);
+
+  // Step 2 → back to step 1: discard the verified key so a changed key is re-verified.
+  const backToRecoveryKeyStep = () => {
+    setRecoveryStep('key');
+    recoveredRef.current = null;
+    setKeyInput('');
+    setConfirmKeyInput('');
+    setStatus('');
+  };
 
   if (isLinking) {
     return (
@@ -346,7 +410,10 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
   }
 
   const isError =
-    status === 'Incorrect Passkey' || status.startsWith('Too many') || status === 'Wiping data...';
+    status === 'Incorrect Passkey' ||
+    status === 'Incorrect recovery key or passphrase' ||
+    status.startsWith('Too many') ||
+    status === 'Wiping data...';
   const isWarn =
     status.startsWith('Passkey must') ||
     status.startsWith('New passkey') ||
@@ -361,7 +428,9 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
     (isNewUser
       ? `Choose a passkey to encrypt your identity vault (min ${MIN_PASSKEY_LENGTH} characters).`
       : isRecovering
-        ? 'Paste your recovery key and set a new passkey.'
+        ? recoveryStep === 'key'
+          ? 'Step 1 of 2 · enter your recovery key or file.'
+          : 'Step 2 of 2 · choose a new passkey for this device.'
         : 'Enter your passkey to unlock your identity vault.');
 
   return (
@@ -390,7 +459,8 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isRecovering && (
+          {/* Recovery step 1 — provide the recovery key (file or paste) + its passphrase. */}
+          {isRecovering && recoveryStep === 'key' && (
             <>
               <label className="flex items-center justify-center gap-2 w-full py-3 border border-dashed border-line rounded-xl text-sm font-medium text-muted hover:text-ink hover:border-accent/60 cursor-pointer transition-colors">
                 <Upload size={15} />
@@ -426,19 +496,22 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             </>
           )}
 
-          <PasswordField
-            label={isNewUser ? 'Choose a passkey' : isRecovering ? 'New passkey' : 'Passkey'}
-            value={keyInput}
-            onChange={(e) => {
-              setKeyInput(e.target.value);
-              if (status && status !== 'Wiping data...') setStatus('');
-            }}
-            onKeyDown={handleKeyDown}
-            className="text-lg"
-            autoFocus
-          />
+          {/* Passkey field — for unlock, new-vault, and recovery step 2 (hidden in recovery step 1). */}
+          {(!isRecovering || recoveryStep === 'passkey') && (
+            <PasswordField
+              label={isNewUser ? 'Choose a passkey' : isRecovering ? 'New passkey' : 'Passkey'}
+              value={keyInput}
+              onChange={(e) => {
+                setKeyInput(e.target.value);
+                if (status && status !== 'Wiping data...') setStatus('');
+              }}
+              onKeyDown={handleKeyDown}
+              className="text-lg"
+              autoFocus
+            />
+          )}
 
-          {(isNewUser || isRecovering) && (
+          {(isNewUser || (isRecovering && recoveryStep === 'passkey')) && (
             <PasswordField
               label="Confirm passkey"
               value={confirmKeyInput}
@@ -484,16 +557,28 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
 
             <Btn
               type="submit"
-              disabled={isDeriving || cooldownRemaining > 0}
+              disabled={
+                isDeriving || cooldownRemaining > 0 || (onRecoveryKeyStep && !recoveryReady)
+              }
               className="w-full mt-1"
             >
               {isDeriving ? (
                 <>
                   <Spinner />{' '}
-                  {isNewUser ? 'Creating…' : isRecovering ? 'Recovering…' : 'Unlocking…'}
+                  {onRecoveryKeyStep
+                    ? 'Verifying…'
+                    : isNewUser
+                      ? 'Creating…'
+                      : isRecovering
+                        ? 'Recovering…'
+                        : 'Unlocking…'}
                 </>
               ) : cooldownRemaining > 0 ? (
                 <span className="tabular">Locked · {cooldownRemaining}s</span>
+              ) : onRecoveryKeyStep ? (
+                <>
+                  Continue <ArrowRight size={16} strokeWidth={1.75} />
+                </>
               ) : isNewUser ? (
                 'Create vault'
               ) : isRecovering ? (
@@ -504,6 +589,17 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                 </>
               )}
             </Btn>
+
+            {isRecovering && recoveryStep === 'passkey' && (
+              <button
+                type="button"
+                onClick={backToRecoveryKeyStep}
+                disabled={isDeriving}
+                className="mt-3 w-full text-center text-sm font-medium text-muted hover:text-accent transition-colors disabled:opacity-40"
+              >
+                Back to recovery key
+              </button>
+            )}
           </div>
         </form>
 
@@ -533,6 +629,8 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                 setConfirmKeyInput('');
                 setRecoveryInput('');
                 setRecoveryPassphrase('');
+                setRecoveryStep('key');
+                recoveredRef.current = null;
               }}
               className="text-muted hover:text-accent transition-colors font-medium"
             >
