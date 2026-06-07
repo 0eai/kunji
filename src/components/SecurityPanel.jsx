@@ -11,8 +11,15 @@ import {
   ChevronRight,
   UserCircle,
   Bot,
+  Download,
 } from 'lucide-react';
-import { exportRecoveryKey, resetUserVault, changePasskey } from '../services/vault';
+import {
+  exportRecoveryKey,
+  resetUserVault,
+  changePasskey,
+  buildRecoveryEnvelope,
+  recoveryFileName,
+} from '../services/vault';
 import { listenToActivityLog, logActivity } from '../services/activityLog';
 import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { signOutDevice } from '../lib/firebase';
@@ -26,7 +33,7 @@ import Sheet from './ui/Sheet';
 import { SectionLabel, Field, PasswordField, Btn } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
-const MIN_PASSPHRASE = 8;
+const MIN_PASSPHRASE = 12;
 const CLEAR_MS = 60000;
 const SIGNOUT_CONFIRM = 'SIGN OUT';
 
@@ -139,8 +146,16 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   };
 
   const handleGenerate = async () => {
-    if (passkey.length < MIN_PASSPHRASE || passphrase.length < MIN_PASSPHRASE) {
-      showToast('Passkey and recovery passphrase must be at least 8 characters.', 'error');
+    // Passkey correctness is verified by decryption inside exportRecoveryKey, so this is just a
+    // non-empty guard — don't length-gate it (a legacy passkey may predate MIN_PASSKEY_LENGTH).
+    // The recovery passphrase is the lock on a downloadable, offline-attackable file, so it gets
+    // the higher MIN_PASSPHRASE floor.
+    if (!passkey) {
+      showToast('Enter your current passkey.', 'error');
+      return;
+    }
+    if (passphrase.length < MIN_PASSPHRASE) {
+      showToast(`Recovery passphrase must be at least ${MIN_PASSPHRASE} characters.`, 'error');
       return;
     }
     setBusy(true);
@@ -162,6 +177,30 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     navigator.clipboard.writeText(recoveryKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Download the recovery blob as a small .kunji file. Web Share first (iOS Safari ignores
+  // <a download> and opens inline; the share sheet routes to "Save to Files"), anchor fallback.
+  const downloadKey = async () => {
+    const file = new File([buildRecoveryEnvelope(recoveryKey)], recoveryFileName(new Date()), {
+      type: 'application/octet-stream',
+    });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    } catch {
+      // user cancelled the share sheet, or share failed — fall through to the download anchor
+    }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -280,11 +319,24 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
                 value={passkey}
                 onChange={(e) => setPasskey(e.target.value)}
               />
-              <PasswordField
-                label="Recovery passphrase (min 8)"
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-              />
+              <div>
+                <PasswordField
+                  label={`Recovery passphrase (min ${MIN_PASSPHRASE})`}
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                />
+                {passphrase && (
+                  <div className="mt-2">
+                    <div className="h-1 rounded-full bg-line overflow-hidden">
+                      <div
+                        className={`h-full ${getStrength(passphrase).color} transition-all`}
+                        style={{ width: getStrength(passphrase).width }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted mt-1">{getStrength(passphrase).label}</p>
+                  </div>
+                )}
+              </div>
               <div className="pt-1">
                 <Btn variant="primary" onClick={handleGenerate} disabled={busy} className="w-full">
                   {busy ? 'Generating…' : 'Generate recovery key'}
@@ -296,8 +348,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
               <div className="flex items-start gap-2 text-[13px] text-accent">
                 <AlertTriangle size={15} className="mt-0.5 shrink-0" />
                 <p>
-                  Save this now — it clears in 60s. You also need your recovery passphrase to use
-                  it. Store them separately.
+                  Save this now — the on-screen key clears in 60s. A downloaded file persists, so
+                  store it somewhere safe: anyone with the file <em>and</em> your recovery passphrase
+                  can restore your vault. Keep the two apart.
                 </p>
               </div>
               <div className="flex items-start gap-3 border-y border-line py-3.5">
@@ -316,6 +369,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
                   )}
                 </button>
               </div>
+              <Btn variant="primary" onClick={downloadKey} className="w-full">
+                <Download size={16} /> Download file
+              </Btn>
               <Btn variant="quiet" onClick={() => setRecoveryKey('')} className="w-full">
                 Done
               </Btn>

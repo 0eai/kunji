@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { Key, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Key, AlertTriangle, ArrowRight, Upload } from 'lucide-react';
 import { db } from '../lib/firebase';
 import {
   deriveKeyFromPasskey,
@@ -16,7 +16,7 @@ import {
   argon2ParamsFromDoc,
   argon2DocFields,
 } from '../lib/crypto';
-import { resetUserVault } from '../services/vault';
+import { resetUserVault, extractRecoveryKey } from '../services/vault';
 import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
@@ -64,6 +64,21 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
 
   const [showReset, setShowReset] = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
+
+  // Read a downloaded .kunji recovery file and drop its `v2:` string into the textarea, which
+  // reveals the passphrase field and feeds the existing v2 parse path in handleSubmit.
+  const handleRecoveryFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file after an error
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setRecoveryInput(extractRecoveryKey(text));
+      setStatus('');
+    } catch {
+      setStatus('Unrecognized recovery file.');
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -377,6 +392,17 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRecovering && (
             <>
+              <label className="flex items-center justify-center gap-2 w-full py-3 border border-dashed border-line rounded-xl text-sm font-medium text-muted hover:text-ink hover:border-accent/60 cursor-pointer transition-colors">
+                <Upload size={15} />
+                Choose recovery file
+                <input
+                  type="file"
+                  accept=".kunji,.json,.txt,application/octet-stream,application/json,text/plain"
+                  onChange={handleRecoveryFile}
+                  className="hidden"
+                />
+              </label>
+              <p className="text-[11px] text-faint text-center -mt-1">or paste the key below</p>
               <textarea
                 value={recoveryInput}
                 onChange={(e) => {
@@ -385,7 +411,6 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                 }}
                 placeholder="Paste your recovery key…"
                 className="w-full h-24 bg-transparent border-0 border-b border-line rounded-none px-0 py-3 text-ink placeholder:text-faint outline-none focus:border-accent font-mono text-xs resize-none transition-colors"
-                required
               />
               {recoveryInput.trim().startsWith('v2:') && (
                 <PasswordField

@@ -126,3 +126,39 @@ export const exportRecoveryKey = async (userId, passkey, recoveryPassphrase) => 
     )
   );
 };
+
+/* ── Recovery file packaging ──────────────────────────────────────────────
+ * Wrap the `v2:` recovery string in a small kunji-recognizable JSON envelope so
+ * it can be downloaded as a file and re-imported. The envelope holds NO
+ * identifiers (no sub/vaultId/label) — only the format tag and the already-
+ * encrypted `v2:` string, which leaks nothing on its own. No crypto here:
+ * the file is exactly as strong as the recovery passphrase that locked the v2 blob.
+ */
+export const RECOVERY_FILE_FORMAT = 'kunji-recovery';
+
+export const buildRecoveryEnvelope = (recoveryKey) =>
+  JSON.stringify({ format: RECOVERY_FILE_FORMAT, v: 2, key: recoveryKey });
+
+export const recoveryFileName = (date) =>
+  `kunji-recovery-${date.toISOString().slice(0, 10)}.kunji`;
+
+/**
+ * Pull the `v2:` recovery string out of an imported file's text. Accepts either
+ * the JSON envelope (format === 'kunji-recovery') or a raw file whose trimmed
+ * contents already start with `v2:` (hand-saved / backward-compatible). Throws
+ * INVALID_RECOVERY_FILE on anything else. Pure string logic — no crypto.
+ */
+export const extractRecoveryKey = (fileText) => {
+  const text = (fileText || '').trim();
+  if (text.startsWith('v2:')) return text;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.format === RECOVERY_FILE_FORMAT && typeof parsed.key === 'string') {
+      const key = parsed.key.trim();
+      if (key.startsWith('v2:')) return key;
+    }
+  } catch {
+    /* fall through to the thrown error below */
+  }
+  throw new Error('INVALID_RECOVERY_FILE');
+};
