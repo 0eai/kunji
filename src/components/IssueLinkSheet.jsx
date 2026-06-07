@@ -104,7 +104,7 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
           </div>
           <div className="flex items-center justify-end gap-1">
             <Btn variant="quiet" onClick={onClose} disabled={phase === 'depositing'}>
-              They differ — cancel
+              Cancel
             </Btn>
             <Btn variant="primary" onClick={approve} disabled={phase === 'depositing'}>
               {phase === 'depositing' ? (
@@ -112,7 +112,7 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
                   <Spinner /> Linking…
                 </>
               ) : (
-                'Codes match — approve'
+                'Approve'
               )}
             </Btn>
           </div>
