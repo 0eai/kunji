@@ -222,7 +222,9 @@ export const agentCapabilityPoll = onRequest(
     const sessionId = String(req.query.sessionId || '');
     if (!HEX64_SESSION.test(sessionId)) return res.status(400).json({ error: 'bad_session' });
 
-    if (await rateLimited(req.ip, 30, 60 * 1000, 'agent'))
+    // 60/min per IP: this is a human-in-the-loop poll (the user takes time to approve in the wallet),
+    // so the cap must comfortably exceed a steady 2–3s poll across the whole approval window.
+    if (await rateLimited(req.ip, 60, 60 * 1000, 'agent'))
       return res.status(429).json({ error: 'rate_limited' });
 
     const snap = await db.collection('agentSessions').doc(sessionId).get();

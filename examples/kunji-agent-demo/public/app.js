@@ -76,7 +76,7 @@ $('agentStart').onclick = async () => {
     }
     $('agentStatus').textContent = 'Waiting for approval…';
     clearInterval(agentPoll);
-    agentPoll = setInterval(() => pollAgent(r.sessionId), 2000);
+    agentPoll = setInterval(() => pollAgent(r.sessionId), 3000);
   } catch {
     $('agentStatus').textContent = 'Could not start — is the relay reachable?';
     $('agentStart').disabled = false;

@@ -79,8 +79,8 @@ export const run = async ({
   qrEl = null,
   onStep = () => {},
   signal,
-  pollMs = 2000,
-  maxPolls = 150,
+  pollMs = 3000,
+  maxPolls = 100,
 } = {}) => {
   const relay = relayUrl.replace(/\/$/, '');
   const base = rpBase.replace(/\/$/, '');
@@ -107,9 +107,12 @@ export const run = async ({
   if (!code) throw new Error(reg.error === 'rate_limited' ? 'Relay rate-limited — wait a moment.' : 'Relay unavailable.');
   step('code', 'Got a 6-digit code from the relay', { code });
 
-  // 4. Poll the relay for the wallet-deposited (ECDH-encrypted) capability.
+  // 4. Poll the relay for the wallet-deposited (ECDH-encrypted) capability. Poll slowly enough
+  // (3s = 20/min) to stay under the endpoint's per-IP limit across the whole approval window —
+  // otherwise a 429 mid-wait would read as "still pending" forever, even after you approve.
   step('await', 'Waiting for you to approve in the wallet…');
   let deposited = null;
+  let warned429 = false;
   for (let i = 0; i < maxPolls; i++) {
     if (aborted()) throw new Error('aborted');
     const r = await fetch(`${relay}/agent/capability?sessionId=${sessionId}`);
@@ -118,7 +121,16 @@ export const run = async ({
       deposited = await r.json(); // { walletPubE, encryptedCapability }
       break;
     }
-    await sleep(pollMs); // 404 = not approved yet; 429 = backing off
+    if (r.status === 429) {
+      // Back off so we recover instead of hammering — and surface it, never silent.
+      if (!warned429) {
+        step('await', 'Relay busy — backing off, still waiting…');
+        warned429 = true;
+      }
+      await sleep(pollMs * 2);
+      continue;
+    }
+    await sleep(pollMs); // 404 = not approved yet
   }
   if (!deposited) throw new Error('Timed out waiting for approval.');
 

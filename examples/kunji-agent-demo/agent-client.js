@@ -122,7 +122,7 @@ export const pollCapability = async (sessionId) => {
 };
 
 /** Headless: poll until approved (or time out). */
-export const awaitCapability = async (sessionId, { tries = 60, intervalMs = 2000 } = {}) => {
+export const awaitCapability = async (sessionId, { tries = 100, intervalMs = 3000 } = {}) => {
   for (let i = 0; i < tries; i++) {
     const cap = await pollCapability(sessionId);
     if (cap) return cap;

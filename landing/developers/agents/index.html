@@ -98,7 +98,7 @@
         word-break: break-word;
       }
       .term-body .tdim {
-        color: #6f6f68;
+        color: #9c9c92;
       }
       .term-body .tok {
         color: #28c840;
@@ -143,6 +143,30 @@
         font-size: 13px;
         color: var(--muted);
         margin: 8px 0 0;
+      }
+      #demoReplay {
+        border: 0;
+        cursor: pointer;
+      }
+      #demoLive {
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        background: #fff;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 12px 22px;
+      }
+      #demoLive:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      #demoReplay:disabled,
+      #demoLive:disabled {
+        opacity: 0.5;
+        cursor: default;
       }
     </style>
   </head>
@@ -210,7 +234,7 @@
 
           <div class="cta-row" style="margin-top: 16px">
             <button class="cta" id="demoReplay" type="button">▶ Play sample</button>
-            <button class="ghost" id="demoLive" type="button">Run it live (needs your wallet)</button>
+            <button id="demoLive" type="button">Run it live (needs your wallet)</button>
           </div>
           <p class="note" id="demoHint" style="margin-top: 10px">
             “Play sample” replays a recorded run (real, signed artifacts — verifiable below; no wallet
