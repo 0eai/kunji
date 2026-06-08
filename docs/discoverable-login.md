@@ -2,7 +2,7 @@
 
 **Status:** Implemented (v2 discoverable) — shipped in the kunji wallet, the `rp.js` drop-in widget, and a working demo relying party. See §13 for where the code lives.
 **Scope:** How any multi-user app replaces Google / password sign-in with "Sign in with kunji",
-without kunji sharing any database with the app. ("cloq" is used throughout as the example relying party; it stands in for any RP.)
+without kunji sharing any database with the app.
 
 ---
 
@@ -10,13 +10,13 @@ without kunji sharing any database with the app. ("cloq" is used throughout as t
 
 **Goals**
 
-- Let _any_ kunji user log into a shared, publicly-deployed app (cloq) — not just a pre-provisioned one.
+- Let _any_ kunji user log into a shared, publicly-deployed app (the RP) — not just a pre-provisioned one.
 - No central developer registry, no app-approval console, no kunji-as-platform. Self-sovereign: the user _is_ their key.
 - Drop Google/Firebase social auth entirely; preserve existing Firestore security rules.
 
 **Hard constraints**
 
-- 🔒 **Kunji shares NO database with cloq or any other app.** Kunji's Firestore/RTDB store only the user's
+- 🔒 **Kunji shares NO database with the RP or any other app.** Kunji's Firestore/RTDB store only the user's
   own encrypted vault (their per-app keypairs). The app stores its own sessions and user records in its own backend.
 - 🔒 **Kunji runs no backend in the cross-app login path.** The wallet is a pure client: scan → sign → POST.
   The _relying app_ owns the session channel end to end.
@@ -36,12 +36,12 @@ There is no shared storage and no kunji service in the middle.
 | Role                   | Who       | Holds                                                                                                   |
 | ---------------------- | --------- | ------------------------------------------------------------------------------------------------------- |
 | **Wallet**             | kunji PWA | The user's per-app Ed25519 keypairs, in kunji's own encrypted vault. Nothing about app sessions.        |
-| **Relying Party (RP)** | cloq      | Its own session store + user records (keyed by public key), in cloq's own DB. A small verifier backend. |
+| **Relying Party (RP)** | the RP    | Its own session store + user records (keyed by public key), in the RP's own DB. A small verifier backend. |
 | **User**               | human     | Approves each login in the wallet; visually confirms the app domain.                                    |
 
 **Trust model: self-sovereign keys.** The RP trusts whatever public key the wallet presents and verifies a
 signature over a fresh challenge. First time it sees a public key → new account; a returning key → existing account.
-This is the SSH / Nostr / passkey model. There is no authority vouching for identity — and for cloq's
+This is the SSH / Nostr / passkey model. There is no authority vouching for identity — and for the RP's
 self-hosted, privacy-first ethos, that is the correct model.
 
 ---
@@ -49,22 +49,22 @@ self-hosted, privacy-first ethos, that is the correct model.
 ## 3. Data Ownership (the no-shared-DB boundary)
 
 ```
-┌────────────────────────── kunji (wallet) ──────────────────────────┐
+┌────────────────────────── kunji (wallet) ───────────────────────────┐
 │  kunji vault (kunji's OWN Firestore, encrypted):                    │
 │    users/{kunjiUid}/apps/{appKeyId} = {                             │
 │       appDomain, name, iconUrl,                                     │
 │       encryptedPrivateKey,  publicKey                               │
 │    }                                                                │
 │  ▸ Keyed by appDomain. Auto-created on first login to a domain.     │
-│  ▸ Never contains app session data. Never read by the app.         │
+│  ▸ Never contains app session data. Never read by the app.          │
 └─────────────────────────────────────────────────────────────────────┘
                  │  QR (app→wallet)        ▲  signed assertion POST (wallet→app)
                  ▼                         │
-┌────────────────────────── cloq (relying party) ────────────────────┐
-│  cloq's OWN backend + DB:                                           │
+┌────────────────────── the RP (relying party) ───────────────────────┐
+│  the RP's OWN backend + DB:                                         │
 │    loginSessions/{sessionId} = { challenge, status, assertion? }    │
 │    users/{sub} = { kunjiPublicKey, ...app data }                    │
-│  ▸ cloq never reads kunji's DB. kunji never reads cloq's DB.        │
+│  ▸ the RP never reads kunji's DB. kunji never reads the RP's DB.    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,7 +73,7 @@ self-hosted, privacy-first ethos, that is the correct model.
 ## 4. Protocol Flow (discoverable login)
 
 ```
- ┌─cloq frontend─┐         ┌─user─┐        ┌─kunji wallet─┐      ┌─cloq backend─┐
+ ┌─RP frontend───┐         ┌─user─┐        ┌─kunji wallet─┐      ┌─RP backend───┐
  │               │         │      │        │              │      │ (Cloud Fn)   │
  │ 1. start login│────────────────────────────────────────────▶ │ createSession│
  │               │◀──────── { sessionId, challenge } ─────────── │              │
@@ -88,34 +88,34 @@ self-hosted, privacy-first ethos, that is the correct model.
  │ 6. poll ──────────────────────────────────────────────────▶ │ pollSession  │
  │               │◀──────── { status: approved, customToken } ── │ mint token   │
  │ 7. signInWithCustomToken(token) → Firebase uid = sub          │              │
- │ 8. cloq vault unlock (passphrase) proceeds as today           │              │
+ │ 8. the RP vault unlock (passphrase) proceeds as today         │              │
  └───────────────┘         └──────┘        └──────────────┘      └──────────────┘
 ```
 
 Steps in words:
 
-1. **createSession** — cloq's backend creates `loginSessions/{sessionId}` with a random `challenge` and short TTL.
-2. **QR** — cloq renders a QR encoding the session + cloq's callback URL + the audience domain (§5.1). The QR contains **no user identifier**.
-3. **Scan & verify** — kunji parses the QR, shows the user the **audience domain** ("cloq.cc wants to verify you"). If the user has no key for `cloq.cc` yet, kunji generates one locally (first login == registration). It displays the per-app `sub` ("shared as ab12…cd34").
+1. **createSession** — the RP's backend creates `loginSessions/{sessionId}` with a random `challenge` and short TTL.
+2. **QR** — the RP renders a QR encoding the session + the RP's callback URL + the audience domain (§5.1). The QR contains **no user identifier**.
+3. **Scan & verify** — kunji parses the QR, shows the user the **audience domain** ("example.com wants to verify you"). If the user has no key for `example.com` yet, kunji generates one locally (first login == registration). It displays the per-app `sub` ("shared as ab12…cd34").
 4. **Approve** — user approves; kunji signs the assertion (§5.2) with the per-app private key.
 5. **POST** — kunji POSTs the signed assertion to the `callbackUrl` from the QR. Kunji writes nothing to any shared store.
-6. **Poll** — cloq's frontend polls cloq's backend; backend verifies the assertion (§6), upserts the user, mints a Firebase custom token (§7).
-7. **Sign in** — cloq calls `signInWithCustomToken` → `request.auth.uid = sub`. Existing Firestore rules work unchanged.
-8. **Vault** — cloq's existing passphrase-based vault unlock proceeds as today (unchanged). See §9.2 for the two-passphrase caveat.
+6. **Poll** — the RP's frontend polls the RP's backend; backend verifies the assertion (§6), upserts the user, mints a Firebase custom token (§7).
+7. **Sign in** — the RP calls `signInWithCustomToken` → `request.auth.uid = sub`. Existing Firestore rules work unchanged.
+8. **Vault** — the RP's existing passphrase-based vault unlock proceeds as today (unchanged). See §9.2 for the two-passphrase caveat.
 
 ---
 
 ## 5. Message Formats
 
-### 5.1 QR payload (cloq → wallet)
+### 5.1 QR payload (RP → wallet)
 
 ```json
 {
   "kunjiAuth": "v2",
   "sessionId": "8f3c…",
   "challenge": "random nonce (hex or base64url — opaque to the wallet)",
-  "audience": "cloq.cc",
-  "appName": "cloq",
+  "audience": "example.com",
+  "appName": "Example",
   "expiresAt": 1750000000000,
   "scope": ["profile"]
 }
@@ -145,7 +145,7 @@ Rules:
   Omit `scope` and the RP simply renders the default identity (§8.1).
 - `v1` (the existing pre-registered flow) remains valid; see §11.
 
-### 5.2 Signed assertion (wallet → cloq callback)
+### 5.2 Signed assertion (wallet → RP callback)
 
 ```json
 {
@@ -153,7 +153,7 @@ Rules:
   "signedPayload": {
     "sessionId": "8f3c…",
     "challenge": "64-hex-byte nonce (echoed back)",
-    "audience": "cloq.cc",
+    "audience": "example.com",
     "sub": "hex SHA-256 of publicKey",
     "timestamp": 1750000000123,
     "claims": { "name": "Ada Lovelace", "picture": "data:image/webp;base64,…" }
@@ -170,18 +170,18 @@ Rules:
   may present different values to different apps. Treat it as untrusted input (§6.8). Fields:
   `name` (string, ≤60 chars) and/or `picture` (a small `data:` image URI). Absent ⇒ use §8.1.
 
-### 5.3 Callback response (cloq → wallet)
+### 5.3 Callback response (RP → wallet)
 
 `200 { "status": "ok" }` on accept, `4xx { "error": "..." }` otherwise. The wallet shows success/failure;
-it does not need the token (the token goes to cloq's _frontend_ via its own poll).
+it does not need the token (the token goes to the RP's _frontend_ via its own poll).
 
 ---
 
-## 6. Verification Rules (cloq backend MUST enforce)
+## 6. Verification Rules (RP backend MUST enforce)
 
 1. **Session exists & fresh** — `sessionId` is known, not expired, `status == pending`.
 2. **Challenge match** — `signedPayload.challenge` equals the session's stored challenge (anti-replay).
-3. **Audience match** — `signedPayload.audience == "cloq.cc"` (cloq's own domain). Rejects assertions
+3. **Audience match** — `signedPayload.audience == "example.com"` (the RP's own domain). Rejects assertions
    phished/relayed for a different app.
 4. **Signature valid** — verify `signedToken` over canonical-JSON(`signedPayload`) using the presented `publicKey`.
 5. **sub integrity** — recompute `SHA-256(publicKey)` and confirm it equals `signedPayload.sub`.
@@ -201,10 +201,10 @@ own profile record, do **not** put unverified claims into the custom-token claim
 
 ## 7. Firebase Custom-Token Bridge (the one required backend piece)
 
-cloq cannot avoid a tiny trusted function, because Firestore security rules need a real `request.auth.uid`.
+The RP cannot avoid a tiny trusted function, because Firestore security rules need a real `request.auth.uid`.
 
 ```js
-// cloq Cloud Function (pseudo)
+// RP Cloud Function (pseudo)
 exports.kunjiPoll = onCall(async ({ sessionId }) => {
   const s = await getSession(sessionId);
   if (s.status !== 'approved') return { status: s.status };
@@ -218,7 +218,7 @@ exports.kunjiPoll = onCall(async ({ sessionId }) => {
 ```
 
 - `uid = sub` → existing Firestore rules (`request.auth.uid`) keep working verbatim.
-- This function lives in **cloq's** project, not kunji's. Kunji still runs no backend.
+- This function lives in **the RP's** project, not kunji's. Kunji still runs no backend.
 
 ---
 
@@ -233,9 +233,9 @@ exports.kunjiPoll = onCall(async ({ sessionId }) => {
 
 - **Account key = the per-app Ed25519 public key.** The same kunji vault on any of the user's devices holds the
   same keypair → same `publicKey` → same account. Kunji recovery key restores the vault → restores identity.
-- **`sub = SHA-256(publicKey)`** is the convenient stable string id cloq uses as the Firebase `uid`.
+- **`sub = hex(SHA-256(utf8(publicKeyBase64)))`** (exact encoding in §5.2) is the stable string id the RP uses as the Firebase `uid`.
 - **Per-app pseudonymity preserved** — keypair is per `appDomain`, so two apps see unrelated keys/subs and cannot
-  correlate the user. (Consistent with the `derivePseudonymousSub` privacy stance already in `identity.js`.)
+  correlate the user. (Consistent with the `deriveSubFromPublicKey` per-app derivation already in `identity.js`.)
 
 ### 8.1 Default pseudonymous identity (derived from `sub`)
 
@@ -301,17 +301,17 @@ defeats the anti-relay same-site check (§9.2, the public-suffix caveat). Apps o
 ### 9.1 Threats handled
 
 - **Replay** — challenge is single-use and session-bound (§6.2, §6.7).
-- **Relay / phishing** ("evil app shows cloq's QR") — audience binding (§6.3) + user sees the domain in the
+- **Relay / phishing** ("evil app shows the RP's QR") — audience binding (§6.3) + user sees the domain in the
   approval UI (existing `domainMismatch` check in `ApprovalModal.jsx`).
 - **MITM on callback** — `callbackUrl` must be HTTPS and same-site as `audience`; kunji rejects otherwise.
 - **Key compromise** — keys never leave the vault; only signatures are emitted.
 
 ### 9.2 Caveats to design around (call out in onboarding)
 
-- **Recovery coupling.** The kunji vault key is now the root of the user's cloq access. Lose the kunji vault
-  _and_ its recovery key → lose cloq. Kunji's recovery key is now load-bearing for every connected app.
-- **Two-passphrase seam.** cloq still has its own vault passphrase. After this change the user holds two secrets
-  (kunji vault + cloq vault). Acceptable for v1; the eventual fix (kunji provisioning cloq's encryption key for a
+- **Recovery coupling.** The kunji vault key is now the root of the user's access to the RP. Lose the kunji vault
+  _and_ its recovery key → lose access to the RP. Kunji's recovery key is now load-bearing for every connected app.
+- **Two-passphrase seam.** The RP still has its own vault passphrase. After this change the user holds two secrets
+  (kunji vault + RP vault). Acceptable for v1; the eventual fix (kunji provisioning the RP's encryption key for a
   single-passphrase experience) is **out of scope** here — noted in §12.
 - **Local-only apps.** Apps with no public HTTPS callback (localhost/home-server) can't receive the POST from a
   phone wallet directly. Out of scope for v1; see §12.
@@ -329,11 +329,11 @@ defeats the anti-relay same-site check (§9.2, the public-suffix caveat). Apps o
 
 No changes to kunji's storage model and **no kunji-side session storage for other apps** — satisfying the no-shared-DB constraint.
 
-## 11. What the Relying Party (cloq) Must Implement
+## 11. What the Relying Party Must Implement
 
 > **MUST:** the RP **hardcodes its own `audience` and `callbackUrl` server-side** in `createSession` and ignores any client-supplied values. The demo reads them from the request body for convenience only — accepting them from the client in production lets a caller mint sessions claiming an arbitrary domain. The RP **MUST** also consume each session atomically (verify + mark `approved` in one transaction) and cap failed code lookups (per-IP limiting alone is `X-Forwarded-For`-spoofable).
 
-- `createSession` + `pollSession` endpoints over **cloq's own** session store.
+- `createSession` + `pollSession` endpoints over **the RP's own** session store.
 - `/kunji/callback` endpoint implementing the §6 verification.
 - The §7 custom-token mint.
 - A read-only **status/poll** endpoint (`GET ?sessionId=` → `{ status, sub, customToken? }`) the frontend/widget polls until `approved`.
@@ -351,14 +351,13 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 - **Default + custom identity (shipped)** — every `sub` has a deterministic default name + identicon
   (§8.1); the user may optionally share a self-asserted custom profile per-app via the `profile`
   scope + signed `claims` (§5.1, §5.2, §6.8).
+- **Agentic delegation (shipped)** — a user can authorize an autonomous agent to act for them at one
+  app via a holder-of-key, scoped, expiring, revocable **capability** the wallet signs with the
+  per-app key (never the keys themselves), plus an MCP signing bridge. Preserves the §8 per-app
+  unlinkability and the human-approval trust root. Spec:
+  [`agentic-delegation.md`](./agentic-delegation.md).
 
 **Future (explicitly out of scope now):**
-
-- **Agentic delegation** — letting an autonomous agent act for the user via a user-approved,
-  holder-of-key, scoped, revocable **capability** the wallet signs with the per-app key (never the
-  keys themselves), plus an MCP signing bridge. Preserves the §8 per-app unlinkability and the
-  human-approval trust root. Design draft: [`agentic-delegation.md`](./agentic-delegation.md) — not
-  implemented; review before building.
 - Kunji provisioning the app's encryption key → single-passphrase UX (collapses the §9.2 two-passphrase seam).
 - Local/LAN app login (loopback or same-device `postMessage` channel).
 - **Verified credentials (planned).** Today all shared `claims` are **self-asserted** (signed by the

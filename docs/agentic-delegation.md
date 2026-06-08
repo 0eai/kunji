@@ -1,9 +1,8 @@
-# Agentic delegation — design + protocol (implemented)
+# Agentic delegation — protocol (shipped)
 
-> Status: **implemented.** This captures how an autonomous AI agent acts for a kunji user **without
-> compromising security or anonymity** — and now ships: see "Status — implemented" below and
-> `src/lib/capability.js`. It extends the login protocol in `docs/discoverable-login.md` (§6
-> assertion, §8.1 default identity).
+> **Status: shipped.** How an autonomous AI agent acts for a kunji user **without compromising
+> security or anonymity** — see "Status — shipped" below and `src/lib/capability.js`. It extends the
+> login protocol in `docs/discoverable-login.md` (§6 assertion, §8.1 default identity).
 
 ## Why
 
@@ -11,7 +10,7 @@ Today kunji is strictly human-in-the-loop: an assertion is signed by the per-app
 user taps Approve** in the unlocked wallet (per-app private keys never leave the device; the master
 key is in memory only). There is no API key, OAuth client-credentials, refresh token, or headless
 credential — so an autonomous agent **cannot** authenticate for a user. That gate *is* the security
-model. To support agents we must add a way to act on the user's behalf that keeps three invariants:
+model. Supporting agents therefore needs a way to act on the user's behalf that keeps three invariants:
 
 1. **The agent never holds kunji keys** (master key or per-app private keys).
 2. **Per-app unlinkability** is preserved (no global agent identifier, no kunji-side correlation).
@@ -33,15 +32,16 @@ is useless without the agent's private key. Fields:
 
 - `audience` — the app/domain this grant is for (same normalization as §5/§8).
 - `agentPubKey` — the agent's ephemeral key (holder-of-key binding).
-- `scope[]` — least-privilege action vocabulary (TBD — see open decisions).
+- `scope[]` — least-privilege action vocabulary (today `["login"]`; see Still open / deferred).
 - `iat`/`exp` — short-lived by default.
 - `rateBudget`/`maxUses` — a per-capability ceiling the RP enforces.
 - `jti` — opaque id for revocation.
 
 ### Issuance (wallet, explicit consent)
-A new wallet flow: the user grants an agent a capability for **one app + scope**, time-boxed. The
-wallet signs it with the per-app key (the key for that `sub`) and hands it to the agent out-of-band
-(QR / paste / deep link). Master + per-app private keys stay on device.
+The wallet flow — Security → "Authorize an agent" (`src/components/AuthorizeAgentSheet.jsx` +
+`src/services/capability.js`): the user grants an agent a capability for **one app + scope**,
+time-boxed. The wallet signs it with the per-app key (the key for that `sub`) and delivers it to the
+agent out-of-band (encrypted relay, QR, or paste). Master + per-app private keys stay on device.
 
 ### Presentation & verification (RP-side, backendless)
 The agent signs a fresh RP challenge with `agentPubKey` and presents the capability. The RP verifies,
@@ -64,7 +64,7 @@ RP-side `jti` denylist (keeps kunji backendless) + a short default TTL as the sa
 `rateBudget` is RP-enforced and ties directly into the function cost-hardening
 (`docs/ops-cost-controls.md`) since agent traffic is automated.
 
-## MCP bridge (how an AI runtime drives kunji) — IMPLEMENTED
+## MCP bridge (how an AI runtime drives kunji)
 A kunji **MCP server / local signing agent** exposes tools to an AI runtime (e.g. Claude). Built at
 **`examples/kunji-mcp/`** (stdio MCP server, `@modelcontextprotocol/sdk`):
 
@@ -106,34 +106,37 @@ The runtime never receives keys; the agent's keypair lives only on the local mac
 op is gated by a pre-authorized capability or a live human approval. This is the practical "make
 agents work with kunji" surface.
 
-## Open decisions (resolve before building)
-- **Token format** — compact JWT-like vs macaroon/biscuit (the latter allows offline *attenuation*:
-  an agent can narrow but never widen a capability).
-- ~~**Capability transport** to the agent~~ — **RESOLVED (v0.6.0):** the agent presents an ECDH
-  transport key + session id in its request; the wallet deposits the capability **ECDH-encrypted** into
-  a short-TTL `agentSessions/{id}` relay; the agent polls the public `agentCapabilityPoll` function and
-  decrypts. Paste/QR remains a fallback. (`src/services/capability.js` `depositAgentCapability`,
-  `examples/kunji-mcp` `awaitCapability`.)
-- ~~**Revocation ownership**~~ — **RESOLVED (v0.7.0):** issuer-signed, kunji-hosted denylist. The wallet
-  signs `kunji-revoke-v1:{jti}` with the per-app key and publishes the (public-read) `revocations/{jti}`;
-  a cooperating RP honors it only if the signature verifies against the **capability's own key** (so only
-  the issuer can revoke; forged entries are ignored). A short default TTL stays as the backstop for RPs
-  that don't check. (`src/services/capability.js` `revokeAgent` ↔ verifier `getRevocation`.)
-- **`scope` vocabulary** — the least-privilege action set apps and agents agree on.
-- **Agent-traffic lane** — whether agent calls get an App Check exemption (revisits the deferred App
-  Check decision in `docs/ops-cost-controls.md`).
+## Status — shipped
 
-## Status — implemented (v0.1.9 + MCP bridge)
-- **Protocol core**: `src/lib/capability.js` (mint / agent-proof / verify) + `tests/capability.test.js`.
+Implemented across the wallet, the protocol core, the RP verifiers, and the MCP bridge:
+
+- **Protocol core** (mint / agent-proof / verify): `src/lib/capability.js` + `tests/capability.test.js`.
 - **Wallet grant UI**: `src/services/capability.js` + `src/components/AuthorizeAgentSheet.jsx`
   (Security → "Authorize an agent").
 - **RP verification**: `examples/kunji-login-demo/functions/capability.js` (Firebase) and
   `examples/kunji-agent-demo/capability.js` (plain Node, no Firebase — `POST /kunji/agent` on top of
-  the §6 login RP) + a `revokedCapabilities` denylist; `tests/capability.parity.test.js` cross-checks
+  the §6 login RP) + a revocation denylist; `tests/capability.parity.test.js` cross-checks
   wallet-mint ↔ RP-verify. Headless demos: `examples/kunji-login-demo/agent-sim.js` and
   `examples/kunji-agent-demo/agent-sim.js`.
 - **MCP bridge**: `examples/kunji-mcp/` (see its README) — runnable end-to-end against
   `examples/kunji-agent-demo` with zero infra.
 
-Still open / deferred: the `scope` vocabulary, capability transport automation (today: wallet display
-+ paste/QR), macaroon-style attenuation, and the agent-traffic App Check lane.
+### Decisions resolved while building
+- **Capability transport (v0.6.0)** — the agent presents an ECDH transport key + session id in its
+  request; the wallet deposits the capability **ECDH-encrypted** into a short-TTL `agentSessions/{id}`
+  relay; the agent polls the public `agentCapabilityPoll` function and decrypts. Paste/QR remains a
+  fallback. (`src/services/capability.js` `depositAgentCapability`, `examples/kunji-mcp` `awaitCapability`.)
+- **Request hand-off (v0.12.0)** — QR + 6-digit OTP via the `agentRequestRelay` function, so the
+  request reaches the wallet without pasting JSON (see "Request hand-off" above).
+- **Revocation ownership (v0.7.0)** — issuer-signed, kunji-hosted denylist. The wallet signs
+  `kunji-revoke-v1:{jti}` with the per-app key and publishes the (public-read) `revocations/{jti}`; a
+  cooperating RP honors it only if the signature verifies against the **capability's own key** (so only
+  the issuer can revoke; forged entries are ignored). A short default TTL stays as the backstop for RPs
+  that don't check. (`src/services/capability.js` `revokeAgent` ↔ verifier `getRevocation`.)
+
+### Still open / deferred
+- **`scope` vocabulary** — the least-privilege action set apps and agents agree on (today `["login"]`).
+- **Token format** — compact JWT-like (today) vs macaroon/biscuit, which would allow offline
+  *attenuation* (an agent narrows but never widens a capability).
+- **Agent-traffic lane** — whether agent calls get an App Check exemption (revisits the deferred App
+  Check decision in `docs/ops-cost-controls.md`).

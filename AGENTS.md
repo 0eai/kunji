@@ -9,7 +9,9 @@ internal audit ledgers live in `reports/` (git-ignored — see constraints).
 A **client-only, zero-knowledge identity wallet**. Users unlock an on-device encrypted vault
 with a passphrase; apps authenticate them by verifying a signed assertion the wallet POSTs
 straight to the app's own callback. kunji runs **no backend in the login path** and the servers
-store **only ciphertext**. There is no email/phone/name — sign-in is anonymous.
+store **only ciphertext**. There is no email/phone/name — sign-in is anonymous. Beyond human login,
+a user can authorize an AI **agent** to act for them at one app via a scoped, expiring, revocable,
+holder-of-key capability — never the keys (agentic delegation, shipped).
 
 - App: https://app.kunji.cc · Site: https://kunji.cc · Demo: https://kunji-demo.web.app
 - Stack: Vite + React 19 PWA, Tailwind v4, Firebase (anon Auth, Firestore, Hosting multi-site,
@@ -68,7 +70,6 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - **Accepted, deliberate "won't-fix" risks** — do NOT "fix" these without asking; they're decisions,
   not oversights: CSP breadth (S11), `style-src 'unsafe-inline'`, the in-memory extractable master
   key, client-side freshness timestamp, recovery-key clipboard copy.
-- **No git remote configured locally.** Pushing/publishing is the user's manual step.
 
 ## Repo map
 
@@ -91,7 +92,7 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   worker on a dynamic IP). The last four are **not** deployed into `kunji-cc` — selfhosted in
   particular needs its own project (it mints Auth users / writes `users/{sub}`); don't deploy it here.
   `kunji-mcp` is a local **MCP bridge** (stdio server) that lets an AI runtime act for a user via a
-  user-authorized, holder-of-key **capability** — never the keys (agentic delegation, Phase 4).
+  user-authorized, holder-of-key **capability** — never the keys (agentic delegation — shipped, v0.12.0).
 - `src/lib/capability.js` — agentic-delegation capability tokens (EdDSA-JWT, holder-of-key); see
   `docs/agentic-delegation.md`. RP verifier mirrored in `examples/kunji-login-demo/functions/capability.js`.
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
@@ -112,4 +113,5 @@ prunes the other. That isolation is load-bearing: always deploy functions with e
 - Before finishing any change: `npm run lint` && `npm test` && `npm run build` must be green.
   CI (`.github/workflows/ci.yml`) runs the same on push/PR.
 - Commit messages end with the `Co-Authored-By` trailer; PR bodies end with the Claude Code line.
-- Commit only when asked; branch off `main` first if needed.
+- Commit only when asked; branch off `main` first if needed. Remote `origin` →
+  `github.com:0eai/kunji`; push only when asked.

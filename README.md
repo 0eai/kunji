@@ -15,7 +15,7 @@ kunji lets you sign in to apps by scanning a code, authenticated by keys that ne
 ## The three pillars
 
 - **Zero-knowledge.** Your vault is encrypted on-device with a key derived from your passphrase (Argon2id → AES-GCM master key). The servers store only ciphertext; sign-in is anonymous (no email/phone/name).
-- **Per-app identity.** A deterministic per-domain Ed25519 keypair is derived from your master key; an app only ever sees `sub = SHA-256(publicKey)`. Different domain → unrelated key, so apps can't correlate you.
+- **Per-app identity.** A deterministic per-domain Ed25519 keypair is derived from your master key; an app only ever sees `sub = hex(SHA-256(utf8(publicKeyBase64)))`. Different domain → unrelated key, so apps can't correlate you.
 - **Self-sovereign.** No registry, no gatekeeper. Your vault syncs across your devices via a master-key-derived id; a recovery key restores everything. Lose your vault _and_ recovery key and no one — including us — can restore it. That's the trade-off for nobody being able to lock you out.
 
 The plain-language + verifiable version of all this lives at **[kunji.cc/security](https://kunji.cc/security)**, with links to the exact source.
@@ -64,6 +64,8 @@ examples/                 reference relying parties: kunji-login-demo (Firebase)
                           (plain Node), kunji-agent-demo (plain Node + agent logins), kunji-relay-demo
                           (local + relay), kunji-selfhosted-demo; kunji-mcp (MCP bridge for AI runtimes)
 docs/discoverable-login.md  the v2 discoverable-login protocol
+docs/agentic-delegation.md  agentic delegation — capabilities for AI agents
+docs/ops-cost-controls.md   Cloud Functions abuse / cost controls
 firestore.rules          Firestore security rules
 firebase.json            Hosting: app / landing / redirect targets
 ```

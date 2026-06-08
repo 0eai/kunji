@@ -13,13 +13,17 @@ the (default 80) concurrency is the hard ceiling on simultaneous work; scale-to-
 |---|---|---|
 | `vaultWrite` | `app` (`functions/index.js`) | 10 |
 | `linkLookup` | `app` | 5 |
-| demo `createSession` / `lookupSession` / `getSessionStatus` / `kunjiCallback` | demo codebases | 5 |
+| `agentCapabilityPoll` | `app` | 5 |
+| `agentRequestRelay` | `app` | 5 |
+| demo `createSession` / `lookupSession` / `getSessionStatus` / `kunjiCallback` / `kunjiAgent` | demo codebases | 5 |
 
 To change a cap, edit the `onRequest({ …, maxInstances: N })` option and redeploy that function with
 an explicit `--only` (see the `deploy` skill — never a bare `firebase deploy`).
 
 `linkLookup` also validates the `^\d{8}$` code format **before** its Firestore-backed rate limiter,
-so malformed spam can't generate rate-limit writes.
+so malformed spam can't generate rate-limit writes. The agent relays are per-IP rate-limited the
+same way — `agentCapabilityPoll` at 60/min (a human-in-the-loop poll across the approval window) and
+`agentRequestRelay` at 20–30/min — and reject malformed input before the limiter.
 
 ## 2. Cloud Billing budget + alert (project-wide backstop — manual, one-time)
 
