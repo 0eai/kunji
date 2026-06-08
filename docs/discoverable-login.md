@@ -272,6 +272,28 @@ identity replaced an earlier grid-identicon + "Adjective Noun NN" scheme — a o
 If the user shared a custom profile, the assertion carries `claims` (§5.2) — prefer it over the
 default, but render it as untrusted input (§6.8).
 
+### 8.2 Organization identity (shared `audience`)
+
+`sub` is derived per **`audience`**, and the **RP chooses its `audience`** (§5.1). An organization that
+points all of its apps at **one shared audience** therefore gets the **same `sub`** for a user across
+its suite — a built-in, opt-in SSO with no global identifier and no kunji-side registry:
+
+- e.g. `hr.acme.com`, `payroll.acme.com`, and `intranet.acme.com` all declaring `audience: "acme.com"`
+  resolve to the **same `sub`** for a given user → the org can recognize the same employee everywhere.
+- Subdomains may POST to that parent audience because the callback check is same-site
+  (`host === audience || host.endsWith('.' + audience)`, §6.4) — so `payroll.acme.com` with
+  `audience: "acme.com"` and `callbackUrl: https://payroll.acme.com/...` is accepted.
+- **Cross-org unlinkability is preserved:** a user's `acme.com` `sub` is unrelated to their `sub` at any
+  other org or standalone app. Linkage is scoped to whoever shares the audience, by the RP's choice.
+
+This is why kunji has **no global "same identity everywhere" wallet switch** — that would break
+unlinkability for *every* app at once. Organization linkage is the RP's deliberate, scoped decision.
+
+⚠️ **Guardrail:** the audience must be a registrable host the org controls — never a bare public suffix
+(`com`, `co.uk`) or a shared platform domain. A public-suffix audience would link unrelated tenants and
+defeats the anti-relay same-site check (§9.2, the public-suffix caveat). Apps on a shared SaaS host
+(`tenant.platform.com`) must use their **own** audience, not the platform's.
+
 ---
 
 ## 9. Security & Operational Considerations
@@ -339,7 +361,17 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
   implemented; review before building.
 - Kunji provisioning the app's encryption key → single-passphrase UX (collapses the §9.2 two-passphrase seam).
 - Local/LAN app login (loopback or same-device `postMessage` channel).
-- Verified claims (e.g. an attested email) — today all shared `claims` are self-asserted only.
+- **Verified credentials (planned).** Today all shared `claims` are **self-asserted** (signed by the
+  per-app key, but the RP must treat them as untrusted — §6.8). The valuable extension is **issuer-signed
+  attestations**: a trusted issuer (a university, employer, age-verification provider) signs a credential
+  ("over 18", "student at X", "employee of Y"); the wallet later presents it to an RP with **selective
+  disclosure**, verifiable **without kunji in the path** (the same backendless trust model as §6, just a
+  different signer). This is a substantial effort — issuers, credential schemas, and DID/VC-style
+  verification — tracked as future work.
+  - **Non-goal: RP-requested self-asserted attributes** (an app asking the user to *type* a DOB / student
+    ID / employee ID at approval). Unverified data typed into kunji is no more trustworthy than the same
+    field in the RP's own form, and it pushes sensitive PII into a zero-knowledge wallet for no assurance
+    gain. RPs should collect such fields in their own UI; kunji's value here is *verified* claims, above.
 
 ---
 

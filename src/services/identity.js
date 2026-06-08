@@ -94,23 +94,33 @@ export const listenToApps = (vaultId, cryptoKey, callback) => {
   });
 };
 
-export const registerApp = async (vaultId, cryptoKey, { name, domain, iconUrl = '' }, userId) => {
+export const registerApp = async (
+  vaultId,
+  cryptoKey,
+  { name, domain, iconUrl = '', sharedProfile = false },
+  userId,
+) => {
   // Per-app keypair is derived from the master key + domain (not stored).
   const { publicKey } = await deriveAppKeyPair(cryptoKey, domain);
   const pubKeyBase64 = exportEd25519PublicKey(publicKey);
 
-  // Idempotent: one doc per domain. Only write (and log) the first time it's seen.
+  // One doc per domain. Write the first time it's seen, OR when `sharedProfile` changes (so the
+  // app-details "what this app sees" stays accurate). `sharedProfile` is wallet-only metadata — it
+  // is NOT sent to the RP; the assertion's `claims` are the actual share. `createdAt` is preserved
+  // by vaultWrite on re-writes.
   const id = await appIdForDomain(domain);
   const ref = appDoc(vaultId, id);
-  const existed = (await getDoc(ref)).exists();
+  const snap = await getDoc(ref);
+  const existed = snap.exists();
+  const prior = existed ? await decryptData(snap.data(), cryptoKey).catch(() => null) : null;
 
-  if (!existed) {
+  if (!existed || !!prior?.sharedProfile !== !!sharedProfile) {
     const payload = await encryptData(
-      { name, domain: normalizeDomain(domain), iconUrl },
+      { name, domain: normalizeDomain(domain), iconUrl, sharedProfile: !!sharedProfile },
       cryptoKey,
     );
     await callVaultWrite(vaultId, cryptoKey, 'set', id, { ...payload, publicKey: pubKeyBase64 });
-    if (userId)
+    if (!existed && userId)
       await logActivity(userId, `Registered app: ${name}`, 'success', 'Link', cryptoKey, {
         domain: normalizeDomain(domain),
       });

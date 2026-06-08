@@ -156,7 +156,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       await registerApp(
         vaultId,
         cryptoKey,
-        { name: appName, domain, iconUrl: iconUrl || '' },
+        { name: appName, domain, iconUrl: iconUrl || '', sharedProfile: !!shareProfile },
         user.uid,
       );
       // Share the custom profile only if the user toggled it on for this login.
@@ -352,6 +352,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           app={selectedApp}
           userId={user.uid}
           cryptoKey={cryptoKey}
+          profile={profile}
           onClose={() => setSelectedApp(null)}
           onEnterCode={() => {
             const a = selectedApp;

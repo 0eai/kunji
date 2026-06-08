@@ -5,7 +5,9 @@ import Sheet from './ui/Sheet';
 import ActivitySheet from './ActivitySheet';
 import { SectionLabel, Monogram } from './ui/primitives';
 
-const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelete }) => {
+const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode, onDelete }) => {
+  // Whether this app currently sees the custom profile (set at approval; wallet-only metadata).
+  const sharesProfile = !!(app?.sharedProfile && profile && (profile.displayName || profile.avatar));
   const [sub, setSub] = useState('');
   const [copiedSub, setCopiedSub] = useState(false);
   const [showActivitySheet, setShowActivitySheet] = useState(false);
@@ -58,6 +60,41 @@ const AppDetailsModal = ({ app, userId, cryptoKey, onClose, onEnterCode, onDelet
           </p>
         </div>
       )}
+
+      {/* What this app sees — custom profile vs the default per-app identity */}
+      <div className="mb-7">
+        <SectionLabel className="mb-2.5">What this app sees</SectionLabel>
+        {sharesProfile ? (
+          <>
+            <div className="flex items-center gap-3 border-y border-line py-3.5">
+              {profile.avatar ? (
+                <img
+                  src={profile.avatar}
+                  alt=""
+                  className="w-9 h-9 rounded-lg border border-line shrink-0 object-cover"
+                />
+              ) : (
+                <Monogram name={profile.displayName} size="sm" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-ink">Your custom profile</span>
+                <span className="block text-[12px] text-muted truncate">
+                  {profile.displayName || 'Your photo'}
+                </span>
+              </span>
+            </div>
+            <p className="text-[12px] text-faint mt-2 leading-relaxed">
+              Self-asserted and unverified. This app keeps a copy of what you've shared — turning
+              sharing off only affects future sign-ins.
+            </p>
+          </>
+        ) : (
+          <p className="text-[13px] text-muted border-y border-line py-3.5">
+            Default identity only — a random name &amp; icon unique to this app. No name, photo, or
+            email.
+          </p>
+        )}
+      </div>
 
       {/* Actions */}
       <div className="divide-y divide-line border-t border-line">
