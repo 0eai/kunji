@@ -20,11 +20,17 @@ const APP_ICON =
 const INK = '#1a1a18';
 
 /**
- * Render a brand-styled QR into `el` (replacing its contents). `withLogo` embeds the amber
- * app icon (default); set false for long opaque payloads. EC defaults to 'Q' (the lean v2
- * payload keeps density low even with the cleared logo area).
+ * The canonical branded QR — the single source of truth for the look shared (byte-equal params,
+ * since separate bundles can't import this) by the demo LoginPage and the rp.js widget.
+ * Render into `el` (replacing its contents). `withLogo` overlays the amber app icon (default);
+ * set false for long opaque payloads (the capability JWT).
+ *
+ * The logo is an OVERLAY <img> (img-src), NOT qr-code-styling's `image` — `image` fetches the
+ * data-URI (connect-src) and a strict RP CSP blanks the whole QR. EC defaults to 'H' so the
+ * opaque overlay's occluded center stays recoverable; `margin:0` keeps a single tight quiet zone
+ * (the container's padding is the quiet zone).
  */
-export const renderBrandedQr = (el, { data, size = 256, withLogo = true, ec = 'Q', margin = 8 }) => {
+export const renderBrandedQr = (el, { data, size = 224, withLogo = true, ec = 'H', margin = 0 }) => {
   if (!el || !data) return;
   const qr = new QRCodeStyling({
     type: 'svg',
@@ -37,11 +43,17 @@ export const renderBrandedQr = (el, { data, size = 256, withLogo = true, ec = 'Q
     dotsOptions: { type: 'extra-rounded', color: INK },
     cornersSquareOptions: { type: 'extra-rounded', color: INK },
     cornersDotOptions: { color: INK },
-    ...(withLogo
-      ? { image: APP_ICON, imageOptions: { imageSize: 0.35, margin: 4, hideBackgroundDots: true } }
-      : {}),
   });
   el.replaceChildren();
   qr.append(el);
+  if (withLogo) {
+    el.style.position = 'relative';
+    const logo = document.createElement('img');
+    logo.src = APP_ICON;
+    logo.alt = '';
+    const px = Math.round(size * 0.22);
+    logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${px}px;height:${px}px;border-radius:10px`;
+    el.appendChild(logo);
+  }
   return qr;
 };

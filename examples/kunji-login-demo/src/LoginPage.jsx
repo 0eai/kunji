@@ -20,24 +20,34 @@ const APP_ICON =
       '<path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>' +
       '</g></svg>',
   );
+// Canonical branded QR — mirror of the wallet's src/lib/brandedQr.js (separate bundle → copy, not
+// import). Overlay the amber logo as an <img> (img-src), not qr-code-styling's fetched `image`
+// (connect-src, which a strict CSP would blank); EC 'H' covers the occluded center; margin:0 +
+// the container's p-3 is the single quiet zone.
+const SIZE = 224;
 const renderBrandedQr = (el, data) => {
   if (!el || !data) return;
   const qr = new QRCodeStyling({
     type: 'svg',
-    width: 240,
-    height: 240,
+    width: SIZE,
+    height: SIZE,
     data,
-    margin: 8,
-    qrOptions: { errorCorrectionLevel: 'Q' },
+    margin: 0,
+    qrOptions: { errorCorrectionLevel: 'H' },
     backgroundOptions: { color: '#ffffff' },
     dotsOptions: { type: 'extra-rounded', color: '#1a1a18' },
     cornersSquareOptions: { type: 'extra-rounded', color: '#1a1a18' },
     cornersDotOptions: { color: '#1a1a18' },
-    image: APP_ICON,
-    imageOptions: { imageSize: 0.35, margin: 4, hideBackgroundDots: true },
   });
   el.replaceChildren();
   qr.append(el);
+  el.style.position = 'relative';
+  const logo = document.createElement('img');
+  logo.src = APP_ICON;
+  logo.alt = '';
+  const px = Math.round(SIZE * 0.22);
+  logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${px}px;height:${px}px;border-radius:10px`;
+  el.appendChild(logo);
 };
 
 // base64url so it rides safely in a URL query param.
@@ -329,9 +339,10 @@ export default function LoginPage({ onSuccess }) {
                   </div>
                 ) : (
                   <div>
-                    <div className="inline-block rounded-2xl border border-line p-4 bg-surface">
-                      <div ref={qrRef} className="inline-flex" />
-                    </div>
+                    <div
+                      ref={qrRef}
+                      className="relative inline-flex rounded-2xl border border-line bg-white p-3"
+                    />
                     <p className="text-[13px] text-muted mt-4">
                       Scan with the kunji app on your phone.
                     </p>

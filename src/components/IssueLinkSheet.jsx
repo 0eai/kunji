@@ -160,7 +160,11 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
           </p>
           <div className="flex justify-center mb-4">
             <div className="rounded-2xl border border-line p-4 bg-surface min-h-[208px] flex items-center justify-center">
-              <div ref={qrRef} aria-label="Device link QR" className="inline-flex" />
+              <div
+                ref={qrRef}
+                aria-label="Device link QR"
+                className="relative inline-flex rounded-2xl border border-line bg-white p-3"
+              />
               {!qrData && <Spinner />}
             </div>
           </div>

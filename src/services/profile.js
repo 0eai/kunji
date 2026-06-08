@@ -52,22 +52,39 @@ const writeProfile = async (vaultId, cryptoKey, op, docPayload) => {
   }
 };
 
-/** Load the custom profile, or null if none set. Returns { displayName, avatar }. */
+/** Load the custom profile, or null if none set. Returns { displayName, avatar, shareByDefault }. */
 export const loadProfile = async (vaultId, cryptoKey) => {
   try {
     const snap = await getDoc(profileRef(vaultId));
     if (!snap.exists()) return null;
     const dec = await decryptData(snap.data(), cryptoKey);
     if (!dec) return null;
-    return { displayName: dec.displayName || '', avatar: dec.avatar || '' };
+    return {
+      displayName: dec.displayName || '',
+      avatar: dec.avatar || '',
+      shareByDefault: !!dec.shareByDefault,
+    };
   } catch {
     return null;
   }
 };
 
-/** Save (or clear) the custom profile. `avatar` is a small data-URI or ''. */
-export const saveProfile = async (vaultId, cryptoKey, { displayName = '', avatar = '' }, userId) => {
-  const clean = { displayName: String(displayName).slice(0, 60).trim(), avatar: avatar || '' };
+/**
+ * Save (or clear) the custom profile. `avatar` is a small data-URI or ''. `shareByDefault` makes the
+ * approval dialog's "Share your profile" toggle start ON (still per-app, still user-overridable); it
+ * only rides along when there's content — no name/avatar ⇒ the doc is deleted and the flag is moot.
+ */
+export const saveProfile = async (
+  vaultId,
+  cryptoKey,
+  { displayName = '', avatar = '', shareByDefault = false },
+  userId,
+) => {
+  const clean = {
+    displayName: String(displayName).slice(0, 60).trim(),
+    avatar: avatar || '',
+    shareByDefault: !!shareByDefault,
+  };
   if (!clean.displayName && !clean.avatar) {
     await writeProfile(vaultId, cryptoKey, 'delete', null);
   } else {

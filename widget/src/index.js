@@ -51,7 +51,7 @@ function renderQr(el, data) {
     width: 224,
     height: 224,
     data,
-    margin: 8,
+    margin: 0,
     qrOptions: { errorCorrectionLevel: 'H' },
     backgroundOptions: { color: '#ffffff' },
     dotsOptions: { type: 'extra-rounded', color: '#1a1a18' },
@@ -116,7 +116,7 @@ const CSS = `
 .tab.on { color:#1a1a18; border-color:#d97706; }
 
 .panel { min-height: 248px; }
-.qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:14px; background:#fff; line-height:0; }
+.qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:12px; background:#fff; line-height:0; }
 .qrbox svg { display:block; width:224px; height:224px; }
 .qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:48px; height:48px; border-radius:10px; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }

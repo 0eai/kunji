@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Sheet from './ui/Sheet';
 import { Monogram, Btn } from './ui/primitives';
 import { deriveHandle } from '../lib/kunjiHandle';
@@ -15,6 +15,17 @@ const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
   // Layer 2: only offer to share a custom profile when the RP asked AND one is set.
   const hasProfile = !!(profile && (profile.displayName || profile.avatar));
   const canShare = !!session?.requestProfile && hasProfile;
+
+  // Seed the toggle's STARTING position from the profile's "share by default" preference, once the
+  // profile has loaded (it may resolve after this modal mounts on a cold deep-link). This only sets
+  // the initial value — the toggle itself is unchanged and the user can still turn it off.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!seeded.current && profile) {
+      seeded.current = true;
+      setShareProfile(canShare && !!profile.shareByDefault);
+    }
+  }, [profile, canShare]);
 
   useEffect(() => {
     if (!session?.expiresAt) return;

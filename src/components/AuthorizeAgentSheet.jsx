@@ -43,7 +43,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
       // (the container's white padding is the single quiet zone — avoids a double frame).
       renderBrandedQr(qrRef.current, {
         data: result.capability,
-        size: 240,
+        size: 224,
         withLogo: false,
         ec: 'L',
         margin: 0,
@@ -174,7 +174,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             </div>
           )}
           <div className="flex justify-center mb-4">
-            <div ref={qrRef} aria-label="Capability QR" className="rounded-xl border border-line p-3 bg-white" />
+            <div ref={qrRef} aria-label="Capability QR" className="rounded-2xl border border-line bg-white p-3" />
           </div>
           <div className="flex items-start gap-3 border-y border-line py-3 mb-4">
             <code className="flex-1 text-[11px] font-mono text-ink break-all leading-relaxed max-h-24 overflow-y-auto">

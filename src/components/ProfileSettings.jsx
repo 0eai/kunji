@@ -55,6 +55,7 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
   const [vaultId, setVaultId] = useState(null);
   const [displayName, setDisplayName] = useState('');
   const [avatar, setAvatar] = useState('');
+  const [shareByDefault, setShareByDefault] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -68,6 +69,7 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
       if (p) {
         setDisplayName(p.displayName);
         setAvatar(p.avatar);
+        setShareByDefault(p.shareByDefault);
       }
       setLoaded(true);
     });
@@ -95,9 +97,15 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
     if (!vaultId) return;
     setSaving(true);
     try {
-      const clean = await saveProfile(vaultId, cryptoKey, { displayName, avatar }, userId);
+      const clean = await saveProfile(
+        vaultId,
+        cryptoKey,
+        { displayName, avatar, shareByDefault },
+        userId,
+      );
       setDisplayName(clean.displayName);
       setAvatar(clean.avatar);
+      setShareByDefault(clean.shareByDefault);
       showToast(clean.displayName || clean.avatar ? 'Profile saved.' : 'Profile cleared.');
     } catch (e) {
       showToast('Save failed: ' + e.message, 'error');
@@ -147,6 +155,36 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
         maxLength={60}
         className="mb-4"
       />
+
+      {/* Default-share preference: only meaningful once a name/photo is set. Sets the STARTING
+          position of the per-login "Share your profile" toggle — the user can still turn it off. */}
+      <button
+        type="button"
+        onClick={() => setShareByDefault((v) => !v)}
+        aria-pressed={shareByDefault}
+        disabled={!displayName && !avatar}
+        className="w-full flex items-center gap-3 text-left mb-4 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-medium text-ink">Share my profile by default</span>
+          <span className="block text-[12px] text-muted">
+            {!displayName && !avatar
+              ? 'Set a name or photo first.'
+              : "When an app asks, start with it shared — you can still turn it off per app."}
+          </span>
+        </span>
+        <span
+          className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+            shareByDefault ? 'bg-accent-fill' : 'bg-line'
+          }`}
+        >
+          <span
+            className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+              shareByDefault ? 'translate-x-4' : ''
+            }`}
+          />
+        </span>
+      </button>
 
       <Btn variant="primary" onClick={onSave} disabled={!loaded || saving} className="w-full">
         {saving ? 'Saving…' : 'Save profile'}
