@@ -219,6 +219,11 @@ const HEX64_SESSION = /^[0-9a-f]{64}$/i;
 export const agentCapabilityPoll = onRequest(
   { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
   async (req, res) => {
+    // Never cache: this is polled before the wallet deposits, so the first "not found yet" 404
+    // would otherwise be CDN/browser-cached (Hosting's default is max-age=600) and keep masking
+    // the capability for the rest of the approval window — the poll would time out even after
+    // the user approves. no-store makes every poll reach the function.
+    res.set('Cache-Control', 'no-store');
     const sessionId = String(req.query.sessionId || '');
     if (!HEX64_SESSION.test(sessionId)) return res.status(400).json({ error: 'bad_session' });
 
@@ -277,6 +282,9 @@ const allocAgentCode = async () => {
 export const agentRequestRelay = onRequest(
   { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
   async (req, res) => {
+    // Dynamic relay — its code lookups must not be CDN/browser-cached (same reasoning as the
+    // capability poll above: a cached 404/200 would serve stale state during the live flow).
+    res.set('Cache-Control', 'no-store');
     if (req.method === 'GET') {
       const code = String(req.query.code || '');
       if (!CODE6.test(code)) return res.status(400).json({ error: 'bad_code' });
