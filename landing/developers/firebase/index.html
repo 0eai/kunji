@@ -12,14 +12,18 @@
     <meta name="color-scheme" content="light" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <link rel="canonical" href="https://kunji.cc/developers/firebase/" />
 
     <meta property="og:title" content="Sign in with kunji on Firebase" />
     <meta
       property="og:description"
       content="Drop-in button + copy-paste Cloud Functions, rules, and custom-token bridge."
     />
-    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:image" content="https://kunji.cc/brand/og.png" />
+    <meta property="og:url" content="https://kunji.cc/developers/firebase/" />
     <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://kunji.cc/brand/og.png" />
 
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -32,7 +36,7 @@
           <span>kunji</span>
         </a>
         <nav class="nav">
-          <a class="navlink" href="/developers">Protocol</a>
+          <a class="navlink" href="/developers">Developers</a>
           <a class="navlink" href="/developers/agents">Agents</a>
           <a class="navlink" href="/developers/try">Try it</a>
         </nav>
@@ -272,7 +276,7 @@ document.addEventListener('kunji:success', async ({ detail }) => {
             </li>
             <li>
               <span
-                ><code class="k">sub === SHA-256(publicKey)</code>, recomputed server-side.</span
+                ><code class="k">sub === hex(SHA-256(utf8(publicKeyBase64)))</code>, recomputed server-side.</span
               >
             </li>
             <li>
@@ -313,7 +317,11 @@ document.addEventListener('kunji:success', async ({ detail }) => {
       <footer>
         <span>A zero-knowledge identity wallet</span>
         <span class="sep">·</span>
-        <a href="/developers">Protocol guide</a>
+        <a href="/security">Security</a>
+        <span class="sep">·</span>
+        <a href="/developers">Developers</a>
+        <span class="sep">·</span>
+        <a href="/brand">Brand</a>
         <span class="sep">·</span>
         <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
         <span class="sep">·</span>

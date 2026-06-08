@@ -4,9 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Try the Sign in with kunji button</title>
+    <meta
+      name="description"
+      content="Try the Sign in with kunji widget live: click the button, approve in the kunji app, and watch the success event — running against the demo's own endpoints."
+    />
     <meta name="theme-color" content="#faf9f6" />
     <meta name="color-scheme" content="light" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <link rel="canonical" href="https://kunji.cc/developers/try/" />
+
+    <meta property="og:title" content="Try the Sign in with kunji button" />
+    <meta
+      property="og:description"
+      content="Click the button, approve in the kunji app, and watch the success event — the real widget, live."
+    />
+    <meta property="og:image" content="https://kunji.cc/brand/og.png" />
+    <meta property="og:url" content="https://kunji.cc/developers/try/" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://kunji.cc/brand/og.png" />
+
     <link rel="stylesheet" href="/style.css" />
   </head>
 
@@ -42,7 +60,7 @@
             data-scope="profile"
             data-session-url="https://kunji-demo.web.app/api/session"
             data-callback-url="https://kunji-demo.web.app/kunji/callback"
-            data-poll-url="https://us-central1-kunji-cc.cloudfunctions.net/getSessionStatus"
+            data-poll-url="https://kunji-demo.web.app/kunji/status"
           ></div>
         </div>
 
@@ -73,9 +91,15 @@
       <footer>
         <span>A zero-knowledge identity wallet</span>
         <span class="sep">·</span>
+        <a href="/security">Security</a>
+        <span class="sep">·</span>
         <a href="/developers">Developers</a>
         <span class="sep">·</span>
+        <a href="/brand">Brand</a>
+        <span class="sep">·</span>
         <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
+        <span class="sep">·</span>
+        <a href="https://app.kunji.cc">app.kunji.cc</a>
       </footer>
     </div>
 

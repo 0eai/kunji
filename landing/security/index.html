@@ -12,14 +12,18 @@
     <meta name="color-scheme" content="light" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <link rel="canonical" href="https://kunji.cc/security/" />
 
     <meta property="og:title" content="Security & privacy — kunji" />
     <meta
       property="og:description"
       content="Zero-knowledge, per-app identity, self-sovereign — explained and verifiable in the open-source code."
     />
-    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:image" content="https://kunji.cc/brand/og.png" />
+    <meta property="og:url" content="https://kunji.cc/security/" />
     <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://kunji.cc/brand/og.png" />
 
     <link rel="stylesheet" href="/style.css" />
     <style>
@@ -77,7 +81,8 @@
             <div class="n">HOW IT WORKS</div>
             <p>
               When you choose a passkey, kunji runs it through <code class="k">Argon2id</code> — a
-              memory-hard key-derivation function — with a random salt, producing a wrapper key.
+              memory-hard key-derivation function (≈256&nbsp;MB, 4 passes) — with a random salt,
+              producing a wrapper key.
               That wrapper key encrypts (<code class="k">AES-GCM</code>) a randomly-generated
               <b>master key</b>, and the master key encrypts everything else. The passkey and master
               key are computed and used <b>only on your device</b>. kunji even authenticates
@@ -128,7 +133,7 @@
               From your master key, kunji deterministically derives a separate
               <code class="k">Ed25519</code> keypair for each app domain (via HKDF keyed by the
               domain). The identifier an app receives is
-              <code class="k">sub = SHA-256(public key)</code>. Different domain → different key →
+              <code class="k">sub = hex(SHA-256(publicKeyBase64))</code>. Different domain → different key →
               unrelated <code class="k">sub</code>. Because it's derived from your master key, the
               same vault on any of your devices reproduces the same identity for that app.
             </p>
@@ -233,7 +238,11 @@
       <footer>
         <span>A zero-knowledge identity wallet</span>
         <span class="sep">·</span>
+        <a href="/security">Security</a>
+        <span class="sep">·</span>
         <a href="/developers">Developers</a>
+        <span class="sep">·</span>
+        <a href="/brand">Brand</a>
         <span class="sep">·</span>
         <a href="https://github.com/0eai/kunji" target="_blank" rel="noopener">GitHub</a>
         <span class="sep">·</span>
