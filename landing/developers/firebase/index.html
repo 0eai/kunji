@@ -55,7 +55,7 @@
           <h2>1 · Add the button</h2>
           <p>
             Include the widget and drop in a button element pointing at your Cloud Function URLs. It
-            renders the official button, opens the QR / OTP modal, and reports success — all
+            renders the official button, opens the QR / code modal, and reports success — all
             client-side.
           </p>
           <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
@@ -110,7 +110,7 @@
               A random <code class="k">sessionId</code> + <code class="k">challenge</code> with a
               short TTL, stored in <em>your</em> Firestore. The <code class="k">ttl</code> field
               lets a Firestore TTL policy auto-delete old sessions. Return a 6-digit
-              <code class="k">code</code> too if you want the OTP tab.
+              <code class="k">code</code> too if you want the code tab.
             </p>
             <pre><code>import { onRequest } from 'firebase-functions/v2/https';
 import { initializeApp } from 'firebase-admin/app';

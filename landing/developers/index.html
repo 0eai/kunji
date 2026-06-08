@@ -54,7 +54,7 @@
           <div class="sec-label">Fastest path — the drop-in button</div>
           <p>
             Include the widget and drop in a button. It renders the official "Sign in with kunji"
-            button, opens the QR / OTP modal, and reports success — entirely client-side, talking
+            button, opens the QR / code modal, and reports success — entirely client-side, talking
             only to your own endpoints.
           </p>
           <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
@@ -292,7 +292,7 @@ const token = await admin.auth().createCustomToken(session.sub, {
   "signedToken": "base64 Ed25519 signature over canonicalJson(signedPayload)"
 }</code></pre>
           <p class="note">
-            <code class="k">claims</code> appears only if the user consented (§ scope). It's signed
+            <code class="k">claims</code> appears only if the user consented (see scope above). It's signed
             (tamper-evident) but <b>self-asserted and never verified</b> — treat it as untrusted.
           </p>
         </section>

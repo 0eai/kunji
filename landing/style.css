@@ -143,6 +143,36 @@ h1 {
   letter-spacing: -0.035em;
   line-height: 1.02;
 }
+/* Hero typewriter: the cycling word + its caret. The caret rides on `.typing`, which
+   hero-type.js adds only when it animates — so JS-off / reduced-motion render a plain
+   static word with no caret. */
+.type {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.type.typing {
+  border-right: 0.06em solid currentColor;
+  padding-right: 0.04em;
+  animation: caret 1s steps(1) infinite;
+}
+@keyframes caret {
+  50% {
+    border-color: transparent;
+  }
+}
+/* Visually hidden but available to screen readers (a stable "Google." so the churn isn't read). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .pitch {
   margin-top: 26px;
   font-size: clamp(16px, 3vw, 19px);
