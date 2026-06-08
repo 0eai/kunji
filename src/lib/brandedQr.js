@@ -1,7 +1,8 @@
-// Brand-styled QR rendering (qr-code-styling): extra-rounded modules + an embedded amber
-// app-icon logo with a cleared quiet area (hideBackgroundDots), so the logo never overlaps
-// data. Pure presentation — `data` is the QR payload unchanged. Shared by the wallet's QR
-// surfaces; the widget and the demo carry their own copy (separate bundles).
+// Brand-styled QR rendering (qr-code-styling): extra-rounded modules + the amber app-icon
+// overlaid on a white squircle that clears a quiet zone, so the logo never overlaps the data.
+// Pure presentation — `data` is the QR payload unchanged. The single source of truth: the wallet
+// surfaces AND the rp.js widget both render through this; the demo carries a byte-equal copy
+// (separate bundle).
 import QRCodeStyling from 'qr-code-styling';
 
 // The kunji app icon (amber tile + dark key) — same mark as public/icons/icon.svg, inlined
@@ -40,22 +41,34 @@ export const renderBrandedQr = (el, { data, size = 224, withLogo = true, ec = 'H
     margin,
     qrOptions: { errorCorrectionLevel: ec },
     backgroundOptions: { color: '#ffffff' },
-    dotsOptions: { type: 'extra-rounded', color: INK },
+    // roundSize:false — qr-code-styling otherwise floors the dot size, so `count*dotSize < size`
+    // and it centers the pattern, baking a white margin INSIDE the svg that varies with payload
+    // length (the source of the "inconsistent / too much padding" across surfaces). Fractional dots
+    // fill `size` edge-to-edge, so the only quiet zone is the container's uniform padding.
+    dotsOptions: { type: 'extra-rounded', color: INK, roundSize: false },
     cornersSquareOptions: { type: 'extra-rounded', color: INK },
     cornersDotOptions: { color: INK },
   });
   el.replaceChildren();
   qr.append(el);
+  // Pin the generated SVG to exactly `size` and display:block — qr-code-styling sets width/height
+  // attributes, but forcing it here removes the inline-baseline gap and guarantees every surface
+  // frames an identically-sized QR (the wallet/demo otherwise relied on intrinsic sizing).
+  const svg = el.querySelector('svg');
+  if (svg) svg.style.cssText = `display:block;width:${size}px;height:${size}px`;
   if (withLogo) {
     el.style.position = 'relative';
     const logo = document.createElement('img');
     logo.src = APP_ICON;
     logo.alt = '';
-    // A white plate (bg + padding) behind the amber tile = a cleared "quiet zone", so the logo
-    // reads as punched-out, not overlapping the modules. Done in the DOM (no qr-code-styling
-    // `image` fetch), so it stays CSP-robust; EC 'H' covers the ~7% it occludes.
-    const px = Math.round(size * 0.26);
-    logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${px}px;height:${px}px;padding:6px;background:#fff;border-radius:13px;box-sizing:border-box`;
+    // The amber tile sits on a generous white squircle = a cleared "quiet zone", so the logo reads
+    // as punched-out, floating clear of the modules (a thin ring crowds the dots). The plate (icon
+    // + halo) is ~31% of width / ~10% of area — within EC 'H'. Done in the DOM (no qr-code-styling
+    // `image` fetch) so it stays CSP-robust. Sizes are fractions of `size` so it scales.
+    const halo = Math.round(size * 0.05); // ~11px white border on each side
+    const plate = Math.round(size * 0.21) + halo * 2; // amber tile ~47px + the halo
+    const radius = Math.round(size * 0.085); // ~19px squircle, matching the brand tile
+    logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${plate}px;height:${plate}px;padding:${halo}px;background:#fff;border-radius:${radius}px;box-sizing:border-box`;
     el.appendChild(logo);
   }
   return qr;

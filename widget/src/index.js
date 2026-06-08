@@ -15,7 +15,7 @@
  *        data-poll-url="/kunji/status"          GET ?sessionId= -> { status, sub }
  *        data-redirect="/dashboard"></div>      (optional; else listen for 'kunji:success')
  */
-import QRCodeStyling from 'qr-code-styling';
+import { renderBrandedQr } from '../../src/lib/brandedQr.js';
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
 
 const APP_URL_DEFAULT = 'https://app.kunji.cc';
@@ -28,44 +28,8 @@ const KEY_SVG = `<svg viewBox="0 0 512 512" aria-hidden="true"><g transform="rot
   <circle cx="240" cy="172" r="56" fill="currentColor"/><path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>
 </g></svg>`;
 
-// kunji app icon (amber tile + dark key) — embedded as the QR center logo.
-const APP_ICON =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
-      '<rect width="512" height="512" rx="116" fill="#f59e0b"/>' +
-      '<g transform="rotate(-40 256 256)" fill="none" stroke="#1c1606" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">' +
-      '<circle cx="240" cy="172" r="56" fill="#1c1606"/>' +
-      '<path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>' +
-      '</g></svg>',
-  );
-
-// Brand-styled QR: extra-rounded modules + the amber app-icon overlaid as the center logo.
-// The logo is a plain <img> (img-src) NOT qr-code-styling's `image` — that fetches the data-URI
-// (connect-src), which a strict RP CSP blocks, blanking the entire QR. img-src data: is allowed far
-// more widely; EC 'H' (~30% recovery) covers the center the opaque overlay occludes.
-function renderQr(el, data) {
-  if (!el || !data) return;
-  const qr = new QRCodeStyling({
-    type: 'svg',
-    width: 224,
-    height: 224,
-    data,
-    margin: 0,
-    qrOptions: { errorCorrectionLevel: 'H' },
-    backgroundOptions: { color: '#ffffff' },
-    dotsOptions: { type: 'extra-rounded', color: '#1a1a18' },
-    cornersSquareOptions: { type: 'extra-rounded', color: '#1a1a18' },
-    cornersDotOptions: { color: '#1a1a18' },
-  });
-  el.replaceChildren();
-  qr.append(el);
-  const logo = document.createElement('img');
-  logo.className = 'qrlogo';
-  logo.src = APP_ICON;
-  logo.alt = '';
-  el.appendChild(logo);
-}
+// The branded QR (styled modules + amber logo on a white quiet-zone plate) is rendered through the
+// wallet's canonical renderBrandedQr — one source of truth, so the widget never drifts from the app.
 
 const CSS = `
 :host { all: initial; }
@@ -118,7 +82,6 @@ const CSS = `
 .panel { min-height: 248px; }
 .qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:12px; background:#fff; line-height:0; }
 .qrbox svg { display:block; width:224px; height:224px; }
-.qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:58px; height:58px; padding:6px; background:#fff; border-radius:13px; box-sizing:border-box; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }
 .otp { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
   font-size:38px; letter-spacing:.16em; color:#1a1a18; margin-top:6px; }
@@ -339,7 +302,7 @@ function openModal(opts, sourceEl) {
 
       sheet.querySelector('.x').onclick = close;
       const box = sheet.querySelector('.qrbox');
-      if (box) renderQr(box, qrData); // styled QR + embedded amber logo
+      if (box) renderBrandedQr(box, { data: qrData }); // shared styled QR + amber logo plate
       sheet.querySelectorAll('.tab').forEach(
         (b) =>
           (b.onclick = () => {

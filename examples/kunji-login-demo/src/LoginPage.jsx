@@ -35,20 +35,27 @@ const renderBrandedQr = (el, data) => {
     margin: 0,
     qrOptions: { errorCorrectionLevel: 'H' },
     backgroundOptions: { color: '#ffffff' },
-    dotsOptions: { type: 'extra-rounded', color: '#1a1a18' },
+    // roundSize:false — otherwise qr-code-styling floors the dot size and centers the pattern,
+    // baking a payload-length-dependent white margin inside the svg. Mirror of src/lib/brandedQr.js.
+    dotsOptions: { type: 'extra-rounded', color: '#1a1a18', roundSize: false },
     cornersSquareOptions: { type: 'extra-rounded', color: '#1a1a18' },
     cornersDotOptions: { color: '#1a1a18' },
   });
   el.replaceChildren();
   qr.append(el);
+  // Pin the SVG to exactly SIZE + display:block so framing matches the wallet/widget pixel-for-pixel.
+  const svg = el.querySelector('svg');
+  if (svg) svg.style.cssText = `display:block;width:${SIZE}px;height:${SIZE}px`;
   el.style.position = 'relative';
   const logo = document.createElement('img');
   logo.src = APP_ICON;
   logo.alt = '';
-  // White plate behind the amber tile = a cleared quiet zone (no module overlap). Mirror of
-  // src/lib/brandedQr.js — keep byte-equal. EC 'H' covers what the plate occludes.
-  const px = Math.round(SIZE * 0.26);
-  logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${px}px;height:${px}px;padding:6px;background:#fff;border-radius:13px;box-sizing:border-box`;
+  // The amber tile on a generous white squircle = a cleared quiet zone, so the logo floats clear of
+  // the modules. Mirror of src/lib/brandedQr.js — keep byte-equal. EC 'H' covers what it occludes.
+  const halo = Math.round(SIZE * 0.05); // ~11px white border on each side
+  const plate = Math.round(SIZE * 0.21) + halo * 2; // amber tile ~47px + the halo
+  const radius = Math.round(SIZE * 0.085); // ~19px squircle
+  logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${plate}px;height:${plate}px;padding:${halo}px;background:#fff;border-radius:${radius}px;box-sizing:border-box`;
   el.appendChild(logo);
 };
 

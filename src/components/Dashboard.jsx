@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { ScanLine, Lock, Shield, Settings, Bot } from 'lucide-react';
+import { ScanLine, Lock, Shield, Settings, Bot, KeyRound } from 'lucide-react';
 import {
   listenToApps,
   deleteApp,
@@ -22,6 +22,7 @@ import AppDetailsModal from './AppDetailsModal';
 import SecurityPanel from './SecurityPanel';
 import AgentsSheet from './AgentsSheet';
 import CodeEntryModal from './CodeEntryModal';
+import CodePickerSheet from './CodePickerSheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Btn } from './ui/primitives';
 import { listAgents } from '../services/capability';
@@ -45,6 +46,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [selectedApp, setSelectedApp] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
+  const [showCodePicker, setShowCodePicker] = useState(false); // top-level "enter a code": pick which app first
   const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } — same-device (deep-link) approval only
   const incomingHandled = useRef(false);
 
@@ -323,15 +325,23 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         </div>
       </div>
 
-      {/* Slim bottom action — hairline-topped, not a slab */}
+      {/* Slim bottom action — hairline-topped, not a slab. Two ways in: scan the QR or type the
+          code it shows (the typed path resolves against an app you've already added). */}
       {!loading && apps.length > 0 && (
         <div className="shrink-0 border-t border-line">
-          <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center">
             <button
               onClick={() => setShowScanner(true)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-accent hover:text-ink font-medium text-sm transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-accent hover:text-ink font-medium text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-lg"
             >
-              <ScanLine size={17} /> Scan a login code
+              <ScanLine size={17} /> Scan a code
+            </button>
+            <span className="w-px h-5 bg-line" aria-hidden="true" />
+            <button
+              onClick={() => setShowCodePicker(true)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-accent hover:text-ink font-medium text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-lg"
+            >
+              <KeyRound size={17} /> Enter a code
             </button>
           </div>
         </div>
@@ -394,6 +404,17 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
             setShowAgents(false);
             refreshAgents();
           }}
+        />
+      )}
+
+      {showCodePicker && (
+        <CodePickerSheet
+          apps={apps}
+          onPick={(app) => {
+            setShowCodePicker(false);
+            setCodeApp(app);
+          }}
+          onClose={() => setShowCodePicker(false)}
         />
       )}
 
