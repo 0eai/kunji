@@ -93,6 +93,12 @@
         font-family: ui-monospace, Menlo, monospace;
         font-size: 12.5px;
         line-height: 1.65;
+        /* The terminal is always dark — override the global light `pre` background/border
+           (style.css `pre { background: var(--code) }`), else the dark-tuned text is invisible
+           on the light page theme. */
+        background: #161614;
+        border: 0;
+        border-radius: 0;
         color: #e8e6e0;
         white-space: pre-wrap;
         word-break: break-word;
