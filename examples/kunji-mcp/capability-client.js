@@ -119,6 +119,40 @@ export const agentRequest = async (audience, scope) => {
 };
 
 /**
+ * Register the request with the kunji relay so the user can authorize it by a short 6-digit code
+ * (OTP) instead of pasting ~250 chars — the headless path: the code prints here, the user types it
+ * on their phone. Best-effort; returns the code or null (paste/QR still work). The code reveals only
+ * a pending request (pubkeys + scope, no secret); the minted capability is ECDH-bound to our keys.
+ */
+export const postAgentRequest = async (req) => {
+  try {
+    const resp = await fetch(`${KUNJI_APP_URL}/agent/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    if (!resp.ok) return null;
+    const { code } = await resp.json();
+    return typeof code === 'string' && /^\d{6}$/.test(code) ? code : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A terminal-renderable QR of the request JSON, for an agent/user with a screen — the wallet's
+ * scanner ingests it directly. Returns the ASCII QR, or null if rendering fails (paste still works).
+ */
+export const requestQr = async (req) => {
+  try {
+    const { default: QRCode } = await import('qrcode'); // lazy — only the bridge has this dep
+    return await QRCode.toString(JSON.stringify(req), { type: 'terminal', small: true });
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Poll the relay for the capability the wallet deposited after the user approved, decrypt it
  * with our transport key, and validate+store it (same checks as kunji_set_capability). No copy.
  */

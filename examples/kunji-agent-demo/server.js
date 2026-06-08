@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyAssertion } from './verify.js';
 import { verifyCapabilityAssertion } from './capability.js';
+import { buildRequest, postForCode, dataUriQr, pollCapability, login as agentLogin } from './agent-client.js';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
@@ -89,6 +90,13 @@ const bumpGlobalFail = () => {
 // issuer-signed `getRevocation` path (it needs a fetch to app.kunji.cc) — out of scope for a
 // zero-infra local demo; see examples/kunji-login-demo for that variant.
 const revoked = new Set();
+
+// Web "Authorize an agent" flow: this server acts as a web-hosted AGENT. It asks the live relay
+// (app.kunji.cc) for a 6-digit code + QR, the user authorizes in their wallet, the capability comes
+// back over the encrypted relay, and the server logs itself in here. Per-sessionId bookkeeping:
+const agentBase = new Map(); // sessionId → this RP's base origin (for the eventual login)
+const agentResults = new Map(); // sessionId → the finished {status, sub, …, io} (so repeat polls are idempotent)
+const HEX64 = /^[0-9a-f]{64}$/i;
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -252,6 +260,54 @@ const handler = async (req, res) => {
       callbackUrl: s.callbackUrl,
       expiresAt: s.expiresAt,
     });
+  }
+
+  // 3c. Web "Authorize an agent": the server (as a web-hosted agent) gets a 6-digit code + QR from
+  // the live relay for the user to authorize in their wallet. The browser shows the code/QR and polls.
+  if (req.method === 'POST' && path === '/agent/start') {
+    const { audience, callbackUrl } = originOf(req);
+    const base = callbackUrl.replace(/\/kunji\/callback$/, '');
+    const request = await buildRequest(audience, ['login']);
+    const [code, qrDataUri] = await Promise.all([postForCode(request), dataUriQr(request)]);
+    agentBase.set(request.sessionId, base);
+    // `request` is not secret (public keys + scope) — safe to echo so the browser can display it.
+    return json(res, 200, { sessionId: request.sessionId, code, qrDataUri, request });
+  }
+
+  // 3d. The browser polls this. The server polls the relay once; on the wallet's approval it
+  // decrypts the capability and logs itself in here, returning the verified id + the raw round-trip
+  // I/O (so the demo can show developers exactly what crossed the wire).
+  if (req.method === 'GET' && path === '/agent/poll') {
+    const sessionId = url.searchParams.get('sessionId') || '';
+    if (!HEX64.test(sessionId)) return json(res, 400, { error: 'bad_session' });
+    const cached = agentResults.get(sessionId);
+    if (cached) return json(res, 200, cached);
+    let capability;
+    try {
+      capability = await pollCapability(sessionId);
+    } catch (e) {
+      // Terminal: the relay session expired, or we lost the transport key (server restart). Cache it.
+      // Anything else (a network blip) → report pending so the browser keeps polling, don't cache.
+      if (e.message === 'authorization_expired' || e.message === 'unknown_session') {
+        const out = { status: 'error', error: e.message };
+        agentResults.set(sessionId, out);
+        return json(res, 200, out);
+      }
+      return json(res, 200, { status: 'pending' });
+    }
+    if (!capability) return json(res, 200, { status: 'pending' });
+    const base = agentBase.get(sessionId) || `http://localhost:${PORT}`;
+    const r = await agentLogin(base, capability);
+    const claims = JSON.parse(Buffer.from(capability.split('.')[1], 'base64url').toString('utf8'));
+    const out = {
+      status: r.status?.status === 'approved' ? 'approved' : 'failed',
+      sub: r.status?.sub || null,
+      scope: r.status?.scope || null,
+      capabilityClaims: { sub: claims.sub, aud: claims.aud, scope: claims.scope, exp: claims.exp, jti: claims.jti },
+      io: { capability, agentProof: r.agentProof, agentResponse: r.agentResp, status: r.status },
+    };
+    agentResults.set(sessionId, out);
+    return json(res, 200, out);
   }
 
   // 4. Static frontend + its externalized script.

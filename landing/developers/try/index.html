@@ -29,8 +29,9 @@
         <h1>Try the button</h1>
         <p class="lead">
           This page includes the real <code class="k">rp.js</code> widget, wired to the kunji demo's
-          own endpoints. Click the button, approve in the kunji app, and watch the success event
-          fire.
+          own endpoints. It requests <code class="k">scope="profile"</code>, so if you've set a custom
+          name/avatar in your wallet you can choose to share it. Click the button, approve in the kunji
+          app, and watch the success event fire.
         </p>
 
         <div class="sec">
@@ -38,10 +39,28 @@
             data-kunji-signin
             data-app-name="kunji demo"
             data-audience="kunji-demo.web.app"
+            data-scope="profile"
             data-session-url="https://kunji-demo.web.app/api/session"
             data-callback-url="https://kunji-demo.web.app/kunji/callback"
             data-poll-url="https://us-central1-kunji-cc.cloudfunctions.net/getSessionStatus"
           ></div>
+        </div>
+
+        <div class="sec" id="whoSec" hidden>
+          <div class="sec-label">Signed in as</div>
+          <div style="display: flex; align-items: center; gap: 14px">
+            <img
+              id="whoAvatar"
+              alt=""
+              width="48"
+              height="48"
+              style="border-radius: 12px; border: 1px solid var(--line); object-fit: cover"
+            />
+            <span>
+              <b id="whoName" style="font-size: 15px"></b>
+              <small id="whoSource" style="display: block; color: var(--muted); font-size: 12px"></small>
+            </span>
+          </div>
         </div>
 
         <div class="sec">
@@ -62,9 +81,23 @@
 
     <script src="/rp.js"></script>
     <script>
+      // claims are self-asserted + unverified → render the name as text, and only accept a picture
+      // with a safe scheme before binding it to <img src>.
+      const safePic = (p) => (typeof p === 'string' && /^(https:|data:image\/)/i.test(p) ? p : null);
       document.addEventListener('kunji:success', (e) => {
         document.getElementById('log').textContent =
           'kunji:success → ' + JSON.stringify(e.detail, null, 2);
+        // Show the shared profile if the user consented; else the default identity from `sub`.
+        const { sub, claims } = e.detail;
+        const def = window.kunji.handle(sub);
+        const pic = safePic(claims && claims.picture);
+        document.getElementById('whoName').textContent = (claims && claims.name) || def.name;
+        document.getElementById('whoAvatar').src = pic || def.avatarDataUri;
+        document.getElementById('whoSource').textContent =
+          claims && (claims.name || claims.picture)
+            ? 'shared from their kunji profile'
+            : 'default identity (derived from sub)';
+        document.getElementById('whoSec').hidden = false;
       });
     </script>
   </body>

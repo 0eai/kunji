@@ -9,6 +9,7 @@
     "agent": "node agent-sim.js"
   },
   "dependencies": {
-    "@noble/curves": "^2.0.1"
+    "@noble/curves": "^2.0.1",
+    "qrcode": "^1.5.4"
   }
 }

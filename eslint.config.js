@@ -11,6 +11,7 @@ export default [
       '**/dist/**',
       'landing/rp.js',
       'landing/rp.v1.js',
+      'landing/kunji-agent-demo.js',
       'reports',
       'eslint.config.js',
     ],

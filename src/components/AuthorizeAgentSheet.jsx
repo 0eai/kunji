@@ -4,6 +4,7 @@ import Sheet from './ui/Sheet';
 import { Btn, Field } from './ui/primitives';
 import {
   parseAgentRequest,
+  lookupAgentRequest,
   issueCapability,
   depositAgentCapability,
   recordAgent,
@@ -27,6 +28,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
   const [phase, setPhase] = useState('scan'); // scan → review → issued
   const [showScanner, setShowScanner] = useState(false);
   const [paste, setPaste] = useState('');
+  const [code, setCode] = useState('');
   const [req, setReq] = useState(null); // { audience, scope, agentPub }
   const [ttl, setTtl] = useState(3600);
   const [busy, setBusy] = useState(false);
@@ -59,6 +61,20 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
       setPhase('review');
     } catch {
       setError('Not a valid kunji agent request.');
+    }
+  };
+
+  // OTP path: resolve the agent's 6-digit code to its request, then ingest like a scan/paste.
+  const submitCode = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      const raw = await lookupAgentRequest(code);
+      ingest(raw);
+    } catch (e) {
+      setError(e.message || 'Could not load the request.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -197,11 +213,34 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
           </h2>
           <p className="text-[14px] text-muted leading-relaxed mb-5">
             Let an agent — an AI assistant, script, or service — act for you at one app, within a
-            scope you approve, without giving it any of your keys. Scan or paste the agent's request
-            to begin.
+            scope you approve, without giving it any of your keys. Enter the code the agent shows,
+            scan its QR, or paste its request.
           </p>
-          <Btn variant="primary" onClick={() => setShowScanner(true)} className="w-full mb-4">
-            <ScanLine size={16} /> Scan agent request
+          <label className="block text-[12px] uppercase tracking-wide text-faint mb-2">
+            Enter the 6-digit code
+          </label>
+          <div className="flex gap-2 mb-4">
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="000000"
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                if (error) setError('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && code.length === 6 && !busy) submitCode();
+              }}
+              className="flex-1 min-w-0 rounded-xl border border-line bg-surface px-4 py-3 text-center text-xl font-mono tracking-[0.4em] text-ink focus:outline-none focus:ring-2 focus:ring-accent/40"
+            />
+            <Btn variant="primary" onClick={submitCode} disabled={code.length !== 6 || busy}>
+              {busy ? '…' : 'Continue'}
+            </Btn>
+          </div>
+          <Btn variant="quiet" onClick={() => setShowScanner(true)} className="w-full mb-4">
+            <ScanLine size={16} /> Scan agent QR
           </Btn>
           <Field
             label="…or paste the request"

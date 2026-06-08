@@ -99,6 +99,69 @@
       [hidden] {
         display: none !important;
       }
+      p.lbl {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      .agentbox {
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+      }
+      button.agentbtn {
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 11px 16px;
+        cursor: pointer;
+        width: 100%;
+      }
+      button.agentbtn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .code6 {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: 0.32em;
+        text-align: center;
+        color: var(--ink);
+        padding: 14px 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        margin-bottom: 14px;
+      }
+      #agentQr {
+        display: block;
+        margin: 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        padding: 8px;
+      }
+      pre {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 10.5px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-all;
+        background: #f4f2ed;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        max-height: 240px;
+        overflow: auto;
+        margin: 10px 0 0;
+      }
     </style>
   </head>
   <body>
@@ -111,13 +174,36 @@
           A relying party that accepts both human logins and agent logins. No Firebase, no
           framework — just Node + an Ed25519 signature.
         </p>
-        <!-- Official drop-in widget. callbackUrl must be absolute (the wallet POSTs to it). -->
+        <!-- FOR PEOPLE — official drop-in widget. callbackUrl must be absolute (the wallet POSTs to it). -->
+        <p class="lbl">For people</p>
         <div id="kbtn"></div>
-        <p class="note" style="margin-top: 24px">
-          An <b>authorized agent</b> can sign in to this same RP without a fresh approval — see the
-          README (<code style="display: inline; border: 0; padding: 0">npm run agent</code> or the
-          kunji-mcp bridge). It runs against the backend; watch the terminal, or
-          <code style="display: inline; border: 0; padding: 0">GET /kunji/status?sessionId=…</code>.
+
+        <!-- FOR AGENTS — this RP acts as a web-hosted agent and authorizes itself via QR + OTP. -->
+        <div class="agentbox">
+          <p class="lbl">For agents</p>
+          <p class="note" style="margin: 0 0 12px">
+            Authorize an AI agent to act for you here, on a scoped, expiring capability — it never gets
+            your keys. This page acts as the agent: it asks the kunji relay for a code + QR you approve
+            in your wallet.
+          </p>
+          <button id="agentStart" class="agentbtn">Authorize an agent →</button>
+
+          <div id="agentFlow" hidden>
+            <p class="note" style="margin: 0 0 10px">
+              In your wallet: <b>Security → Authorize an agent</b> → type this code (or scan), then Approve.
+            </p>
+            <div class="code6" id="agentCode">······</div>
+            <img id="agentQr" alt="agent request QR" width="180" height="180" hidden />
+            <p class="note" id="agentStatus" style="margin: 12px 0 0">Starting…</p>
+            <details id="agentIo" hidden style="margin-top: 14px">
+              <summary class="note" style="cursor: pointer">Show the raw request / response</summary>
+              <pre id="agentIoPre"></pre>
+            </details>
+          </div>
+        </div>
+        <p class="note" style="margin-top: 22px">
+          Prefer a terminal? <code style="display: inline; border: 0; padding: 0">npm run agent</code>
+          prints a code + QR and logs in headless (or use the kunji-mcp bridge).
         </p>
       </section>
 

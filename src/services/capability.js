@@ -20,6 +20,7 @@ import { mintCapability } from '../lib/capability';
 import { logActivity } from './activityLog';
 
 const VAULT_WRITE_URL = import.meta.env.VITE_VAULT_WRITE_URL || '/vault/write';
+const AGENT_REQUEST_URL = import.meta.env.VITE_AGENT_REQUEST_URL || '/agent/request';
 // The signed revocation message — MUST match the RP verifier byte-for-byte.
 export const revokeMessage = (jti) => `kunji-revoke-v1:${jti}`;
 
@@ -72,6 +73,28 @@ export const parseAgentRequest = (raw) => {
     out.sessionId = String(req.sessionId);
   }
   return out;
+};
+
+/**
+ * Resolve a 6-digit agent-authorization code to the agent's request (OTP path). The agent POSTed
+ * its request to the relay and showed the user this short code; we fetch it back through the same
+ * function and return the raw JSON string for `parseAgentRequest` (so the code-typed and the
+ * QR-scanned paths converge on one validator). Throws a friendly message on a bad/expired code.
+ */
+export const lookupAgentRequest = async (code) => {
+  const c = String(code || '').trim();
+  if (!/^\d{6}$/.test(c)) throw new Error('Enter the 6-digit code.');
+  let resp;
+  try {
+    resp = await fetch(`${AGENT_REQUEST_URL}?code=${c}`);
+  } catch {
+    throw new Error('Network error — check your connection.');
+  }
+  if (resp.status === 404) throw new Error('Code not found — check it and try again.');
+  if (resp.status === 410) throw new Error('Code expired — ask the agent for a new one.');
+  if (resp.status === 429) throw new Error('Too many tries — wait a moment.');
+  if (!resp.ok) throw new Error('Could not load the request.');
+  return resp.text(); // raw JSON → parseAgentRequest
 };
 
 /**

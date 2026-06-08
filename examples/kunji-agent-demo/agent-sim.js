@@ -1,59 +1,55 @@
-// Headless agent demo — prove an authorized capability against THIS demo RP, no human in
-// the loop after the one-time wallet authorization. Mirrors the protocol the kunji-mcp
-// bridge (Phase 4) automates. See ../../docs/agentic-delegation.md.
+// Headless agent demo — authorize once via the live QR + OTP relay, then sign in to THIS demo RP
+// with the resulting capability, no human in the loop after that. Mirrors what the kunji-mcp bridge
+// (Phase 4) automates. See ../../docs/agentic-delegation.md.
 //
-// Step 1 — print the agent's request to authorize (defaults to the local server):
+// Run it (defaults to the local server):
 //     node agent-sim.js
-// Step 2 — in the kunji wallet: Security → Authorize an agent → paste/scan that request,
-//     approve, copy the capability. Then:
-//     CAP="<capability JWT>" node agent-sim.js
+// It prints a 6-digit CODE + a QR + the raw request. In the kunji wallet: Security → Authorize an
+// agent → type the code (or scan the QR, or paste), pick a TTL, Approve. The agent then receives the
+// capability over the encrypted relay and logs in automatically — no copy/paste.
 //
-// The capability's `audience` is this RP's hostname (localhost by default). Point at another
-// host with BASE, e.g.  BASE="http://192.168.1.5:3000" node agent-sim.js.
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { ed25519 } from '@noble/curves/ed25519.js';
-import { buildAgentProof } from './capability.js';
+// Point at another host with BASE (e.g. BASE="http://192.168.1.5:3000" node agent-sim.js); the
+// capability's audience is that host's hostname. Offline/relay-down fallback (paste a capability):
+//     CAP="<capability JWT>" BASE="http://localhost:3000" node agent-sim.js
+import { buildRequest, postForCode, terminalQr, awaitCapability, login, agentPubB64 } from './agent-client.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const audience = new URL(BASE).hostname;
 const scope = (process.env.SCOPE || 'login').split(',');
-const KEYFILE = new URL('./.agent-key', import.meta.url);
 
-// Persist the agent keypair across the two runs so the capability (minted for the key
-// printed in step 1) matches the proof we sign in step 2.
-let secretKey;
-if (existsSync(KEYFILE)) {
-  secretKey = new Uint8Array(Buffer.from(readFileSync(KEYFILE, 'utf8').trim(), 'base64'));
-} else {
-  ({ secretKey } = ed25519.keygen());
-  writeFileSync(KEYFILE, Buffer.from(secretKey).toString('base64'));
-}
-const agentPub = Buffer.from(ed25519.getPublicKey(secretKey)).toString('base64');
-
+// Fallback path: a capability pasted in via CAP= (skips the relay entirely).
 const CAP = process.env.CAP;
-if (!CAP) {
-  console.log('Agent public key (base64):', agentPub);
-  console.log('\nAuthorize this request in the kunji wallet (Security → Authorize an agent):\n');
-  console.log(JSON.stringify({ kunjiCap: 'v1', audience, scope, agentPub }));
-  console.log(`\nThen: CAP="<capability>" BASE="${BASE}" node agent-sim.js`);
-  process.exit(0);
+if (CAP) {
+  const r = await login(BASE, CAP);
+  console.log('agent login →', r.agentResp);
+  console.log('session    →', r.status); // { status:'approved', sub, scope, agent:true } on success
+  process.exit(r.status?.status === 'approved' ? 0 : 1);
 }
 
-const post = (path, body) =>
-  fetch(BASE + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then((r) => r.json());
+console.log('Agent public key (base64):', agentPubB64(), '\n');
+const req = await buildRequest(audience, scope);
+const [code, qr] = await Promise.all([postForCode(req), terminalQr(req)]);
 
-const capJti = JSON.parse(Buffer.from(CAP.split('.')[1], 'base64url').toString('utf8')).jti;
+console.log('Authorize this agent in the kunji wallet (Security → Authorize an agent):\n');
+if (code) console.log(`  • Type this 6-digit code:  ${code}   (expires ~3 min)\n`);
+if (qr) {
+  console.log('  • …or scan this QR:\n');
+  console.log(qr);
+}
+console.log('  • …or paste this request:\n');
+console.log('    ' + JSON.stringify(req) + '\n');
+console.log('Waiting for approval…  (Ctrl-C to cancel)\n');
 
-const session = await post('/api/session', { audience, callbackUrl: `${BASE}/kunji/callback` });
-if (!session.sessionId) throw new Error('createSession failed: ' + JSON.stringify(session));
-
-const agentProof = buildAgentProof(secretKey, { audience, challenge: session.challenge, capJti });
-const result = await post('/kunji/agent', { sessionId: session.sessionId, capability: CAP, agentProof });
-console.log('agent login →', result);
-
-const status = await fetch(`${BASE}/kunji/status?sessionId=${session.sessionId}`).then((r) => r.json());
-console.log('session    →', status); // { status:'approved', sub, scope:['login'], agent:true } on success
+try {
+  const capability = await awaitCapability(req.sessionId);
+  console.log('✓ capability received over the relay\n');
+  const r = await login(BASE, capability);
+  console.log('agent login →', r.agentResp);
+  console.log('session    →', r.status); // { status:'approved', sub, scope, agent:true } on success
+  process.exit(r.status?.status === 'approved' ? 0 : 1);
+} catch (e) {
+  console.error('\n✗ ' + e.message);
+  console.error(`Relay unavailable or approval timed out. Paste fallback:`);
+  console.error(`  CAP="<capability>" BASE="${BASE}" node agent-sim.js`);
+  process.exit(1);
+}

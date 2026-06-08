@@ -14,26 +14,35 @@ touch this machine.
  you, in the kunji wallet                 the AI runtime + this MCP server
  ────────────────────────                 ────────────────────────────────
                                   kunji_authorize(audience, scope)
-                                     → prints a request { kunjiCap, audience, scope, agentPub }
+                                     → prints a 6-digit CODE + a QR + the raw request
  Security → "Authorize an agent"
-   scan/paste the request → Approve
-   → copy the capability  ───────►  kunji_set_capability(capability)
-                                     (validated: holder-of-key + not expired)
+   type the code (or scan the QR,
+   or paste) → pick a TTL → Approve
+        │  wallet relays the capability back, encrypted
+        ▼
+                                  kunji_await_capability()
+                                     → polls the relay, decrypts + stores it (no copy/paste)
                                   kunji_login(baseUrl)
                                      → creates a session, signs its challenge with the
                                        agent key, POSTs /kunji/agent → { sub, scope, status }
 ```
 
+The request reaches the wallet three equivalent ways — **type the 6-digit code** (works in a bare
+terminal, no window needed), **scan the QR** (if the agent has a screen), or **paste** the raw JSON.
+The code/QR carry no secret (just public keys + scope); the minted capability is ECDH-encrypted to the
+agent's transport key and bound to its signing key, so a guessed code authorizes nothing.
+
 Every sensitive step is gated: nothing works until **you** approve the capability in the
 wallet, and the capability is bound to this agent's key (a stolen capability is useless),
-scoped, and time-boxed. Revoke by adding its `jti` to the RP's `revokedCapabilities`.
+scoped, and time-boxed. Revoke it from the wallet (Security → Authorized agents).
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `kunji_authorize` | `{ audience, scope? }` → the request for you to approve in the wallet |
-| `kunji_set_capability` | `{ capability }` → store the wallet-issued capability (validated) |
+| `kunji_authorize` | `{ audience, scope? }` → prints a 6-digit code + QR + request for you to approve in the wallet |
+| `kunji_await_capability` | `{ sessionId? }` → poll the relay, decrypt + store the approved capability (no paste) |
+| `kunji_set_capability` | `{ capability }` → manual fallback: store a pasted wallet-issued capability (validated) |
 | `kunji_login` | `{ baseUrl }` → sign in at the RP as the authorized agent → `{ sub, scope, status }` |
 | `kunji_status` | the agent's public key + the loaded capability (audience/scope/expiry) |
 
@@ -64,10 +73,11 @@ Or **Claude Desktop** (`claude_desktop_config.json`):
 ## Try it against the demo RP
 
 1. Ask the assistant to call **`kunji_authorize`** with `audience: "kunji-demo.web.app"`,
-   `scope: ["login"]`. It prints a request.
-2. In the kunji wallet: **Security → Authorize an agent** → paste/scan that request →
-   pick a TTL → **Approve** → copy the capability.
-3. Give the capability to the assistant; it calls **`kunji_set_capability`**.
+   `scope: ["login"]`. It prints a 6-digit code, a QR, and the raw request.
+2. In the kunji wallet: **Security → Authorize an agent** → **type the 6-digit code** (or scan
+   the QR, or paste) → pick a TTL → **Approve**.
+3. Ask the assistant to call **`kunji_await_capability`** — it receives the capability over the
+   encrypted relay automatically (no copy/paste). (`kunji_set_capability` is the manual fallback.)
 4. Ask it to call **`kunji_login`** with `baseUrl: "https://kunji-demo.web.app"` →
    it returns the verified `sub` + `scope`.
 

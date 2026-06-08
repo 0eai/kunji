@@ -68,12 +68,39 @@ RP-side `jti` denylist (keeps kunji backendless) + a short default TTL as the sa
 A kunji **MCP server / local signing agent** exposes tools to an AI runtime (e.g. Claude). Built at
 **`examples/kunji-mcp/`** (stdio MCP server, `@modelcontextprotocol/sdk`):
 
-- `kunji_authorize(audience, scope)` → returns the request the user approves in the wallet;
-- `kunji_set_capability(capability)` → stores the wallet-issued capability (validated holder-of-key +
-  expiry);
+- `kunji_authorize(audience, scope)` → builds the request and presents three ways for the user to
+  bring it into their wallet: a **6-digit code** (printed in the terminal — type it in the wallet),
+  a **terminal QR** (scan it), and the raw JSON (paste fallback);
+- `kunji_await_capability(sessionId?)` → polls the relay, decrypts the wallet-deposited capability with
+  the agent transport key, validates it (holder-of-key + expiry), and stores it — no copy/paste;
+- `kunji_set_capability(capability)` → manual fallback: stores a pasted wallet-issued capability
+  (validated holder-of-key + expiry);
 - `kunji_login(baseUrl)` → signs the RP challenge with the agent key **only within the granted
   capability** and submits it;
 - `kunji_status` → the agent's public key + the loaded capability.
+
+### Request hand-off — QR + OTP (no JSON pasting)
+The request → wallet hop has three equivalent entry points (the return hop is always the encrypted
+relay above). The request object is:
+
+```json
+{ "kunjiCap": "v2", "audience": "example.com", "scope": ["login"],
+  "agentPub": "<base64 Ed25519 pub>", "transportPub": "<base64 ECDH-P256 SPKI>",
+  "sessionId": "<64-hex>" }
+```
+
+- **OTP (headless-friendly)** — the agent `POST`s the request to `https://app.kunji.cc/agent/request`
+  (the `agentRequestRelay` function) and gets back a short **6-digit code** stored under
+  `agentRequests/{code}` with a ~3-min TTL; the user types it in the wallet, which `GET`s it back by
+  code. Works in a bare terminal — no window or page needed.
+- **QR** — for an agent with a display (terminal QR, or a web-hosted agent's popup), render the request
+  JSON as a QR; the wallet scanner ingests it directly.
+- **Paste** — the raw JSON, unchanged.
+
+The code/QR carry **no secret** (only public keys + scope): the minted capability is ECDH-encrypted to
+`transportPub` and bound to `agentPub`, so a guessed/leaked code authorizes nothing. The relay is
+per-IP rate-limited and the code is short-TTL + function-mediated both ways (`agentRequests/{code}` is
+`read,write:if false`; demo-grade caveat mirrors the link/login OTP).
 
 The runtime never receives keys; the agent's keypair lives only on the local machine; every sensitive
 op is gated by a pre-authorized capability or a live human approval. This is the practical "make

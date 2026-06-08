@@ -17,6 +17,10 @@
           "source": "/agent/capability",
           "function": { "functionId": "agentCapabilityPoll", "region": "us-central1" }
         },
+        {
+          "source": "/agent/request",
+          "function": { "functionId": "agentRequestRelay", "region": "us-central1" }
+        },
         { "source": "**", "destination": "/index.html" }
       ],
       "headers": [

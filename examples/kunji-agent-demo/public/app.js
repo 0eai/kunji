@@ -58,3 +58,55 @@ $('logout').onclick = () => {
   $('in').hidden = true;
   $('out').hidden = false;
 };
+
+// ── "Authorize an agent" — this page acts as a web-hosted agent. POST /agent/start gets a 6-digit
+// code + QR from the live relay; the user approves in the wallet; we poll /agent/poll until the
+// server has received the capability over the relay and logged itself in here. ──
+let agentPoll = null;
+$('agentStart').onclick = async () => {
+  $('agentStart').disabled = true;
+  $('agentStart').textContent = 'Starting…';
+  try {
+    const r = await fetch('/agent/start', { method: 'POST' }).then((x) => x.json());
+    $('agentFlow').hidden = false;
+    $('agentCode').textContent = r.code || '— (relay unavailable; scan or paste)';
+    if (r.qrDataUri) {
+      $('agentQr').src = r.qrDataUri;
+      $('agentQr').hidden = false;
+    }
+    $('agentStatus').textContent = 'Waiting for approval…';
+    clearInterval(agentPoll);
+    agentPoll = setInterval(() => pollAgent(r.sessionId), 2000);
+  } catch {
+    $('agentStatus').textContent = 'Could not start — is the relay reachable?';
+    $('agentStart').disabled = false;
+    $('agentStart').textContent = 'Authorize an agent →';
+  }
+};
+
+const pollAgent = async (sessionId) => {
+  let r;
+  try {
+    r = await fetch(`/agent/poll?sessionId=${encodeURIComponent(sessionId)}`).then((x) => x.json());
+  } catch {
+    return; // transient; keep polling
+  }
+  if (r.status === 'pending') return;
+  clearInterval(agentPoll);
+  if (r.status === 'approved') {
+    $('agentCode').textContent = '✓';
+    $('agentStatus').innerHTML =
+      `Agent signed in as <b>${escapeHtml((r.sub || '').slice(0, 16))}…</b> · scope: ` +
+      escapeHtml((r.scope || []).join(', '));
+  } else {
+    $('agentStatus').textContent = 'Authorization failed: ' + (r.error || r.status);
+  }
+  if (r.io) {
+    $('agentIoPre').textContent = JSON.stringify(r.io, null, 2);
+    $('agentIo').hidden = false;
+  }
+};
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}

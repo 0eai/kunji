@@ -7,6 +7,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ed25519 } from '@noble/curves/ed25519.js';
+import { randomInt } from 'node:crypto';
 
 initializeApp();
 const db = getFirestore();
@@ -235,5 +236,79 @@ export const agentCapabilityPoll = onRequest(
       encryptedCapability: s.encryptedCapability,
       audience: s.audience,
     });
+  },
+);
+
+// ── Agent authorization-request relay (OTP / QR) ─────────────────────────────
+// Lets an agent hand its authorization request to the wallet without the user pasting ~250 chars.
+// POST the request → a short 6-digit CODE the user types in the wallet (or the agent shows a QR of
+// the request directly). GET ?code= returns the request. The request is NOT secret (pubkeys + scope);
+// the minted capability is ECDH-encrypted to transportPub + bound to agentPub, so a guessed code
+// authorizes nothing — short TTL + per-IP rate limit bound abuse. Function-mediated (agent is unauth).
+const CODE6 = /^\d{6}$/;
+const B64_LOOSE = /^[A-Za-z0-9+/]{16,400}={0,2}$/;
+const AGENT_REQ_TTL_MS = 3 * 60 * 1000;
+
+const validAgentRequest = (r) =>
+  !!r &&
+  r.kunjiCap === 'v2' &&
+  typeof r.audience === 'string' &&
+  !!r.audience &&
+  Array.isArray(r.scope) &&
+  r.scope.length > 0 &&
+  r.scope.every((s) => typeof s === 'string' && s.length <= 64) &&
+  typeof r.agentPub === 'string' &&
+  B64_LOOSE.test(r.agentPub) &&
+  typeof r.transportPub === 'string' &&
+  B64_LOOSE.test(r.transportPub) &&
+  HEX64_SESSION.test(r.sessionId || '');
+
+const allocAgentCode = async () => {
+  for (let i = 0; i < 12; i++) {
+    const code = String(randomInt(100000, 1000000)); // 6 digits, 100000–999999
+    const snap = await db.collection('agentRequests').doc(code).get();
+    if (!snap.exists || Date.now() > (snap.data().expiresAt || 0)) return code; // free or expired slot
+  }
+  return null;
+};
+
+export const agentRequestRelay = onRequest(
+  { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
+  async (req, res) => {
+    if (req.method === 'GET') {
+      const code = String(req.query.code || '');
+      if (!CODE6.test(code)) return res.status(400).json({ error: 'bad_code' });
+      if (await rateLimited(req.ip, 30, 60 * 1000, 'agentreq'))
+        return res.status(429).json({ error: 'rate_limited' });
+      const snap = await db.collection('agentRequests').doc(code).get();
+      if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+      const d = snap.data();
+      if (Date.now() > d.expiresAt) return res.status(410).json({ error: 'expired' });
+      return res.json(d.request);
+    }
+    if (req.method === 'POST') {
+      if (await rateLimited(req.ip, 20, 60 * 1000, 'agentreq'))
+        return res.status(429).json({ error: 'rate_limited' });
+      const r = req.body || {};
+      if (!validAgentRequest(r)) return res.status(400).json({ error: 'bad_request' });
+      const code = await allocAgentCode();
+      if (!code) return res.status(503).json({ error: 'no_code' });
+      const expiresAt = Date.now() + AGENT_REQ_TTL_MS;
+      // Store only the known fields (never the raw body).
+      await db.collection('agentRequests').doc(code).set({
+        request: {
+          kunjiCap: 'v2',
+          audience: r.audience,
+          scope: r.scope.slice(0, 16),
+          agentPub: r.agentPub,
+          transportPub: r.transportPub,
+          sessionId: r.sessionId,
+        },
+        expiresAt,
+        ttl: Timestamp.fromMillis(expiresAt + 5 * 60 * 1000),
+      });
+      return res.json({ code });
+    }
+    return res.status(405).json({ error: 'method_not_allowed' });
   },
 );

@@ -24,9 +24,16 @@ is **no kunji server in the login path**.
 | `POST /kunji/callback` | the wallet (human)  | verify the §6 signed assertion, approve the session       |
 | `POST /kunji/agent`    | an agent            | verify `{ capability, agentProof }`, approve the session  |
 | `GET  /kunji/status`   | the frontend        | poll `{ status, sub, claims, scope, agent }`              |
+| `POST /agent/start`    | the page (as agent) | get a 6-digit code + QR from the relay for the user to authorize |
+| `GET  /agent/poll`     | the page            | once approved, decrypt the relayed capability + log in here; returns the I/O |
 
 An agent login resolves to the **same `sub`** a human login would — the agent acts as the user, on
 a scoped, expiring, revocable capability. `status.agent` distinguishes how the session was approved.
+
+The agent half of the flow lives in [`agent-client.js`](agent-client.js) (mirrors the kunji-mcp
+bridge): build a v2 request + ECDH transport key, get a code/QR from `app.kunji.cc/agent/request`,
+poll `app.kunji.cc/agent/capability`, decrypt, then log in. Both the web page and `agent-sim.js`
+use it. Override the relay with `KUNJI_APP_URL` (defaults to `https://app.kunji.cc`).
 
 ## 1. Run the RP
 
@@ -56,30 +63,41 @@ reach this RP — i.e. when it's served over **HTTPS at a real host** (see §1's
 On plain `http://localhost` the production wallet can't reach it, so use the **same-device button** or
 the agent path below.
 
-## 3. Agent login — two ways
+## 3. Agent login — three ways
 
-Either way, the capability's **`audience` must equal this RP's hostname** (`localhost` by default;
+Every way, the capability's **`audience` must equal this RP's hostname** (`localhost` by default;
 whatever is in `BASE`/`PUBLIC_ORIGIN` otherwise). The wallet derives the per-app key from it.
 
-### a) Bundled simulator (offline, copy/paste — no relay)
+### a) In the browser (the page acts as a web-hosted agent — QR + OTP)
+
+Open `http://localhost:3000` → **"Authorize an agent →"**. The page asks the relay for a **6-digit
+code + QR**; in your wallet do **Security → Authorize an agent**, type the code (or scan), Approve.
+The page receives the capability over the encrypted relay, logs itself in here, and shows the
+verified `sub` plus the **raw request/response** that crossed the wire.
+
+### b) Headless simulator (live QR + OTP relay — no copy/paste)
 
 ```sh
-# Step 1 — print the request to authorize (persists an agent key in .agent-key):
 node agent-sim.js
-
-# Step 2 — in the wallet: Security → Authorize an agent → paste/scan the request → Approve → copy
-#          the capability JWT, then:
-CAP="<capability JWT>" node agent-sim.js
 ```
 
-Expect:
+Prints a **6-digit code**, a **terminal QR**, and the raw request. Authorize in the wallet (type the
+code or scan); the simulator receives the capability over the relay and logs in:
 
 ```
+✓ capability received over the relay
 agent login → { status: 'ok' }
-session    → { status: 'approved', sub: '…', claims: null, scope: [ 'login' ], agent: true }
+session    → { status: 'approved', sub: '…', scope: [ 'login' ], agent: true }
 ```
 
-### b) Real MCP bridge (live wallet + encrypted relay — no copy/paste)
+Offline / relay-down fallback (paste a capability, no relay):
+
+```sh
+node agent-sim.js                          # copy the printed request → wallet → copy the capability
+CAP="<capability JWT>" node agent-sim.js   # log in with the pasted capability
+```
+
+### c) Real MCP bridge
 
 Run this RP, then drive the [`kunji-mcp`](../kunji-mcp) bridge with the relay pointed at the hosted
 app and `baseUrl` pointed here:
@@ -87,7 +105,7 @@ app and `baseUrl` pointed here:
 ```
 KUNJI_APP_URL=https://app.kunji.cc        # the capability relay
 kunji_authorize        { audience: "localhost", scope: ["login"] }
-# → approve the request in your wallet (Security → Authorize an agent)
+# → type the code (or scan the QR) in your wallet (Security → Authorize an agent)
 kunji_await_capability                      # wallet delivers it over the encrypted relay
 kunji_login            { baseUrl: "http://localhost:3000" }
 # → { status: "approved", sub, scope }

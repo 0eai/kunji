@@ -77,5 +77,14 @@ service cloud.firestore {
         && 'sig' in request.resource.data;
       allow update, delete: if false;
     }
+
+    // Agent authorization-request relay (OTP / QR). Fully function-mediated, both ways:
+    // the unauthenticated agent POSTs its request via agentRequestRelay (Admin) and the wallet
+    // GETs it by 6-digit code through the same function — neither touches the doc directly. The
+    // stored request is not secret (pubkeys + scope, no master key); the minted capability is still
+    // ECDH-encrypted to transportPub and bound to agentPub, so a guessed code authorizes nothing.
+    match /agentRequests/{code} {
+      allow read, write: if false;
+    }
   }
 }

@@ -9,6 +9,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import {
   agentRequest,
+  postAgentRequest,
+  requestQr,
   setCapability,
   currentCapability,
   login,
@@ -38,12 +40,20 @@ server.registerTool(
   async ({ audience, scope }) => {
     try {
       const req = await agentRequest(audience, scope);
-      return text(
-        `Ask the user to authorize this in their kunji wallet → Security → "Authorize an agent" ` +
-          `(scan or paste), then Approve. The wallet delivers the capability back to you securely — ` +
-          `call kunji_await_capability next (or kunji_set_capability to paste it manually):\n\n` +
-          JSON.stringify(req),
-      );
+      const [code, qr] = await Promise.all([postAgentRequest(req), requestQr(req)]);
+      const lines = [
+        `Ask the user to open their kunji wallet → Security → "Authorize an agent", then Approve.`,
+        `On approval the wallet relays the capability back to you securely — call kunji_await_capability next.`,
+        ``,
+      ];
+      if (code) {
+        lines.push(`Easiest — have them type this 6-digit code (expires in ~3 min):`, ``, `        ${code}`, ``);
+      }
+      if (qr) {
+        lines.push(`…or scan this QR with the wallet:`, ``, qr);
+      }
+      lines.push(`…or paste this request:`, ``, JSON.stringify(req));
+      return text(lines.join('\n'));
     } catch (e) {
       return fail(e);
     }
