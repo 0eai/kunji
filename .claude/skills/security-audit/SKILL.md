@@ -1,19 +1,21 @@
 ---
 name: security-audit
-description: Re-run kunji's security/code audit lens against the current code. Use when the user asks to audit, re-check findings, review crypto/auth changes for regressions, or assess a new feature's security. References the git-ignored reports/ ledgers (S#/C# findings) — never commits them.
+description: Re-run kunji's security audit lens against the current code (crypto, auth, protocol, capabilities). Use when the user asks for a security audit/review, to re-check S# findings, or to assess a crypto/auth/capability change for regressions. Owns the git-ignored reports/SECURITY_AUDIT.md (S# findings) — never commits it. Code-quality (C#) is the code-audit skill's; repo hygiene/secrets sweeps are cleanup's.
 ---
 
 # Security audit (kunji)
 
-kunji is a zero-knowledge crypto wallet — audit it as a **protocol**, not a typical web app. The
-prior full audit lives in `reports/SECURITY_AUDIT.md` (S-numbered) and `reports/AUDIT.md`
-(C-numbered), with "Remediation status" ledgers. These are **git-ignored — read and update locally,
-never commit them.**
+kunji is a zero-knowledge crypto wallet — audit it as a **protocol**, not a typical web app. This
+skill owns the security ledger **`reports/SECURITY_AUDIT.md` (S-numbered)**, with a "Remediation
+status" table. It's **git-ignored — read and update locally, never commit it.** Code-quality
+findings (C#, `reports/AUDIT.md`) belong to the **`code-audit`** skill; pure hygiene (junk files,
+`.gitignore`, secret-scanning the tree) belongs to **`cleanup`** — defer those rather than duplicating.
 
-## Before auditing: load the ledgers
+## Before auditing: load the ledger
 
-Read `reports/SECURITY_AUDIT.md` and `reports/AUDIT.md`. Each finding is marked **Fixed (Phase N)**,
-**Fixed (close-out)**, or **Accepted — won't fix**. Don't re-report a known accepted risk as new.
+Read `reports/SECURITY_AUDIT.md`. Each finding is marked **Fixed (Phase N)**, **Fixed (close-out)**,
+or **Accepted — won't fix**. Don't re-report a known accepted risk as new. Note the dated re-sweeps
+(through the agentic-delegation review, S18a–c / S19) so you extend, not duplicate.
 
 ## Accepted risks (decisions, NOT bugs — do not flag as findings)
 
@@ -42,7 +44,22 @@ If a change *worsens* one of these, that's worth raising; their mere existence i
    write-once + immutable `pubB`, `loginSessions` locked.
 6. **Headers/CSP.** `firebase.json` + `public/theme-init.js` (external because CSP blocks inline
    scripts) — HSTS, frame-ancestors, no new inline-script regressions.
-7. **Secrets/PII.** No keys, tokens, or PII in committed code, logs, or the demo bundle.
+7. **Secrets/PII.** No keys, tokens, or PII in committed code, logs, or the demo bundle. (For a broad
+   tree-wide secret/hygiene sweep, that's the `cleanup` skill — here, focus on crypto-material leaks.)
+8. **Agentic delegation / capabilities.** `src/lib/capability.js`, `src/services/capability.js`, and
+   the RP verifiers `examples/kunji-login-demo/functions/capability.js` +
+   `examples/kunji-agent-demo/capability.js`. Check: JWS `alg` pinned (no `none`/alg-confusion);
+   `sub` recomputed from the **signature-verified** header `jwk` (a forged cap only authenticates the
+   attacker's *own* sub — no escalation); holder-of-key enforced (proof verified against `cnf.jwk`);
+   proof `typ` + freshness + replay; `aud` checked on **both** cap and proof; scope non-empty;
+   revocation honored only when issuer-signed (`revocations/{jti}` sig verifies against the cap's own
+   key) and read inside the consume transaction (no TOCTOU); relay is **ciphertext-only**
+   (ECDH-P256→AES-GCM, never plaintext at rest); wallet↔RP byte-parity (`tests/capability*.test.js`).
+
+**Example RPs are template code devs clone** (`kunji-*-demo`, incl. `kunji-agent-demo`): re-apply the
+example-scoped findings — security headers (S15), no inline `<script>` / real CSP (S16),
+`claims.picture` scheme-gate + length bound (S17), and the agent demo's deliberately in-memory-only
+revocation (S19, accepted/documented). A regression in a cloned template ships to every adopter.
 
 ## Method
 
@@ -54,6 +71,7 @@ If a change *worsens* one of these, that's worth raising; their mere existence i
 
 ## Output
 
-Update the ledgers in `reports/` (locally) with any new finding (assign the next S#/C#) and its
-status. Summarize to the user: confirmed findings with severity + repro, and explicitly note what
-was checked and found clean. Never commit `reports/`.
+Update `reports/SECURITY_AUDIT.md` (locally) with any new finding (assign the next **S#**) and its
+status; add a dated re-sweep note of what was checked clean. Summarize to the user: confirmed
+findings with severity + repro, and explicitly note what was checked and found clean. A code-quality
+issue surfaced in passing → hand it to `code-audit` (don't open a C# here). **Never commit `reports/`.**
