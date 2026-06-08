@@ -158,15 +158,16 @@ const IssueLinkSheet = ({ masterKey, userId, onClose }) => {
             <strong className="text-ink font-medium">Link this device</strong>, then scan this QR or
             enter the code.
           </p>
-          <div className="flex justify-center mb-4">
-            <div className="rounded-2xl border border-line p-4 bg-surface min-h-[208px] flex items-center justify-center">
+          <div className="flex items-center justify-center mb-4 min-h-[248px]">
+            {qrData ? (
               <div
                 ref={qrRef}
                 aria-label="Device link QR"
                 className="relative inline-flex rounded-2xl border border-line bg-white p-3"
               />
-              {!qrData && <Spinner />}
-            </div>
+            ) : (
+              <Spinner />
+            )}
           </div>
           {code && (
             <div className="text-center mb-4">

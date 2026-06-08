@@ -51,8 +51,11 @@ export const renderBrandedQr = (el, { data, size = 224, withLogo = true, ec = 'H
     const logo = document.createElement('img');
     logo.src = APP_ICON;
     logo.alt = '';
-    const px = Math.round(size * 0.22);
-    logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${px}px;height:${px}px;border-radius:10px`;
+    // A white plate (bg + padding) behind the amber tile = a cleared "quiet zone", so the logo
+    // reads as punched-out, not overlapping the modules. Done in the DOM (no qr-code-styling
+    // `image` fetch), so it stays CSP-robust; EC 'H' covers the ~7% it occludes.
+    const px = Math.round(size * 0.26);
+    logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${px}px;height:${px}px;padding:6px;background:#fff;border-radius:13px;box-sizing:border-box`;
     el.appendChild(logo);
   }
   return qr;

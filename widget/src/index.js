@@ -118,7 +118,7 @@ const CSS = `
 .panel { min-height: 248px; }
 .qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:12px; background:#fff; line-height:0; }
 .qrbox svg { display:block; width:224px; height:224px; }
-.qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:48px; height:48px; border-radius:10px; }
+.qrlogo { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:58px; height:58px; padding:6px; background:#fff; border-radius:13px; box-sizing:border-box; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }
 .otp { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
   font-size:38px; letter-spacing:.16em; color:#1a1a18; margin-top:6px; }
