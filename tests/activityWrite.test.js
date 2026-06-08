@@ -76,3 +76,15 @@ describe("vaultWrite kind:'activity' — signer ↔ function parity", () => {
     expect(ok).toBe(false);
   });
 });
+
+describe("vaultWrite kind:'device' — signer ↔ function parity", () => {
+  it('produces a signature the function reconstruction accepts', async () => {
+    const { signed, pub, token } = await buildActivityWrite({ kind: 'device' });
+    const ok = ed25519.verify(
+      b64(token),
+      new TextEncoder().encode(canonicalJson(fnPayload(signed))),
+      b64(pub),
+    );
+    expect(ok).toBe(true);
+  });
+});

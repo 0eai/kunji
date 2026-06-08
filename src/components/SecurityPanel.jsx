@@ -13,7 +13,7 @@ import { resetUserVault } from '../services/vault';
 import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import InstallButton from './InstallButton';
-import IssueLinkSheet from './IssueLinkSheet';
+import LinkedDevicesSheet from './LinkedDevicesSheet';
 import AgentsSheet from './AgentsSheet';
 import ChangePasskeySheet from './ChangePasskeySheet';
 import ProfileSheet from './ProfileSheet';
@@ -83,7 +83,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     }
   };
 
-  const [showIssue, setShowIssue] = useState(false); // issuer sheet (show QR + code to the new device)
+  const [showDevices, setShowDevices] = useState(false); // linked-devices list (wraps the issuer flow)
   const [showAgent, setShowAgent] = useState(false); // authorize-an-agent (capability) sheet
 
   // Active-agents count for the row badge — listAgents already drops expired ones.
@@ -141,16 +141,16 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
 
         <Row
           icon={Smartphone}
-          title="Link a device"
+          title="Linked devices"
           open={open.link}
           onToggle={() => toggle('link')}
         >
           <p className="text-[13px] text-muted leading-relaxed mb-4">
-            Add another device to this identity. This device shows a QR and a code; on the new
-            device choose “Link this device” and scan or enter it.
+            See the devices that hold this identity, and add a new one — it shows a QR and a code; on
+            the new device choose “Link this device” and scan or enter it.
           </p>
-          <Btn variant="primary" onClick={() => setShowIssue(true)} className="w-full">
-            <Smartphone size={16} /> Show link code
+          <Btn variant="primary" onClick={() => setShowDevices(true)} className="w-full">
+            <Smartphone size={16} /> Manage devices
           </Btn>
         </Row>
 
@@ -247,11 +247,11 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         </button>
       </div>
 
-      {showIssue && (
-        <IssueLinkSheet
+      {showDevices && (
+        <LinkedDevicesSheet
           masterKey={cryptoKey}
           userId={userId}
-          onClose={() => setShowIssue(false)}
+          onClose={() => setShowDevices(false)}
         />
       )}
 

@@ -14,6 +14,7 @@ import {
   requestsProfile,
 } from '../services/identity';
 import { loadProfile } from '../services/profile';
+import { recordThisDevice } from '../services/devices';
 import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
@@ -70,6 +71,12 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
       .then(setProfile)
       .catch(() => setProfile(null));
   }, [vaultId, cryptoKey]);
+
+  // Register this device in the shared linked-devices list (once per device). Best-effort — never
+  // blocks; covers vault creation, unlock, recovery, and device-link (all reach an unlocked Dashboard).
+  useEffect(() => {
+    if (cryptoKey) recordThisDevice(cryptoKey).catch(() => {});
+  }, [cryptoKey]);
 
   // Active-agents count — drives the header chip. listAgents already drops expired ones, so the
   // length is the live count. Re-run after the agents/security sheets close (either can change it).

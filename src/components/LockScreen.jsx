@@ -493,6 +493,17 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
                   required
                 />
               )}
+              {/* Last resort for the genuinely locked-out (no recovery key / no other device). */}
+              <button
+                type="button"
+                onClick={() => {
+                  setResetConfirm('');
+                  setShowReset(true);
+                }}
+                className="w-full text-center text-[12px] text-faint hover:text-danger transition-colors pt-1"
+              >
+                Don't have a recovery key? Reset &amp; start over
+              </button>
             </>
           )}
 
@@ -612,15 +623,20 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
           </button>
         )}
 
-        <div className="mt-5">
-          <InstallButton />
-        </div>
+        {/* Install prompt only on first-run vault creation (and in Security). */}
+        {isNewUser && !isRecovering && (
+          <div className="mt-5">
+            <InstallButton />
+          </div>
+        )}
       </main>
 
-      {/* quiet footer links */}
-      <footer className="max-w-[26rem] w-full mx-auto px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-between border-t border-line pt-4 text-[12px]">
-          {!isNewUser ? (
+      {/* quiet footer — only the "Forgot passkey?" escape for an existing, locked user.
+          "Reset vault" is no longer a bare footer link (a casual person with device access shouldn't
+          see it); it lives inside the recovery flow as the last resort, below. */}
+      {!isNewUser && (
+        <footer className="max-w-[26rem] w-full mx-auto px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center border-t border-line pt-4 text-[12px]">
             <button
               onClick={() => {
                 setIsRecovering(!isRecovering);
@@ -636,20 +652,9 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             >
               {isRecovering ? 'Cancel recovery' : 'Forgot passkey?'}
             </button>
-          ) : (
-            <span />
-          )}
-          <button
-            onClick={() => {
-              setResetConfirm('');
-              setShowReset(true);
-            }}
-            className="text-faint hover:text-danger transition-colors font-medium"
-          >
-            Reset vault
-          </button>
-        </div>
-      </footer>
+          </div>
+        </footer>
+      )}
 
       {showReset && (
         <Sheet onClose={() => !isDeriving && setShowReset(false)} z={60} labelledBy="reset-title">
@@ -660,9 +665,10 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             </h2>
           </div>
           <p className="text-[14px] text-muted leading-relaxed mb-5">
-            This{' '}
-            <strong className="text-ink font-medium">permanently erases this device's vault</strong>
-            . Without your recovery key or another linked device, your identity can't be recovered.
+            This <strong className="text-ink font-medium">erases this device's unlock</strong>. Your{' '}
+            <strong className="text-ink font-medium">recovery key file + passphrase</strong> (or
+            another linked device) restores the same identity and apps later. Without any of those,
+            it's permanent.
           </p>
           <label className="block text-[11px] uppercase tracking-[0.14em] text-faint mb-1">
             Type <span className="font-mono normal-case text-muted">RESET</span> to confirm

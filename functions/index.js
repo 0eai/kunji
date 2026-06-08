@@ -48,16 +48,18 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
   // `kind` selects the target collection: undefined/'app' → apps/{appId} (back-compat,
   // existing clients omit it), 'profile' → profile/self (the user's custom profile),
   // 'activity' → activity/{appId} (append-only, encrypted, shared-across-devices log),
-  // 'agent' → agents/{appId} (encrypted authorized-agent metadata; appId = capability jti).
+  // 'agent' → agents/{appId} (encrypted authorized-agent metadata; appId = capability jti),
+  // 'device' → devices/{appId} (encrypted linked-device metadata; appId = per-device id).
   const isProfile = kind === 'profile';
   const isActivity = kind === 'activity';
   const isAgent = kind === 'agent';
+  const isDevice = kind === 'device';
 
   // 1. shape
   if (
     !HEX64.test(vaultId || '') ||
     !SAFE_ID.test(appId || '') ||
-    (kind !== undefined && !['app', 'profile', 'activity', 'agent'].includes(kind)) ||
+    (kind !== undefined && !['app', 'profile', 'activity', 'agent', 'device'].includes(kind)) ||
     (op !== 'set' && op !== 'delete') ||
     !publicKey ||
     !signedToken ||
@@ -98,7 +100,9 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
       ? vaultRef.collection('activity').doc(appId)
       : isAgent
         ? vaultRef.collection('agents').doc(appId)
-        : vaultRef.collection('apps').doc(appId);
+        : isDevice
+          ? vaultRef.collection('devices').doc(appId)
+          : vaultRef.collection('apps').doc(appId);
   // Activity entries self-prune via a Firestore TTL policy on `expiresAt` (a non-sensitive
   // timestamp; the payload itself stays encrypted). 90 days.
   const ACTIVITY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
