@@ -55,6 +55,29 @@ export const deriveVaultWriteKeyPair = async (masterKey) => {
   return { secretKey, publicKey };
 };
 
+// Deterministically derive a per-ISSUER credential holder keypair from the master key. A verified
+// credential binds to this key (`cnf`); the holder proves possession at presentation via a
+// Key-Binding JWT. Per-issuer (the issuer is in `info`) bounds the cross-RP correlation surface.
+// Domain-separated from per-app keys, the vault-write key, and the vaultId. See
+// docs/verified-credentials.md §5.
+export const deriveCredentialHolderKey = async (masterKey, issuer) => {
+  const raw = await window.crypto.subtle.exportKey('raw', masterKey);
+  const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+  const bits = await window.crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode('kunji-cred-holder-v1'),
+      info: new TextEncoder().encode(`kunji-cred-holder:${String(issuer)}`),
+    },
+    ikm,
+    256,
+  );
+  const secretKey = new Uint8Array(bits);
+  const publicKey = ed25519.getPublicKey(secretKey);
+  return { secretKey, publicKey };
+};
+
 export const exportEd25519SecretKey = (secretKey) => bufferToBase64(secretKey.buffer ?? secretKey);
 
 export const exportEd25519PublicKey = (publicKey) => bufferToBase64(publicKey.buffer ?? publicKey);

@@ -31,13 +31,13 @@ const b64uToBytes = (s) => {
 };
 const b64uToString = (s) => new TextDecoder().decode(b64uToBytes(s));
 
-// --- EdDSA compact JWS --------------------------------------------------------
-const signJWS = (header, claims, secretKey) => {
+// --- EdDSA compact JWS (exported for reuse by src/lib/vc.js) ------------------
+export const signJWS = (header, claims, secretKey) => {
   const input = `${b64uFromString(JSON.stringify(header))}.${b64uFromString(JSON.stringify(claims))}`;
   const sig = ed25519.sign(new TextEncoder().encode(input), secretKey);
   return `${input}.${b64uFromBytes(sig)}`;
 };
-const decodeJWS = (token) => {
+export const decodeJWS = (token) => {
   const parts = String(token).split('.');
   if (parts.length !== 3) throw new Error('malformed_jwt');
   return {
@@ -47,7 +47,7 @@ const decodeJWS = (token) => {
     sig: b64uToBytes(parts[2]),
   };
 };
-const verifyJWS = (token, pubBytes) => {
+export const verifyJWS = (token, pubBytes) => {
   try {
     const d = decodeJWS(token);
     return ed25519.verify(d.sig, new TextEncoder().encode(d.input), pubBytes)
@@ -59,8 +59,8 @@ const verifyJWS = (token, pubBytes) => {
 };
 
 // --- OKP (Ed25519) JWK --------------------------------------------------------
-const okpJwk = (pubBytes) => ({ kty: 'OKP', crv: 'Ed25519', x: b64uFromBytes(pubBytes) });
-const pubFromOkpJwk = (jwk) => {
+export const okpJwk = (pubBytes) => ({ kty: 'OKP', crv: 'Ed25519', x: b64uFromBytes(pubBytes) });
+export const pubFromOkpJwk = (jwk) => {
   if (!jwk || jwk.kty !== 'OKP' || jwk.crv !== 'Ed25519' || typeof jwk.x !== 'string') {
     throw new Error('bad_jwk');
   }

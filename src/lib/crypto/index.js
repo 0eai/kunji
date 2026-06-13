@@ -43,6 +43,7 @@ export {
   generateEd25519KeyPair,
   deriveAppKeyPair,
   deriveVaultWriteKeyPair,
+  deriveCredentialHolderKey,
   exportEd25519SecretKey,
   exportEd25519PublicKey,
   importEd25519SecretKey,

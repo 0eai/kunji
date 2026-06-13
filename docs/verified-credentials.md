@@ -1,8 +1,12 @@
 # kunji verified credentials — design
 
-**Status:** Design (proposed) — **not implemented.** Today everything a kunji user shares is
-**self-asserted**: the per-app key signs `claims`, and the RP must treat them as untrusted
-(`discoverable-login.md` §6.8). Verified credentials add a **third-party issuer** whose signature the
+**Status:** Phase 2 implemented (protocol + issuer + RP, headless) — the credential lib
+(`src/lib/vc.js`, with a Node port in the demos), `deriveCredentialHolderKey`, SD-JWT VC
+mint/present/verify, `.well-known` issuer discovery, predicate pre-baking, KB-JWT holder binding, and
+StatusList revocation all ship and are proven end-to-end via sims (`examples/kunji-issuer-demo` +
+`kunji-node-demo`). **Wallet integration (UI/storage/issuance relay) is Phase 3** — see §14. Before
+this, everything a kunji user shared was **self-asserted**: the per-app key signs `claims`, and the
+RP must treat them as untrusted (`discoverable-login.md` §6.8). Verified credentials add a **third-party issuer** whose signature the
 RP trusts — verifiable **with no kunji backend in the path** (the §6 trust model, different signer).
 Companion docs: [`scope.md`](./scope.md) (the `vc:` request family) and
 [`push-relay.md`](./push-relay.md) (a connected app asking for a credential later).
@@ -206,11 +210,17 @@ byte-stable (the holder key is additive); the wallet stays anonymous.
 
 ## 14. Phasing
 
-1. **MVP** — SD-JWT VC, `deriveCredentialHolderKey`, `.well-known` issuer discovery, predicate
-   pre-baking, KB-JWT presentation, Status-List revocation, the Credentials UI, `kind:'credential'`
-   storage; a `kunji-issuer-demo` example + a `vc:` scope wired into the RP demos.
-2. **Interop** — OpenID4VCI/VP issuance & presentation.
-3. **Unlinkability** — batch/one-time credentials → BBS+ if warranted.
+1. **Protocol + issuer + RP (Phase 2 — done, headless).** SD-JWT VC, `deriveCredentialHolderKey`,
+   `.well-known` issuer discovery, predicate pre-baking, KB-JWT presentation, StatusList revocation,
+   the RP-side verifier + `vc:` presentation, the `kunji-issuer-demo`, and Node holder/RP sims +
+   tests. Proven end-to-end without a wallet UI.
+2. **Wallet integration (Phase 3).** `CredentialsSheet` (receive/list/revoke), `kind:'credential'`
+   vault storage (`vaultWrite` + `firestore.rules`), the `credentialSessions` issuance relay +
+   `credentialPoll` function, the `ApprovalModal` VC consent toggles + linkability warning, and
+   wiring presentation into the real `submitDiscoverableAssertion` (so a user holds + presents in the
+   app); mirror the RP verifier into the Firebase login/agent demos.
+3. **Interop.** OpenID4VCI/VP issuance & presentation.
+4. **Unlinkability.** Batch/one-time credentials → BBS+ if warranted.
 
 ## 15. Open decisions
 

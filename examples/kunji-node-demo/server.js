@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyAssertion } from './verify.js';
+import { verifyCredentialPresentation } from './vc.js';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
@@ -80,6 +81,20 @@ const originOf = (req) => {
   return { audience: host.split(':')[0], callbackUrl: `${proto}://${host}/kunji/callback` };
 };
 
+// Verified-credentials trust anchors (used only if an assertion presents a credential). The issuer's
+// signing keys come from ITS OWN /.well-known — kunji is not in the path. A real RP caches + pins
+// these and guards the fetch against SSRF; this demo keeps it simple.
+const fetchIssuerKeys = async (iss) => {
+  const resp = await fetch(`${iss}/.well-known/kunji-issuer.json`);
+  if (!resp.ok) throw new Error('issuer_unreachable');
+  return (await resp.json()).keys || [];
+};
+const fetchStatus = async (uri, idx) => {
+  const resp = await fetch(`${uri}?idx=${encodeURIComponent(idx)}`);
+  if (!resp.ok) throw new Error('status_unreachable');
+  return (await resp.json()).valid !== false; // false ⇒ revoked
+};
+
 const handler = async (req, res) => {
   // CORS: the wallet (app.kunji.cc) POSTs the assertion cross-origin, and the JSON
   // content-type triggers a preflight. The security is in the signed assertion + session,
@@ -113,6 +128,7 @@ const handler = async (req, res) => {
       status: 'pending',
       sub: null,
       claims: null,
+      verified: null,
       expiresAt,
     });
     return json(res, 200, { sessionId, challenge, audience, callbackUrl, expiresAt });
@@ -127,9 +143,30 @@ const handler = async (req, res) => {
     if (!r.ok) return json(res, 400, { error: r.error });
     // single-use: re-check + flip in one tick (single-threaded, so this is atomic here)
     if (session.status !== 'pending') return json(res, 400, { error: 'session_consumed' });
+    // Optional: verified credentials presented inside the (signed) assertion. Verified LOCALLY
+    // against each issuer's own keys + StatusList — no kunji server. Any invalid/revoked one rejects
+    // the whole login. The KB-JWT's nonce is this session's challenge, so a presentation can't be
+    // replayed to another session.
+    let verified = null;
+    const presentations = assertion?.signedPayload?.vc_presentations;
+    if (Array.isArray(presentations) && presentations.length) {
+      verified = [];
+      for (const presentation of presentations) {
+        const vr = await verifyCredentialPresentation({
+          presentation,
+          audience: session.audience,
+          nonce: session.challenge,
+          getIssuerKeys: fetchIssuerKeys,
+          checkStatus: fetchStatus,
+        });
+        if (!vr.ok) return json(res, 400, { error: 'vc_' + vr.error });
+        verified.push({ iss: vr.iss, vct: vr.vct, claims: vr.claims });
+      }
+    }
     session.status = 'approved';
     session.sub = r.sub;
     session.claims = r.claims;
+    session.verified = verified;
     return json(res, 200, { status: 'ok' });
   }
 
@@ -137,7 +174,7 @@ const handler = async (req, res) => {
   if (req.method === 'GET' && path === '/kunji/status') {
     const s = sessions.get(url.searchParams.get('sessionId') || '');
     if (!s) return json(res, 404, { error: 'unknown_session' });
-    return json(res, 200, { status: s.status, sub: s.sub, claims: s.claims });
+    return json(res, 200, { status: s.status, sub: s.sub, claims: s.claims, verified: s.verified });
   }
 
   // 4. Static frontend + its externalized script.

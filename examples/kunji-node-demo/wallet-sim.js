@@ -14,12 +14,18 @@
 import { createHash } from 'node:crypto';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { canonicalJson } from './verify.js';
+import { buildPresentation, holderJwkFor } from './vc.js';
 // Reuse kunji's shared default-identity helper for a friendly printout. A real RP would
 // use window.kunji.handle(sub) from rp.js (see public/index.html).
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const wantClaims = process.argv.includes('--claims');
+// --vc: also act as a credential HOLDER — fetch a VC from the issuer and present it. --revoke first
+// revokes it at the issuer (the RP should then reject the presentation).
+const wantVc = process.argv.includes('--vc');
+const wantRevoke = process.argv.includes('--revoke');
+const ISSUER = process.env.ISSUER;
 
 // This is a local testing tool, so accept self-signed / mkcert HTTPS certs when BASE is
 // https (Node's fetch verifies TLS by default). A REAL browser wallet does NOT do this —
@@ -55,6 +61,43 @@ const main = async () => {
     // A real wallet would only attach this on explicit user consent.
     signedPayload.claims = { name: 'Ada Lovelace', picture: 'data:image/svg+xml,<svg/>' };
   }
+
+  // --vc: act as a credential HOLDER — get an SD-JWT VC from the issuer, then PRESENT it
+  // (selective disclosure of `age_over_18` + a Key-Binding JWT bound to this session's challenge)
+  // inside the signed assertion. Corresponds to an RP requesting scope:["login","vc:age_over_18"].
+  // The holder key is random here; the real wallet derives it per-issuer (deriveCredentialHolderKey).
+  if (wantVc) {
+    if (!ISSUER) throw new Error('Set ISSUER=<issuer origin>, e.g. ISSUER=http://localhost:4000');
+    const holderPriv = ed25519.utils.randomSecretKey();
+    const holderPub = ed25519.getPublicKey(holderPriv);
+    const issued = await (
+      await fetch(`${ISSUER}/issue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holderJwk: holderJwkFor(holderPub), claims: { age_over_18: true, name: 'Ada Lovelace' } }),
+      })
+    ).json();
+    if (!issued.credential) throw new Error('issuer /issue failed: ' + JSON.stringify(issued));
+    if (wantRevoke) {
+      await fetch(`${ISSUER}/status/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idx: issued.idx }),
+      });
+      console.log(`(revoked credential idx ${issued.idx} at the issuer — presentation should be rejected)`);
+    }
+    signedPayload.vc_presentations = [
+      buildPresentation({
+        sdjwt: issued.credential,
+        disclose: ['age_over_18'],
+        audience: session.audience,
+        nonce: session.challenge,
+        holderSecretKey: holderPriv,
+      }),
+    ];
+    console.log('presenting verified credential: age_over_18 from', issued.issuer);
+  }
+
   const signedToken = b64(
     ed25519.sign(new TextEncoder().encode(canonicalJson(signedPayload)), priv),
   );
@@ -78,6 +121,7 @@ const main = async () => {
   console.log('  sub    :', status.sub);
   console.log('  default:', handle.name, '(+ identicon)');
   console.log('  claims :', status.claims || '(none — RP uses the default identity)');
+  if (wantVc) console.log('  verified:', status.verified ? JSON.stringify(status.verified) : '(none — presentation was rejected; see callback above)');
 };
 
 main().catch((e) => {

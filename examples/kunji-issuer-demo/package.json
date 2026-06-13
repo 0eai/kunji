@@ -1,0 +1,13 @@
+{
+  "name": "kunji-issuer-demo",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Verified-credentials ISSUER demo — signs SD-JWT VCs, publishes keys at /.well-known, serves a StatusList.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1"
+  }
+}
