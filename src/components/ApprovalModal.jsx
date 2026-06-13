@@ -1,13 +1,33 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { CheckCircle2, Circle } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Monogram, Btn } from './ui/primitives';
 import { deriveHandle } from '../lib/kunjiHandle';
+
+const issuerHost = (iss) => {
+  try {
+    return new URL(iss).host;
+  } catch {
+    return iss;
+  }
+};
 
 const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [shareProfile, setShareProfile] = useState(false); // Layer 2 consent — opt-in
+  const [grantedCreds, setGrantedCreds] = useState(() => new Set()); // verified-credential consent (default-deny)
   const sub = session?.sub || '';
+
+  // Verified credentials the wallet holds that match this app's vc: request → [{ cred, disclose }].
+  const credMatches = session?.credentialMatches || [];
+  const toggleCred = (id) =>
+    setGrantedCreds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // Layer 1: the default pseudonymous identity the app will see (derived from sub).
   const handle = useMemo(() => (sub ? deriveHandle(sub) : null), [sub]);
@@ -42,7 +62,8 @@ const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
   const handleApprove = async () => {
     setLoading(true);
     try {
-      await onApprove(canShare && shareProfile);
+      const credentials = credMatches.filter((m) => grantedCreds.has(m.cred.credId));
+      await onApprove({ shareProfile: canShare && shareProfile, credentials });
     } finally {
       setLoading(false);
     }
@@ -150,6 +171,49 @@ const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
             />
           </span>
         </button>
+      )}
+
+      {/* Verified credentials this app asked for (a `vc:` scope) — opt-in, with a linkability caveat */}
+      {credMatches.length > 0 && (
+        <div className="mb-6">
+          <div className="text-[12px] uppercase tracking-wide text-faint mb-2">Verify with a credential</div>
+          <div className="flex flex-col gap-1.5">
+            {credMatches.map(({ cred, disclose }) => {
+              const on = grantedCreds.has(cred.credId);
+              return (
+                <button
+                  key={cred.credId}
+                  type="button"
+                  onClick={() => toggleCred(cred.credId)}
+                  aria-pressed={on}
+                  className={`flex items-start gap-2.5 text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                    on ? 'border-accent/40 bg-accent-soft' : 'border-line hover:border-muted'
+                  }`}
+                >
+                  <span className={`mt-0.5 shrink-0 ${on ? 'text-accent' : 'text-faint'}`}>
+                    {on ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13px] text-ink">
+                      Prove <span className="font-mono">{(disclose || []).join(', ') || cred.vct}</span>
+                    </span>
+                    <span className="block text-[12px] text-faint truncate">from {issuerHost(cred.iss)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[12px] text-faint leading-relaxed mt-2">
+            A verified credential is more identifiable than your random per-app identity — an app can
+            correlate you across services if you reuse the same one. Only what you turn on is shared.
+          </p>
+        </div>
+      )}
+      {session?.requestCredentials && credMatches.length === 0 && (
+        <p className="text-[12px] text-faint leading-relaxed mb-6">
+          This app asked for a verified credential you don't hold yet. You can sign in without it, or
+          receive one from an issuer in Security → Verified credentials.
+        </p>
       )}
 
       <p className="text-[12px] text-faint leading-relaxed mb-6">

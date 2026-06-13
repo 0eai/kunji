@@ -179,4 +179,16 @@ describe('matchCredentialsByScope', () => {
     expect(matchCredentialsByScope(held, ['vc:age@https://other#age_over_16'])).toEqual([]);
     expect(matchCredentialsByScope(held, ['login', 'profile'])).toEqual([]);
   });
+
+  it('present-at-login path: a held credential matched by scope presents + verifies', async () => {
+    const { credential, holder, getIssuerKeys } = await setup({
+      claims: { age_over_16: true, age_over_18: false },
+    });
+    const heldCred = [{ credId: 'c1', vct: VCT, iss: ISS, sdjwt: credential }];
+    const matches = matchCredentialsByScope(heldCred, ['login', `vc:${VCT}#age_over_16`]);
+    expect(matches).toHaveLength(1);
+    const { cred, disclose } = matches[0];
+    const r = await verify(await present(cred.sdjwt, holder, { disclose }), getIssuerKeys);
+    expect(r).toMatchObject({ ok: true, claims: { age_over_16: true } });
+  });
 });

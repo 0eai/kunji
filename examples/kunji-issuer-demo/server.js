@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { wellKnown, issue, isValid, revoke, issuerOrigin } from './issuer.js';
+import { depositToRelay } from './relay.js';
 
 const PORT = process.env.PORT || 4000;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,6 +58,15 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     if (!body?.holderJwk) return json(res, 400, { error: 'holderJwk_required' });
     const { credential, idx } = issue({ holderJwk: body.holderJwk, dob: body.dob, vct: body.vct, claims: body.claims });
+    // Async path: ECDH-encrypt + deposit to the kunji relay for the wallet to poll (out-of-band issuance).
+    if (body.deposit && body.transportPub && body.sessionId) {
+      try {
+        await depositToRelay({ sdjwt: credential, transportPub: body.transportPub, sessionId: body.sessionId, issuer: issuerOrigin() });
+        return json(res, 200, { status: 'deposited', idx, issuer: issuerOrigin() });
+      } catch {
+        return json(res, 502, { error: 'relay_deposit_failed' });
+      }
+    }
     return json(res, 200, { credential, idx, issuer: issuerOrigin() });
   }
 

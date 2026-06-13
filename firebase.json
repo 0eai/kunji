@@ -21,6 +21,14 @@
           "source": "/agent/request",
           "function": { "functionId": "agentRequestRelay", "region": "us-central1" }
         },
+        {
+          "source": "/credential/poll",
+          "function": { "functionId": "credentialPoll", "region": "us-central1" }
+        },
+        {
+          "source": "/credential/offer",
+          "function": { "functionId": "credentialOfferRelay", "region": "us-central1" }
+        },
         { "source": "**", "destination": "/index.html" }
       ],
       "headers": [

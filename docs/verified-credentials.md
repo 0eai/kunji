@@ -146,12 +146,12 @@ if the privacy bar demands it.
 
 Two interoperating paths:
 
-- **kunji-native relay (mirrors the agent capability relay):** the issuer shows an **offer** (QR /
-  6-digit code / link) describing `{ iss, vct, claims preview, nonce }`; the user accepts in the
-  wallet; the wallet sends the **holder public key** (`deriveCredentialHolderKey`) so the issued VC
-  binds to it; the issuer mints the SD-JWT and **ECDH-delivers** it through a short-TTL
-  `credentialSessions/{id}` relay (the same shape as `agentSessions` + `agentCapabilityPoll`); the
-  wallet decrypts and stores it.
+- **kunji-native (shipped).** *Synchronous:* the wallet derives the **holder key**
+  (`deriveCredentialHolderKey`) and POSTs `{ holderJwk }` to the issuer's `/issue`, which mints the
+  SD-JWT bound to it and returns it. *Async:* the wallet leaves a transport key + 64-hex `sessionId`;
+  the issuer ECDH-encrypts the SD-JWT and deposits it via `credentialOfferRelay`; the wallet polls
+  `credentialPoll` (`credentialSessions/{id}`, the same shape as `agentSessions`/`agentCapabilityPoll`)
+  and decrypts. See `src/services/credentials.js` `receiveFromIssuer`/`receiveViaRelay`.
 - **OpenID4VCI** for real-world issuers (credential offer → token → credential endpoint). Recommended
   for production issuers; the native relay is the zero-infra demo path.
 
@@ -222,11 +222,12 @@ byte-stable (the holder key is additive); the wallet stays anonymous.
    `.well-known` issuer discovery, predicate pre-baking, KB-JWT presentation, StatusList revocation,
    the RP-side verifier + `vc:` presentation, the `kunji-issuer-demo`, and Node holder/RP sims +
    tests. Proven end-to-end without a wallet UI.
-2. **Wallet integration (Phase 3).** `CredentialsSheet` (receive/list/revoke), `kind:'credential'`
-   vault storage (`vaultWrite` + `firestore.rules`), the `credentialSessions` issuance relay +
-   `credentialPoll` function, the `ApprovalModal` VC consent toggles + linkability warning, and
-   wiring presentation into the real `submitDiscoverableAssertion` (so a user holds + presents in the
-   app); mirror the RP verifier into the Firebase login/agent demos.
+2. **Wallet integration (Phase 3 — done).** `CredentialsSheet` (receive/list/delete),
+   `kind:'credential'` vault storage (`vaultWrite` + `firestore.rules`), the `credentialSessions`
+   issuance relay (`credentialOfferRelay` deposit + `credentialPoll`), the `ApprovalModal` VC consent
+   toggles + linkability warning, presentation wiring in `submitDiscoverableAssertion`
+   (`src/services/credentials.js`), and the RP verifier mirrored into the Firebase demo
+   (`kunji-login-demo` `kunjiCallback`). A user holds + presents a credential in the app.
 3. **Interop.** OpenID4VCI/VP issuance & presentation.
 4. **Unlinkability.** Batch/one-time credentials → BBS+ if warranted.
 

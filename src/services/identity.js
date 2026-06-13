@@ -222,6 +222,10 @@ export const parseQRPayload = (rawValue) => {
 export const requestsProfile = (qr) =>
   Array.isArray(qr?.scope) && qr.scope.some((s) => scopeId(s) === 'profile');
 
+/** Does this parsed QR / session request a verified credential (a `vc:` scope item)? */
+export const requestsCredentials = (qr) =>
+  Array.isArray(qr?.scope) && qr.scope.some((s) => String(scopeId(s)).startsWith('vc:'));
+
 // Bare public suffixes / TLDs that must never be accepted as an `audience` — otherwise
 // `host.endsWith('.'+audience)` would match unrelated sites (e.g. audience:"com" →
 // "evil.com"). Not exhaustive (a full PSL is the proper long-term fix); covers the
@@ -362,7 +366,7 @@ export const lookupSessionByCode = async (domain, code) => {
  * tampered in transit) but is NOT verified by anyone: the RP must treat it as
  * untrusted input. Absent claims ⇒ the RP falls back to the default identity.
  */
-export const submitDiscoverableAssertion = async (userId, cryptoKey, qr, claims) => {
+export const submitDiscoverableAssertion = async (userId, cryptoKey, qr, claims, vcPresentations) => {
   // Reproduce the per-app keypair from the master key + audience domain.
   const { secretKey, publicKey } = await deriveAppKeyPair(cryptoKey, qr.audience);
   const publicKeyB64 = exportEd25519PublicKey(publicKey);
@@ -381,6 +385,11 @@ export const submitDiscoverableAssertion = async (userId, cryptoKey, qr, claims)
     signedPayload.claims = {};
     if (claims.name) signedPayload.claims.name = String(claims.name).slice(0, 60);
     if (claims.picture) signedPayload.claims.picture = String(claims.picture);
+  }
+  // Attach any presented verified credentials (signed over, so tamper-evident; the RP verifies each
+  // issuer signature + holder binding locally). Optional + back-compatible.
+  if (Array.isArray(vcPresentations) && vcPresentations.length) {
+    signedPayload.vc_presentations = vcPresentations;
   }
   const signedToken = signWithEd25519(signedPayload, secretKey);
 

@@ -15,6 +15,8 @@ the (default 80) concurrency is the hard ceiling on simultaneous work; scale-to-
 | `linkLookup` | `app` | 5 |
 | `agentCapabilityPoll` | `app` | 5 |
 | `agentRequestRelay` | `app` | 5 |
+| `credentialPoll` | `app` | 5 |
+| `credentialOfferRelay` | `app` | 5 |
 | demo `createSession` / `lookupSession` / `getSessionStatus` / `kunjiCallback` / `kunjiAgent` | demo codebases | 5 |
 
 To change a cap, edit the `onRequest({ …, maxInstances: N })` option and redeploy that function with

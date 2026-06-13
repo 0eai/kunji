@@ -98,7 +98,12 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
-  Proposed designs (NOT implemented): `docs/scope.md`, `docs/verified-credentials.md`, `docs/push-relay.md`.
+  Implemented: `docs/scope.md` (Phase 1 scope engine), `docs/verified-credentials.md` (Phases 2–3
+  verified credentials). Proposed (not implemented): `docs/push-relay.md`.
+- `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
+  user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
+  `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). RP verifier `vc.js` is a
+  byte-identical Node port across `kunji-{node,issuer,login}-demo` (parity-guarded).
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 

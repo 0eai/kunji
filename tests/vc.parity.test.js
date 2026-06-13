@@ -14,7 +14,15 @@ import {
   buildPresentation as nodePresent,
   verifyCredentialPresentation as nodeVerify,
 } from '../examples/kunji-node-demo/vc.js';
-import { generateEd25519KeyPair } from '../src/lib/crypto/index.js';
+import {
+  generateEd25519KeyPair,
+  generateECDHKeyPair,
+  exportECDHPublicKey,
+  importECDHPublicKey,
+  deriveECDHSharedSecret,
+  encryptData,
+  decryptData,
+} from '../src/lib/crypto/index.js';
 import { okpJwk } from '../src/lib/capability.js';
 
 const ISS = 'https://issuer.example';
@@ -63,8 +71,23 @@ describe('VC parity (wallet lib ↔ demo Node port)', () => {
 
   // The two demos ship their own copy of the Node VC port (self-contained, no shared import path) —
   // guard that they stay byte-identical, the way the capability verifier copies are guarded.
-  it('kunji-issuer-demo/vc.js is byte-identical to kunji-node-demo/vc.js', () => {
+  it('all Node vc.js copies are byte-identical', () => {
     const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
-    expect(read('../examples/kunji-issuer-demo/vc.js')).toBe(read('../examples/kunji-node-demo/vc.js'));
+    const node = read('../examples/kunji-node-demo/vc.js');
+    expect(read('../examples/kunji-issuer-demo/vc.js')).toBe(node);
+    expect(read('../examples/kunji-login-demo/functions/vc.js')).toBe(node);
+  });
+
+  it('issuer → wallet credential relay: ECDH-encrypt then decrypt round-trips the SD-JWT', async () => {
+    // Wallet leaves a transport key; issuer ECDH-encrypts to it and deposits; wallet decrypts.
+    const wallet = await generateECDHKeyPair();
+    const transportPub = await exportECDHPublicKey(wallet.publicKey);
+    const issuer = await generateECDHKeyPair();
+    const issuerPubE = await exportECDHPublicKey(issuer.publicKey);
+    const sdjwt = 'header.payload.sig~disclosure~';
+    const sharedIssuer = await deriveECDHSharedSecret(issuer.privateKey, await importECDHPublicKey(transportPub));
+    const encryptedCredential = await encryptData(sdjwt, sharedIssuer);
+    const sharedWallet = await deriveECDHSharedSecret(wallet.privateKey, await importECDHPublicKey(issuerPubE));
+    expect(await decryptData(encryptedCredential, sharedWallet)).toBe(sdjwt);
   });
 });

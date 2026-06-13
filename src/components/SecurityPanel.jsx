@@ -8,6 +8,7 @@ import {
   ChevronRight,
   UserCircle,
   Bot,
+  BadgeCheck,
 } from 'lucide-react';
 import { resetUserVault } from '../services/vault';
 import { signOutDevice } from '../lib/firebase';
@@ -15,6 +16,7 @@ import { getThemePref, setThemePref } from '../lib/theme';
 import InstallButton from './InstallButton';
 import LinkedDevicesSheet from './LinkedDevicesSheet';
 import AgentsSheet from './AgentsSheet';
+import CredentialsSheet from './CredentialsSheet';
 import ChangePasskeySheet from './ChangePasskeySheet';
 import ProfileSheet from './ProfileSheet';
 import RecoveryKeySheet from './RecoveryKeySheet';
@@ -22,6 +24,7 @@ import ActivitySheet from './ActivitySheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, Btn } from './ui/primitives';
 import { listAgents } from '../services/capability';
+import { listCredentials } from '../services/credentials';
 import { useToast } from '../contexts/ToastContext';
 
 const SIGNOUT_CONFIRM = 'SIGN OUT';
@@ -58,6 +61,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
     changekey: false,
     link: false,
     agent: false,
+    credentials: false,
     recovery: false,
     activity: false,
   });
@@ -96,6 +100,17 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   useEffect(() => {
     if (cryptoKey) refreshAgents();
   }, [cryptoKey, refreshAgents]);
+
+  const [showCredentials, setShowCredentials] = useState(false); // verified-credentials sheet
+  const [credentialCount, setCredentialCount] = useState(0);
+  const refreshCredentials = useCallback(() => {
+    listCredentials(cryptoKey)
+      .then((c) => setCredentialCount(c.length))
+      .catch(() => setCredentialCount(0));
+  }, [cryptoKey]);
+  useEffect(() => {
+    if (cryptoKey) refreshCredentials();
+  }, [cryptoKey, refreshCredentials]);
   const [showChangeKey, setShowChangeKey] = useState(false); // change-passkey sheet
   const [showProfile, setShowProfile] = useState(false); // edit-profile sheet
   const [showRecovery, setShowRecovery] = useState(false); // export-recovery-key sheet
@@ -167,6 +182,22 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           </p>
           <Btn variant="primary" onClick={() => setShowAgent(true)} className="w-full">
             <Bot size={16} /> Manage agents
+          </Btn>
+        </Row>
+
+        <Row
+          icon={BadgeCheck}
+          title="Verified credentials"
+          count={credentialCount || undefined}
+          open={open.credentials}
+          onToggle={() => toggle('credentials')}
+        >
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Credentials from trusted issuers (like an over-18 proof). Present one when an app asks —
+            revealing only what's asked, never your date of birth.
+          </p>
+          <Btn variant="primary" onClick={() => setShowCredentials(true)} className="w-full">
+            <BadgeCheck size={16} /> Manage credentials
           </Btn>
         </Row>
 
@@ -262,6 +293,16 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
           onClose={() => {
             setShowAgent(false);
             refreshAgents();
+          }}
+        />
+      )}
+
+      {showCredentials && (
+        <CredentialsSheet
+          masterKey={cryptoKey}
+          onClose={() => {
+            setShowCredentials(false);
+            refreshCredentials();
           }}
         />
       )}

@@ -12,10 +12,13 @@ import {
   lookupSessionByCode,
   isSafeReturnUrl,
   requestsProfile,
+  requestsCredentials,
 } from '../services/identity';
 import { loadProfile } from '../services/profile';
+import { listCredentials } from '../services/credentials';
+import { matchCredentialsByScope, buildPresentation } from '../lib/vc';
 import { recordThisDevice } from '../services/devices';
-import { deriveVaultId } from '../lib/crypto';
+import { deriveVaultId, deriveCredentialHolderKey } from '../lib/crypto';
 import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
@@ -131,6 +134,16 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         );
 
         const sub = await deriveSubFromPublicKey(publicKey);
+        // If the app requested a verified credential (a `vc:` scope), find held credentials that can
+        // satisfy it so the approval screen can offer to present one.
+        let credentialMatches = [];
+        if (requestsCredentials(qr)) {
+          try {
+            credentialMatches = matchCredentialsByScope(await listCredentials(cryptoKey), qr.scope);
+          } catch {
+            credentialMatches = [];
+          }
+        }
         setPendingSession({
           ...qr,
           registeredAppId,
@@ -140,6 +153,8 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
           sub,
           isNew,
           requestProfile: requestsProfile(qr),
+          requestCredentials: requestsCredentials(qr),
+          credentialMatches,
           // Only the same-device deep link returns to a tab on THIS device; a scanned
           // QR is cross-device, so its post-approval "Return to…" sheet is suppressed.
           sameDevice: origin === 'deeplink',
@@ -157,7 +172,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     [vaultId, cryptoKey, showToast],
   );
 
-  const handleApprove = async (shareProfile) => {
+  const handleApprove = async ({ shareProfile, credentials = [] } = {}) => {
     if (!pendingSession) return;
     const { audience, returnUrl, appName, domain, iconUrl } = pendingSession;
     try {
@@ -173,7 +188,25 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         shareProfile && profile
           ? { name: profile.displayName, picture: profile.avatar }
           : undefined;
-      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims);
+      // Build a presentation for each verified credential the user chose: selective disclosure +
+      // a holder-of-key proof bound to THIS session's challenge (the per-issuer holder key).
+      let vcPresentations;
+      if (credentials.length) {
+        vcPresentations = [];
+        for (const { cred, disclose } of credentials) {
+          const { secretKey } = await deriveCredentialHolderKey(cryptoKey, cred.iss);
+          vcPresentations.push(
+            await buildPresentation({
+              sdjwt: cred.sdjwt,
+              disclose,
+              audience: pendingSession.audience,
+              nonce: pendingSession.challenge,
+              holderSecretKey: secretKey,
+            }),
+          );
+        }
+      }
+      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims, vcPresentations);
       showToast(`Signed in to ${audience}`);
       // The toast above is the confirmation for cross-device (QR) / device-code sign-ins.
       // Only the same-device deep link shows the "Return to …" sheet (it returns to the

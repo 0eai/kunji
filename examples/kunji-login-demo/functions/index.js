@@ -4,6 +4,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 import { verifyAssertion } from './verify.js';
 import { verifyCapabilityAssertion } from './capability.js';
+import { verifyCredentialPresentation, parseVcScope } from './vc.js';
 
 initializeApp();
 const db = getFirestore();
@@ -13,6 +14,21 @@ const SESSION_TTL_MS = 2 * 60 * 1000;
 // Firestore doc-ids.
 const token = (n) => randomBytes(n).toString('base64url');
 const sessionRef = (id) => db.collection('loginSessions').doc(id);
+
+// Verified credentials (optional): if an assertion presents one, verify it LOCALLY against the
+// issuer's own keys + StatusList — no kunji server. Set REQUIRE_VC (e.g. "vc:age#age_over_18") to
+// REQUIRE a passing predicate. A production RP caches/pins issuer keys + guards the fetch (SSRF).
+const REQUIRE_VC = process.env.REQUIRE_VC || null;
+const fetchIssuerKeys = async (iss) => {
+  const r = await fetch(`${iss}/.well-known/kunji-issuer.json`);
+  if (!r.ok) throw new Error('issuer_unreachable');
+  return (await r.json()).keys || [];
+};
+const fetchStatus = async (uri, idx) => {
+  const r = await fetch(`${uri}?idx=${encodeURIComponent(idx)}`);
+  if (!r.ok) throw new Error('status_unreachable');
+  return (await r.json()).valid !== false; // false ⇒ revoked
+};
 
 // A globally-unique 6-digit code (equality-only query → no composite index needed).
 const freshCode = async () => {
@@ -130,7 +146,7 @@ export const getSessionStatus = onRequest({ cors: true, maxInstances: 5, memory:
   if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
   const s = snap.data();
   // `claims` is the optional, self-asserted profile the user chose to share (or null).
-  res.json({ status: s.status, sub: s.sub || null, claims: s.claims || null });
+  res.json({ status: s.status, sub: s.sub || null, claims: s.claims || null, verified: s.verified || null });
 });
 
 // The wallet POSTs the signed assertion here (spec §5.2). Full §6 verification.
@@ -142,6 +158,37 @@ export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '2
   const ref = sessionRef(sessionId);
 
   try {
+    // Verify any presented verified credentials BEFORE the consume transaction — issuer-key +
+    // StatusList lookups need network fetches, which can't run inside a Firestore transaction. The
+    // session's challenge/audience are immutable once created, so this pre-read is safe; the tx below
+    // still atomically re-verifies the §6 assertion + consumes the session.
+    let verified = null;
+    const presentations = assertion?.signedPayload?.vc_presentations;
+    if (Array.isArray(presentations) && presentations.length) {
+      const pre = await ref.get();
+      const session = pre.exists ? pre.data() : null;
+      if (!session) return res.status(400).json({ error: 'unknown_session' });
+      verified = [];
+      for (const presentation of presentations) {
+        const vr = await verifyCredentialPresentation({
+          presentation,
+          audience: session.audience,
+          nonce: session.challenge,
+          getIssuerKeys: fetchIssuerKeys,
+          checkStatus: fetchStatus,
+        });
+        if (!vr.ok) return res.status(400).json({ error: 'vc_' + vr.error });
+        verified.push({ iss: vr.iss, vct: vr.vct, claims: vr.claims });
+      }
+    }
+    if (REQUIRE_VC) {
+      const want = parseVcScope(REQUIRE_VC);
+      const ok = (verified || []).some(
+        (v) => v.vct === want.vct && (!want.iss || v.iss === want.iss) && want.disclose.every((c) => v.claims?.[c] === true),
+      );
+      if (!ok) return res.status(400).json({ error: 'vc_predicate_failed' });
+    }
+
     // Verify + consume atomically so a captured/duplicated assertion can't approve
     // the same session twice (single-use, spec §6.7).
     const result = await db.runTransaction(async (tx) => {
@@ -150,7 +197,7 @@ export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '2
       const r = verifyAssertion({ assertion, session, audience: session?.audience });
       if (!r.ok) return r;
       if (session.status !== 'pending') return { ok: false, error: 'session_consumed' };
-      tx.update(ref, { status: 'approved', sub: r.sub, claims: r.claims || null });
+      tx.update(ref, { status: 'approved', sub: r.sub, claims: r.claims || null, verified });
       return r;
     });
     if (!result.ok) return res.status(400).json({ error: result.error });

@@ -86,5 +86,13 @@ service cloud.firestore {
     match /agentRequests/{code} {
       allow read, write: if false;
     }
+
+    // Verified-credential issuance relay. Function-mediated both ways: the (unauthenticated) issuer
+    // deposits an ECDH-encrypted credential via the agentRequestRelay-style credentialOfferRelay
+    // (Admin) and the wallet polls it via credentialPoll (Admin) — neither touches the doc directly.
+    // The doc holds only ciphertext + the issuer's ephemeral pub + the issuer id (no master key).
+    match /credentialSessions/{sessionId} {
+      allow read, write: if false;
+    }
   }
 }

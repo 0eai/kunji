@@ -50,17 +50,19 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
   // existing clients omit it), 'profile' → profile/self (the user's custom profile),
   // 'activity' → activity/{appId} (append-only, encrypted, shared-across-devices log),
   // 'agent' → agents/{appId} (encrypted authorized-agent metadata; appId = capability jti),
-  // 'device' → devices/{appId} (encrypted linked-device metadata; appId = per-device id).
+  // 'device' → devices/{appId} (encrypted linked-device metadata; appId = per-device id),
+  // 'credential' → credentials/{appId} (encrypted held verified credential; appId = credential id).
   const isProfile = kind === 'profile';
   const isActivity = kind === 'activity';
   const isAgent = kind === 'agent';
   const isDevice = kind === 'device';
+  const isCredential = kind === 'credential';
 
   // 1. shape
   if (
     !HEX64.test(vaultId || '') ||
     !SAFE_ID.test(appId || '') ||
-    (kind !== undefined && !['app', 'profile', 'activity', 'agent', 'device'].includes(kind)) ||
+    (kind !== undefined && !['app', 'profile', 'activity', 'agent', 'device', 'credential'].includes(kind)) ||
     (op !== 'set' && op !== 'delete') ||
     !publicKey ||
     !signedToken ||
@@ -101,9 +103,11 @@ export const vaultWrite = onRequest({ cors: true, maxInstances: 10, memory: '256
       ? vaultRef.collection('activity').doc(appId)
       : isAgent
         ? vaultRef.collection('agents').doc(appId)
-        : isDevice
-          ? vaultRef.collection('devices').doc(appId)
-          : vaultRef.collection('apps').doc(appId);
+        : isCredential
+          ? vaultRef.collection('credentials').doc(appId)
+          : isDevice
+            ? vaultRef.collection('devices').doc(appId)
+            : vaultRef.collection('apps').doc(appId);
   // Activity entries self-prune via a Firestore TTL policy on `expiresAt` (a non-sensitive
   // timestamp; the payload itself stays encrypted). 90 days.
   const ACTIVITY_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -320,5 +324,63 @@ export const agentRequestRelay = onRequest(
       return res.json({ code });
     }
     return res.status(405).json({ error: 'method_not_allowed' });
+  },
+);
+
+// ── Verified-credential issuance relay ───────────────────────────────────────
+// Lets an issuer deliver a credential to a wallet asynchronously (out-of-band issuance). The wallet
+// leaves a transport key + 64-hex sessionId (sent to the issuer directly); the issuer ECDH-encrypts
+// the SD-JWT to that key and POSTs it here; the wallet polls `credentialPoll`. The relay only ever
+// holds ciphertext + the issuer's ephemeral pub + the issuer id. Function-mediated (issuer is unauth).
+const CREDENTIAL_OFFER_TTL_MS = 10 * 60 * 1000;
+
+export const credentialOfferRelay = onRequest(
+  { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
+  async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+    if (await rateLimited(req.ip, 20, 60 * 1000, 'credoffer'))
+      return res.status(429).json({ error: 'rate_limited' });
+    const { sessionId, issuerPubE, encryptedCredential, issuer } = req.body || {};
+    if (
+      !HEX64_SESSION.test(sessionId || '') ||
+      typeof issuerPubE !== 'string' ||
+      !B64_LOOSE.test(issuerPubE) ||
+      !encryptedCredential ||
+      typeof encryptedCredential !== 'object' ||
+      typeof encryptedCredential.iv !== 'string' ||
+      typeof encryptedCredential.data !== 'string' ||
+      typeof issuer !== 'string' ||
+      !issuer
+    ) {
+      return res.status(400).json({ error: 'bad_request' });
+    }
+    const expiresAt = Date.now() + CREDENTIAL_OFFER_TTL_MS;
+    await db.collection('credentialSessions').doc(sessionId).set({
+      issuerPubE,
+      encryptedCredential: { iv: encryptedCredential.iv, data: encryptedCredential.data },
+      issuer: String(issuer),
+      expiresAt,
+      ttl: Timestamp.fromMillis(expiresAt + 5 * 60 * 1000),
+    });
+    return res.json({ status: 'ok' });
+  },
+);
+
+// The wallet polls this for the issuer-deposited (ECDH-encrypted) credential. Ciphertext only;
+// the wallet decrypts with its transport private key. no-store (same reasoning as agentCapabilityPoll).
+export const credentialPoll = onRequest(
+  { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
+  async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const sessionId = String(req.query.sessionId || '');
+    if (!HEX64_SESSION.test(sessionId)) return res.status(400).json({ error: 'bad_session' });
+    if (await rateLimited(req.ip, 60, 60 * 1000, 'credpoll'))
+      return res.status(429).json({ error: 'rate_limited' });
+    const snap = await db.collection('credentialSessions').doc(sessionId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+    const s = snap.data();
+    if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired' });
+    res.json({ issuerPubE: s.issuerPubE, encryptedCredential: s.encryptedCredential, issuer: s.issuer });
   },
 );
