@@ -6,6 +6,7 @@ import {
   parseSdJwt,
   holderJwkFor,
   matchCredentialsByScope,
+  parseVcScope,
   deriveCredentialHolderKey,
 } from '../src/lib/vc.js';
 import {
@@ -90,6 +91,19 @@ describe('verified credential — happy path', () => {
     expect(parsed.disclosures.map((d) => d.name).sort()).toEqual(['age_over_18', 'name']);
     expect(parsed.issuerClaims.iss).toBe(ISS);
   });
+
+  it('discloses one age threshold without leaking the others', async () => {
+    const { credential, holder, getIssuerKeys } = await setup({
+      claims: { age_over_13: true, age_over_16: true, age_over_18: false },
+    });
+    const r16 = await verify(await present(credential, holder, { disclose: ['age_over_16'] }), getIssuerKeys);
+    expect(r16).toMatchObject({ ok: true, claims: { age_over_16: true } });
+    expect(r16.claims.age_over_13).toBeUndefined();
+    expect(r16.claims.age_over_18).toBeUndefined(); // other thresholds stay hidden
+    // an under-threshold predicate discloses as false — the RP's policy step is what rejects it
+    const r18 = await verify(await present(credential, holder, { disclose: ['age_over_18'] }), getIssuerKeys);
+    expect(r18).toMatchObject({ ok: true, claims: { age_over_18: false } });
+  });
 });
 
 describe('verified credential — rejections', () => {
@@ -138,15 +152,31 @@ describe('verified credential — rejections', () => {
   });
 });
 
+describe('parseVcScope', () => {
+  it('parses vct, optional @issuer, and the #claim selector', () => {
+    expect(parseVcScope('vc:age')).toEqual({ vct: 'age', iss: undefined, disclose: [] });
+    expect(parseVcScope('vc:age#age_over_16')).toEqual({ vct: 'age', iss: undefined, disclose: ['age_over_16'] });
+    expect(parseVcScope('vc:age@https://i1#age_over_16,age_over_18')).toEqual({
+      vct: 'age',
+      iss: 'https://i1',
+      disclose: ['age_over_16', 'age_over_18'],
+    });
+    expect(parseVcScope('login')).toBeNull();
+    expect(parseVcScope('profile')).toBeNull();
+  });
+});
+
 describe('matchCredentialsByScope', () => {
   const held = [
-    { vct: 'age', iss: 'https://i1' },
-    { vct: 'email', iss: 'https://i1' },
+    { vct: 'age', iss: 'https://i1', sdjwt: 'x' },
+    { vct: 'email', iss: 'https://i1', sdjwt: 'y' },
   ];
-  it('matches by vct and optional @issuer', () => {
-    expect(matchCredentialsByScope(held, ['login', 'vc:age'])).toEqual([{ vct: 'age', iss: 'https://i1' }]);
-    expect(matchCredentialsByScope(held, ['vc:age@https://i1'])).toEqual([{ vct: 'age', iss: 'https://i1' }]);
-    expect(matchCredentialsByScope(held, ['vc:age@https://other'])).toEqual([]);
+  it('returns matched credentials paired with the claims to disclose', () => {
+    expect(matchCredentialsByScope(held, ['login', 'vc:age#age_over_16'])).toEqual([
+      { cred: held[0], disclose: ['age_over_16'] },
+    ]);
+    expect(matchCredentialsByScope(held, ['vc:age@https://i1'])).toEqual([{ cred: held[0], disclose: [] }]);
+    expect(matchCredentialsByScope(held, ['vc:age@https://other#age_over_16'])).toEqual([]);
     expect(matchCredentialsByScope(held, ['login', 'profile'])).toEqual([]);
   });
 });

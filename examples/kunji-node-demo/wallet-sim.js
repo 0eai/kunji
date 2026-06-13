@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { canonicalJson } from './verify.js';
-import { buildPresentation, holderJwkFor } from './vc.js';
+import { buildPresentation, holderJwkFor, parseVcScope } from './vc.js';
 // Reuse kunji's shared default-identity helper for a friendly printout. A real RP would
 // use window.kunji.handle(sub) from rp.js (see public/index.html).
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
@@ -68,34 +68,47 @@ const main = async () => {
   // The holder key is random here; the real wallet derives it per-issuer (deriveCredentialHolderKey).
   if (wantVc) {
     if (!ISSUER) throw new Error('Set ISSUER=<issuer origin>, e.g. ISSUER=http://localhost:4000');
+    // Fulfill the vc: scopes the RP advertised (session.scope), or default to age_over_18 so `--vc`
+    // alone still demos. VC_DOB sets the holder's age at the issuer (e.g. a minor → an 18+ rejection).
+    let vcReqs = (session.scope || [])
+      .map((s) => (typeof s === 'string' ? s : s.id))
+      .map(parseVcScope)
+      .filter(Boolean);
+    if (!vcReqs.length) vcReqs = [{ vct: 'age', iss: undefined, disclose: ['age_over_18'] }];
+
     const holderPriv = ed25519.utils.randomSecretKey();
     const holderPub = ed25519.getPublicKey(holderPriv);
-    const issued = await (
-      await fetch(`${ISSUER}/issue`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ holderJwk: holderJwkFor(holderPub), claims: { age_over_18: true, name: 'Ada Lovelace' } }),
-      })
-    ).json();
-    if (!issued.credential) throw new Error('issuer /issue failed: ' + JSON.stringify(issued));
-    if (wantRevoke) {
-      await fetch(`${ISSUER}/status/revoke`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idx: issued.idx }),
-      });
-      console.log(`(revoked credential idx ${issued.idx} at the issuer — presentation should be rejected)`);
+    const dob = process.env.VC_DOB; // e.g. VC_DOB=2010-01-01 (a minor) — issuer defaults to an adult
+    const presentations = [];
+    for (const req of vcReqs) {
+      const issued = await (
+        await fetch(`${ISSUER}/issue`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ holderJwk: holderJwkFor(holderPub), dob }),
+        })
+      ).json();
+      if (!issued.credential) throw new Error('issuer /issue failed: ' + JSON.stringify(issued));
+      if (wantRevoke) {
+        await fetch(`${ISSUER}/status/revoke`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idx: issued.idx }),
+        });
+        console.log(`(revoked credential idx ${issued.idx} at the issuer — presentation should be rejected)`);
+      }
+      presentations.push(
+        buildPresentation({
+          sdjwt: issued.credential,
+          disclose: req.disclose,
+          audience: session.audience,
+          nonce: session.challenge,
+          holderSecretKey: holderPriv,
+        }),
+      );
+      console.log(`presenting ${req.vct} disclosing [${req.disclose.join(', ')}] from`, issued.issuer);
     }
-    signedPayload.vc_presentations = [
-      buildPresentation({
-        sdjwt: issued.credential,
-        disclose: ['age_over_18'],
-        audience: session.audience,
-        nonce: session.challenge,
-        holderSecretKey: holderPriv,
-      }),
-    ];
-    console.log('presenting verified credential: age_over_18 from', issued.issuer);
+    signedPayload.vc_presentations = presentations;
   }
 
   const signedToken = b64(

@@ -41,15 +41,35 @@ export const statusUri = () => `${issuerOrigin()}/status/1`;
 export const isValid = (idx) => !revoked.has(Number(idx));
 export const revoke = (idx) => revoked.add(Number(idx));
 
+// Pre-baked age thresholds. The DOB is used only to COMPUTE these booleans, then discarded — only the
+// booleans are signed into the credential, so a holder can prove "16+" without revealing the birthday.
+const AGE_THRESHOLDS = [13, 16, 18, 21];
+const DEFAULT_DOB = '1990-01-01';
+const ageOf = (dob) => {
+  const b = new Date(dob);
+  const now = new Date();
+  let age = now.getUTCFullYear() - b.getUTCFullYear();
+  const m = now.getUTCMonth() - b.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--;
+  return age;
+};
+const ageClaims = (dob) => {
+  const age = ageOf(dob);
+  return Object.fromEntries(AGE_THRESHOLDS.map((n) => [`age_over_${n}`, age >= n]));
+};
+
 let nextIdx = 1;
-/** Mint a credential bound to `holderJwk` (the holder's per-issuer key). Predicate-baked claims. */
-export const issue = ({ holderJwk, vct, claims }) => {
+/**
+ * Mint an age credential bound to `holderJwk`. Bakes `age_over_13/16/18/21` from `dob` (defaults to
+ * an adult) — booleans ONLY; the DOB is never put in the credential. `claims`/`vct` override (tests).
+ */
+export const issue = ({ holderJwk, dob, vct, claims }) => {
   const idx = nextIdx++;
   const credential = mintCredential(loadIssuerKey().secretKey, {
     kid: KID,
     iss: issuerOrigin(),
-    vct: vct || `${issuerOrigin()}/credentials/age`,
-    claims: claims || { age_over_18: true, name: 'Ada Lovelace' },
+    vct: vct || 'age',
+    claims: claims || ageClaims(dob || DEFAULT_DOB),
     holderJwk,
     status: { uri: statusUri(), idx },
     ttlSeconds: 365 * 24 * 3600,

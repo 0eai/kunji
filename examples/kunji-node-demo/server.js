@@ -20,10 +20,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyAssertion } from './verify.js';
-import { verifyCredentialPresentation } from './vc.js';
+import { verifyCredentialPresentation, parseVcScope } from './vc.js';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
+// Optional: require a verified credential at login, e.g. REQUIRE_VC="vc:age#age_over_18". When set,
+// /api/session advertises it in `scope` and /kunji/callback rejects unless a presentation discloses
+// every requested claim as `true`.
+const REQUIRE_VC = process.env.REQUIRE_VC || null;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // base64url session id / challenge — ~30% shorter than hex (leaner QR), same entropy.
 const token = (n) => randomBytes(n).toString('base64url');
@@ -131,7 +135,8 @@ const handler = async (req, res) => {
       verified: null,
       expiresAt,
     });
-    return json(res, 200, { sessionId, challenge, audience, callbackUrl, expiresAt });
+    const scope = REQUIRE_VC ? ['login', REQUIRE_VC] : ['login'];
+    return json(res, 200, { sessionId, challenge, audience, callbackUrl, expiresAt, scope });
   }
 
   // 2. The wallet POSTs the signed assertion here. Verify + consume atomically.
@@ -162,6 +167,18 @@ const handler = async (req, res) => {
         if (!vr.ok) return json(res, 400, { error: 'vc_' + vr.error });
         verified.push({ iss: vr.iss, vct: vr.vct, claims: vr.claims });
       }
+    }
+    // Enforce a required credential/predicate: a verified presentation must match the required vct
+    // (+ issuer if pinned) and disclose every requested claim as `true` (e.g. age_over_18).
+    if (REQUIRE_VC) {
+      const want = parseVcScope(REQUIRE_VC);
+      const ok = (verified || []).some(
+        (v) =>
+          v.vct === want.vct &&
+          (!want.iss || v.iss === want.iss) &&
+          want.disclose.every((c) => v.claims?.[c] === true),
+      );
+      if (!ok) return json(res, 400, { error: 'vc_predicate_failed' });
     }
     session.status = 'approved';
     session.sub = r.sub;

@@ -114,9 +114,17 @@ untouched (the deterministic-derivation invariant holds).
 ## 6. Selective disclosure & predicates
 
 SD-JWT lets the holder reveal a **subset** of claims. To avoid leaking the underlying value, issuers
-should **pre-bake predicates**: instead of `dob: 2001-04-05`, issue `age_over_18: true` (and
-`age_over_21`, etc.) so disclosing the predicate reveals the *answer*, not the DOB. This gives the
-common "prove you're over 18" use case with **plain SD-JWT and no ZK**.
+**pre-bake predicates**: instead of `dob: 2001-04-05`, one **age** credential carries a boolean for
+each threshold — `age_over_13`, `age_over_16`, `age_over_18`, `age_over_21` — each its own
+disclosure. The issuer computes them from the DOB at issuance; **the DOB itself is never in the
+credential**. An RP requests the bar it needs and the holder reveals only that one, so proving "16+"
+leaks neither the birthday nor the other thresholds — plain SD-JWT, no ZK.
+
+An RP selects the threshold with the scope's claim selector (see [`scope.md`](./scope.md)):
+`vc:age#age_over_16`, or `vc:age@https://issuer#age_over_16` to pin the issuer. The holder discloses
+`age_over_16`; the RP **requires it to be `true`** — a disclosed `false` (an under-age holder) is
+rejected at the policy step (§9). Reference: `examples/kunji-issuer-demo` bakes the thresholds and
+`kunji-node-demo` (`REQUIRE_VC=vc:age#age_over_18`) enforces them.
 
 ## 7. Unlinkability — honest trade-offs
 

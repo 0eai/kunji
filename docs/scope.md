@@ -55,7 +55,7 @@ A scope **item** is either a string (shorthand) or an object (when it needs cons
 
 | Kind | Form | Examples | Wallet rendering |
 |---|---|---|---|
-| **Reserved core** | bare, kunji-defined | `login`, `profile`, `offline_access`, `vc:<type>` | vetted, localized text |
+| **Reserved core** | bare, kunji-defined | `login`, `profile`, `offline_access`, `vc:<type>[#claim]` | vetted, localized text |
 | **RP extension** | namespaced (contains `:`) | `read:orders`, `example.com:orders.read`, `https://example.com/scopes/orders.read` | raw id + the RP's own (untrusted) label |
 
 Reserved core (the only ids kunji assigns meaning to):
@@ -64,8 +64,9 @@ Reserved core (the only ids kunji assigns meaning to):
 - `profile` — offer the optional self-asserted name/avatar (`claims`, already shipped).
 - `offline_access` — request a longer-lived / re-presentable capability (agent keeps acting without
   a fresh approval each time, within `exp`).
-- `vc:<type>` and `vc:<type>@<issuer>` — request a **verified credential** of that type, optionally
-  pinned to an issuer. See [`verified-credentials.md`](./verified-credentials.md).
+- `vc:<type>[@<issuer>][#<claim>,…]` — request a **verified credential** of that type, optionally
+  pinned to an issuer, optionally selecting which claims to disclose — e.g. `vc:age#age_over_16` to
+  prove the 16+ predicate without revealing the DOB. See [`verified-credentials.md`](./verified-credentials.md).
 
 Everything else **MUST** be namespaced — its id must **contain a `:`** (a `verb:resource` form, a host
 prefix, or an `https://` URL on the RP's domain). Bare non-core ids are rejected by the wallet

@@ -188,3 +188,20 @@ export const verifyCredentialPresentation = async ({
 
   return { ok: true, iss: c.iss, vct: c.vct, claims };
 };
+
+// Parse a `vc:<vct>[@issuer][#claim,…]` scope id → { vct, iss?, disclose:[] } (or null). The
+// `#claim,…` selector names which credential claims (e.g. an age predicate) to reveal.
+export const parseVcScope = (id) => {
+  if (typeof id !== 'string' || !id.startsWith('vc:')) return null;
+  let rest = id.slice(3);
+  let disclose = [];
+  const hash = rest.indexOf('#');
+  if (hash >= 0) {
+    disclose = rest.slice(hash + 1).split(',').filter(Boolean);
+    rest = rest.slice(0, hash);
+  }
+  const at = rest.indexOf('@');
+  const vct = at >= 0 ? rest.slice(0, at) : rest;
+  const iss = at >= 0 ? rest.slice(at + 1) : undefined;
+  return { vct, iss, disclose };
+};

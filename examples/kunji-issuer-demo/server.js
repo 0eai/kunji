@@ -56,7 +56,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/issue') {
     const body = await readBody(req);
     if (!body?.holderJwk) return json(res, 400, { error: 'holderJwk_required' });
-    const { credential, idx } = issue({ holderJwk: body.holderJwk, vct: body.vct, claims: body.claims });
+    const { credential, idx } = issue({ holderJwk: body.holderJwk, dob: body.dob, vct: body.vct, claims: body.claims });
     return json(res, 200, { credential, idx, issuer: issuerOrigin() });
   }
 
