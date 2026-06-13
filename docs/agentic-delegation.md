@@ -32,7 +32,8 @@ is useless without the agent's private key. Fields:
 
 - `audience` — the app/domain this grant is for (same normalization as §5/§8).
 - `agentPubKey` — the agent's ephemeral key (holder-of-key binding).
-- `scope[]` — least-privilege action vocabulary (today `["login"]`; see Still open / deferred).
+- `scope[]` — least-privilege action vocabulary; the grammar + `scopeSatisfies` + delegation-chain
+  attenuation shipped in Phase 1 (see [`scope.md`](./scope.md)).
 - `iat`/`exp` — short-lived by default.
 - `rateBudget`/`maxUses` — a per-capability ceiling the RP enforces.
 - `jti` — opaque id for revocation.
@@ -133,10 +134,12 @@ Implemented across the wallet, the protocol core, the RP verifiers, and the MCP 
   cooperating RP honors it only if the signature verifies against the **capability's own key** (so only
   the issuer can revoke; forged entries are ignored). A short default TTL stays as the backstop for RPs
   that don't check. (`src/services/capability.js` `revokeAgent` ↔ verifier `getRevocation`.)
+- **Scope vocabulary + attenuation (Phase 1)** — the scope grammar (string | `{id,...constraints}`),
+  reserved core + namespacing, the backendless `scopeSatisfies` enforcer (mirrored across the RP
+  verifiers), per-item consent, and delegation-chain attenuation (`kunji-capdel+jwt`,
+  narrow-not-widen). Design: [`scope.md`](./scope.md).
 
 ### Still open / deferred
-- **`scope` vocabulary** — the least-privilege action set apps and agents agree on (today `["login"]`).
-  Design: [`scope.md`](./scope.md) (grammar, reserved core, delegation-chain attenuation).
 - **Step-up / incremental authorization** — a connected agent requesting more scope or a verified
   credential later, with the wallet notifying the user to approve. Design:
   [`push-relay.md`](./push-relay.md), [`verified-credentials.md`](./verified-credentials.md).

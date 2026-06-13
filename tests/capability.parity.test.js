@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 // Wallet (browser) mint/proof ↔ RP (Node) verifier — guards against the two
 // implementations drifting, the way verify.test.js does for the §6 assertion.
-import { mintCapability, buildAgentProof } from '../src/lib/capability.js';
+import { mintCapability, mintDelegatedCapability, buildAgentProof } from '../src/lib/capability.js';
 import { verifyCapabilityAssertion } from '../examples/kunji-login-demo/functions/capability.js';
 import {
   generateMasterKey,
@@ -68,6 +68,31 @@ describe('capability parity (wallet mint → RP verify)', () => {
       challenge: CHALLENGE,
     });
     expect(r).toMatchObject({ ok: false, error: 'bad_agent_proof' });
+  });
+
+  it('the RP verifier enforces a wallet-minted delegation chain (narrow-not-widen)', async () => {
+    const master = await generateMasterKey();
+    const agentA = generateEd25519KeyPair();
+    const root = await mintCapability(master, {
+      audience: AUD,
+      scope: ['read:orders', 'read:invoices'],
+      ttlSeconds: 300,
+      agentPubB64: exportEd25519PublicKey(agentA.publicKey),
+    });
+    const agentB = generateEd25519KeyPair();
+    const child = mintDelegatedCapability(root.capability, agentA.secretKey, {
+      scope: ['read:orders'],
+      agentPubB64: exportEd25519PublicKey(agentB.publicKey),
+      ttlSeconds: 120,
+    });
+    const r = await verifyCapabilityAssertion({
+      capability: root.capability,
+      chain: [child.capability],
+      agentProof: buildAgentProof(agentB.secretKey, { audience: AUD, challenge: CHALLENGE, capJti: child.jti }),
+      audience: AUD,
+      challenge: CHALLENGE,
+    });
+    expect(r).toMatchObject({ ok: true, sub: root.sub, scope: ['read:orders'], jti: child.jti });
   });
 
   // kunji-agent-demo ships its own copy of the RP verifier (it's a plain-Node RP with no shared

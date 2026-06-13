@@ -46,6 +46,48 @@ const pubFromOkpJwk = (jwk) => {
 const subFromPubBytes = (pubBytes) =>
   createHash('sha256').update(Buffer.from(pubBytes).toString('base64'), 'utf8').digest('hex');
 
+// --- Scope grammar (docs/scope.md) — RP enforcement --------------------------
+// A scope item is a string or `{ id, ...constraints }`. `scopeSatisfies(granted, required)` answers
+// whether the granted scope covers what's required (exact id, `verb:*` wildcard, and constraint
+// ceilings like `max`). Mirrors src/lib/capability.js. `login` is implied by a valid assertion.
+const normalizeScopeItem = (item) => (typeof item === 'string' ? { id: item } : { ...item });
+const parseAmount = (v) => {
+  const m = /^\s*(\d+(?:\.\d+)?)\s*([A-Za-z]{0,8})\s*$/.exec(String(v));
+  return m ? { n: parseFloat(m[1]), ccy: m[2].toUpperCase() } : null;
+};
+const idMatches = (grantedId, requiredId) => {
+  if (grantedId === requiredId) return true;
+  if (grantedId.endsWith(':*')) {
+    const prefix = grantedId.slice(0, -1);
+    return requiredId.startsWith(prefix) && requiredId.length > prefix.length;
+  }
+  return false;
+};
+const constraintsSatisfied = (granted, required) => {
+  for (const [k, rv] of Object.entries(required)) {
+    if (k === 'id' || !(k in granted)) continue;
+    const gv = granted[k];
+    if (k === 'max') {
+      const ga = parseAmount(gv);
+      const ra = parseAmount(rv);
+      if (ga && ra) {
+        if (ga.ccy !== ra.ccy || ra.n > ga.n) return false;
+        continue;
+      }
+    }
+    if (gv !== rv) return false;
+  }
+  return true;
+};
+export const scopeSatisfies = (granted, required) => {
+  if (!Array.isArray(granted) || !Array.isArray(required)) return false;
+  const g = granted.map(normalizeScopeItem);
+  return required.map(normalizeScopeItem).every((req) => {
+    if (req.id === 'login') return true;
+    return g.some((gr) => idMatches(gr.id, req.id) && constraintsSatisfied(gr, req));
+  });
+};
+
 /** Agent-side helper (used by agent-sim): build the holder-of-key proof JWT. */
 export function buildAgentProof(agentSecretKey, { audience, challenge, capJti, now = Date.now() }) {
   const jti = randomBytes(16).toString('hex');
@@ -68,7 +110,7 @@ export const revokeMessage = (jti) => `kunji-revoke-v1:${jti}`;
  * ignored).
  * @returns {Promise<{ ok:true, sub, scope, jti } | { ok:false, error }>}
  */
-export async function verifyCapabilityAssertion({ capability, agentProof, audience, challenge, now = Date.now(), isRevoked, getRevocation }) {
+export async function verifyCapabilityAssertion({ capability, agentProof, audience, challenge, now = Date.now(), isRevoked, getRevocation, chain }) {
   let cap;
   try {
     cap = decodeJWS(capability);
@@ -108,9 +150,46 @@ export async function verifyCapabilityAssertion({ capability, agentProof, audien
     }
   }
 
+  // Optional delegation chain (root → leaf): each link narrows scope, is signed by the previous
+  // link's cnf key, and cannot outlive its parent. An empty chain behaves exactly as before.
+  let cnfJwk = c.cnf?.jwk;
+  let effScope = c.scope;
+  let effJti = c.jti;
+  let prevJti = c.jti;
+  let prevScope = c.scope;
+  let prevExp = c.exp;
+  const chainArr = Array.isArray(chain) ? chain : [];
+  if (chainArr.length > 4) return { ok: false, error: 'chain_too_deep' };
+  for (const linkToken of chainArr) {
+    let prevPub;
+    try {
+      prevPub = pubFromOkpJwk(cnfJwk);
+    } catch {
+      return { ok: false, error: 'bad_cnf' };
+    }
+    const link = verifyJWS(linkToken, prevPub);
+    if (!link) return { ok: false, error: 'bad_delegation_signature' };
+    if (link.header?.typ !== 'kunji-capdel+jwt') return { ok: false, error: 'bad_delegation_header' };
+    const lc = link.claims;
+    if (lc.aud !== audience) return { ok: false, error: 'delegation_audience_mismatch' };
+    if (lc.parent !== prevJti) return { ok: false, error: 'delegation_parent_mismatch' };
+    if (!Array.isArray(lc.scope) || lc.scope.length === 0) return { ok: false, error: 'no_scope' };
+    if (!scopeSatisfies(prevScope, lc.scope)) return { ok: false, error: 'delegation_not_subset' };
+    if (typeof lc.exp !== 'number' || lc.exp > prevExp || now > lc.exp * 1000) {
+      return { ok: false, error: 'delegation_expired' };
+    }
+    cnfJwk = lc.cnf?.jwk;
+    prevJti = lc.jti;
+    prevScope = lc.scope;
+    prevExp = lc.exp;
+    effScope = lc.scope;
+    effJti = lc.jti;
+  }
+
+  // Holder-of-key: the LEAF agent proves possession of its cnf key against THIS challenge.
   let agentPubBytes;
   try {
-    agentPubBytes = pubFromOkpJwk(c.cnf?.jwk);
+    agentPubBytes = pubFromOkpJwk(cnfJwk);
   } catch {
     return { ok: false, error: 'bad_cnf' };
   }
@@ -120,10 +199,10 @@ export async function verifyCapabilityAssertion({ capability, agentProof, audien
   const p = proof.claims;
   if (p.aud !== audience) return { ok: false, error: 'proof_audience_mismatch' };
   if (p.challenge !== challenge) return { ok: false, error: 'challenge_mismatch' };
-  if (p.cap !== c.jti) return { ok: false, error: 'proof_cap_mismatch' };
+  if (p.cap !== effJti) return { ok: false, error: 'proof_cap_mismatch' };
   if (typeof p.iat !== 'number' || Math.abs(now - p.iat * 1000) > 120_000) {
     return { ok: false, error: 'stale_proof' };
   }
 
-  return { ok: true, sub, scope: c.scope, jti: c.jti };
+  return { ok: true, sub, scope: effScope, jti: effJti };
 }

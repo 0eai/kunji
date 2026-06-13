@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { ShieldCheck, ScanLine, Copy, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, ScanLine, Copy, CheckCircle2, Circle } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Field } from './ui/primitives';
 import {
@@ -9,6 +9,7 @@ import {
   depositAgentCapability,
   recordAgent,
 } from '../services/capability';
+import { scopeId } from '../lib/capability';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -20,6 +21,14 @@ const TTLS = [
   { label: '7 days', s: 604800 },
 ];
 
+// Friendly text for the reserved-core scopes (docs/scope.md). Custom scopes have no vetted text —
+// the wallet shows the raw id + the request's untrusted, RP-supplied label.
+const RESERVED_LABELS = {
+  login: 'Sign in as you',
+  profile: 'Share your profile (name & avatar)',
+  offline_access: 'Act without re-approval until it expires',
+};
+
 // Wallet flow to authorize an agent: scan/paste the agent's request, review the requested
 // scope + audience, pick a TTL, then explicitly approve to mint a capability the agent
 // holds. The agent never receives any kunji key — only this scoped, expiring capability.
@@ -29,7 +38,8 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [paste, setPaste] = useState('');
   const [code, setCode] = useState('');
-  const [req, setReq] = useState(null); // { audience, scope, agentPub }
+  const [req, setReq] = useState(null); // { audience, scope, agentPub, scopeLabels? }
+  const [grantedIds, setGrantedIds] = useState(() => new Set()); // per-item consent (default-deny)
   const [ttl, setTtl] = useState(3600);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +68,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
     setError('');
     try {
       setReq(parseAgentRequest(raw));
+      setGrantedIds(new Set()); // default-deny: nothing granted until the user toggles it on
       setPhase('review');
     } catch {
       setError('Not a valid kunji agent request.');
@@ -78,12 +89,25 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
     }
   };
 
+  const toggle = (id) =>
+    setGrantedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // The scope the user actually granted: `login` is implied; every other item is opt-in.
+  const approvedScope = () =>
+    (req?.scope || []).filter((s) => scopeId(s) === 'login' || grantedIds.has(scopeId(s)));
+
   const approve = async () => {
+    const scope = approvedScope();
     setBusy(true);
     try {
       const r = await issueCapability(userId, masterKey, {
         audience: req.audience,
-        scope: req.scope,
+        scope,
         ttlSeconds: ttl,
         agentPub: req.agentPub,
       });
@@ -94,7 +118,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
       recordAgent(masterKey, {
         jti: r.jti,
         audience: req.audience,
-        scope: req.scope,
+        scope,
         exp: r.exp,
         agentPub: req.agentPub,
       }).catch((e) => console.warn('recordAgent failed:', e));
@@ -137,12 +161,48 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             <span className="font-mono text-ink">{req.audience}</span>. It will act for you there
             within this scope until the capability expires — it never receives your keys.
           </p>
-          <div className="flex flex-wrap gap-1.5 mb-5">
-            {req.scope.map((s) => (
-              <span key={s} className="text-[12px] font-mono px-2 py-1 rounded-md bg-accent-soft text-accent">
-                {s}
-              </span>
-            ))}
+          <div className="text-[12px] uppercase tracking-wide text-faint mb-2">Choose what to allow</div>
+          <div className="flex flex-col gap-1.5 mb-5">
+            {req.scope.map((s) => {
+              const item = typeof s === 'string' ? { id: s } : s;
+              const id = item.id;
+              const implied = id === 'login';
+              const on = implied || grantedIds.has(id);
+              const reservedLabel = RESERVED_LABELS[id];
+              const rpLabel = req.scopeLabels && req.scopeLabels[id];
+              const constraints = Object.entries(item).filter(([k]) => k !== 'id');
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => !implied && toggle(id)}
+                  disabled={implied}
+                  aria-pressed={on}
+                  className={`flex items-start gap-2.5 text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                    on ? 'border-accent/40 bg-accent-soft' : 'border-line hover:border-muted'
+                  } ${implied ? 'cursor-default' : ''}`}
+                >
+                  <span className={`mt-0.5 shrink-0 ${on ? 'text-accent' : 'text-faint'}`}>
+                    {on ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="font-mono text-[12px] text-ink">{id}</span>
+                    {reservedLabel ? (
+                      <span className="block text-[12px] text-muted">{reservedLabel}</span>
+                    ) : rpLabel ? (
+                      <span className="block text-[12px] text-faint">
+                        “{rpLabel}” — {req.audience} says this (unverified)
+                      </span>
+                    ) : null}
+                    {constraints.length > 0 && (
+                      <span className="block text-[11px] font-mono text-faint">
+                        {constraints.map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
           </div>
           <div className="text-[12px] uppercase tracking-wide text-faint mb-2">Expires after</div>
           <div className="flex gap-1 p-1 rounded-full border border-line w-fit mb-6">
@@ -162,7 +222,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
             <Btn variant="quiet" onClick={onClose} disabled={busy}>
               Cancel
             </Btn>
-            <Btn variant="primary" onClick={approve} disabled={busy}>
+            <Btn variant="primary" onClick={approve} disabled={busy || approvedScope().length === 0}>
               {busy ? 'Authorizing…' : 'Approve'}
             </Btn>
           </div>

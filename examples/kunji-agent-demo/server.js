@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyAssertion } from './verify.js';
-import { verifyCapabilityAssertion } from './capability.js';
+import { verifyCapabilityAssertion, scopeSatisfies } from './capability.js';
 import { buildRequest, postForCode, dataUriQr, pollCapability, login as agentLogin } from './agent-client.js';
 
 const PORT = process.env.PORT || 3000;
@@ -235,6 +235,17 @@ const handler = async (req, res) => {
     const s = sessions.get(url.searchParams.get('sessionId') || '');
     if (!s) return json(res, 404, { error: 'unknown_session' });
     return json(res, 200, { status: s.status, sub: s.sub, claims: s.claims, scope: s.scope, agent: s.agent });
+  }
+
+  // 3c. A scope-GATED resource: returns the (demo) profile ONLY if the approved session's scope
+  // satisfies `read:profile`. Proves backendless scope enforcement (docs/scope.md) using the same
+  // scopeSatisfies the wallet uses. The sessionId is this demo's bearer handle (as elsewhere here).
+  if (req.method === 'GET' && path === '/api/profile') {
+    const s = sessions.get(url.searchParams.get('sessionId') || '');
+    if (!s || s.status !== 'approved') return json(res, 401, { error: 'not_authenticated' });
+    if (!scopeSatisfies(s.scope, [{ id: 'read:profile' }]))
+      return json(res, 403, { error: 'insufficient_scope', need: 'read:profile', have: s.scope });
+    return json(res, 200, { sub: s.sub, profile: { plan: 'pro', since: 2024 } });
   }
 
   // 3b. Resolve a 6-digit OTP code → its pending session, so the wallet can sign without scanning

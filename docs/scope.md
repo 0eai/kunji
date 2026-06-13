@@ -1,6 +1,9 @@
 # kunji scope vocabulary — design
 
-**Status:** Design (proposed) — **not implemented.** Today `scope` is a flat list of strings
+**Status:** Implemented (Phase 1) — the grammar, reserved core, `scopeSatisfies`, and delegation-chain
+attenuation ship in `src/lib/capability.js` (mirrored RP-side in `examples/*/capability.js`) with the
+wallet's per-item consent UI. Deferred: macaroon/biscuit attenuation and richer constraint types.
+Before Phase 1, `scope` was a flat list of strings
 (`["login"]` for capabilities, `["profile"]` for the optional profile share). This doc defines the
 grammar, the reserved core, and how it's requested, displayed, and enforced — **backendless**, like
 the rest of the protocol. Companion docs: [`verified-credentials.md`](./verified-credentials.md)
@@ -53,7 +56,7 @@ A scope **item** is either a string (shorthand) or an object (when it needs cons
 | Kind | Form | Examples | Wallet rendering |
 |---|---|---|---|
 | **Reserved core** | bare, kunji-defined | `login`, `profile`, `offline_access`, `vc:<type>` | vetted, localized text |
-| **RP extension** | host-prefixed or URL | `example.com:orders.read`, `https://example.com/scopes/orders.read` | raw id + the RP's own (untrusted) label |
+| **RP extension** | namespaced (contains `:`) | `read:orders`, `example.com:orders.read`, `https://example.com/scopes/orders.read` | raw id + the RP's own (untrusted) label |
 
 Reserved core (the only ids kunji assigns meaning to):
 
@@ -64,9 +67,9 @@ Reserved core (the only ids kunji assigns meaning to):
 - `vc:<type>` and `vc:<type>@<issuer>` — request a **verified credential** of that type, optionally
   pinned to an issuer. See [`verified-credentials.md`](./verified-credentials.md).
 
-Everything else **MUST** be namespaced to the requesting RP (host-prefixed or an `https://` URL on
-the RP's domain). Un-namespaced non-core ids are rejected by the wallet (prevents an RP from
-squatting a generic verb like `admin`).
+Everything else **MUST** be namespaced — its id must **contain a `:`** (a `verb:resource` form, a host
+prefix, or an `https://` URL on the RP's domain). Bare non-core ids are rejected by the wallet
+(prevents an RP from squatting a generic word like `admin`).
 
 ### 3.2 Human labels for custom scopes
 

@@ -9,6 +9,7 @@ import {
 } from '../lib/crypto';
 import { normalizeDomain } from '../lib/crypto/helpers';
 import { setSessionIp } from '../lib/sessionMeta';
+import { isValidScopeItem, scopeId } from '../lib/capability';
 
 // Vault writes go through a signed-writes Cloud Function (rules deny direct client
 // writes). Same-origin via Hosting rewrite in production; override for local dev.
@@ -199,7 +200,7 @@ export const parseQRPayload = (rawValue) => {
 
   if (
     parsed.scope !== undefined &&
-    (!Array.isArray(parsed.scope) || parsed.scope.some((s) => typeof s !== 'string'))
+    (!Array.isArray(parsed.scope) || !parsed.scope.every(isValidScopeItem))
   ) {
     throw new Error('invalid_qr');
   }
@@ -218,7 +219,8 @@ export const parseQRPayload = (rawValue) => {
 };
 
 /** Does this parsed QR / session request the user's profile (Layer 2 consent)? */
-export const requestsProfile = (qr) => Array.isArray(qr?.scope) && qr.scope.includes('profile');
+export const requestsProfile = (qr) =>
+  Array.isArray(qr?.scope) && qr.scope.some((s) => scopeId(s) === 'profile');
 
 // Bare public suffixes / TLDs that must never be accepted as an `audience` — otherwise
 // `host.endsWith('.'+audience)` would match unrelated sites (e.g. audience:"com" →

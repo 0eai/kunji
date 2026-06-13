@@ -16,7 +16,7 @@ import {
   signWithEd25519,
   signMessageEd25519,
 } from '../lib/crypto';
-import { mintCapability } from '../lib/capability';
+import { mintCapability, isValidScopeItem } from '../lib/capability';
 import { logActivity } from './activityLog';
 
 const VAULT_WRITE_URL = import.meta.env.VITE_VAULT_WRITE_URL || '/vault/write';
@@ -54,13 +54,14 @@ export const parseAgentRequest = (raw) => {
     !ED25519_PUB_B64.test(req.agentPub) ||
     !Array.isArray(req.scope) ||
     req.scope.length === 0 ||
-    !req.scope.every((s) => typeof s === 'string' && s.length <= 64)
+    req.scope.length > 16 ||
+    !req.scope.every(isValidScopeItem)
   ) {
     throw new Error('invalid_request');
   }
   const out = {
     audience: String(req.audience),
-    scope: req.scope.slice(0, 16),
+    scope: req.scope,
     agentPub: req.agentPub,
   };
   // v2 adds the relay transport key + session id. Both must be well-formed or we reject —

@@ -3,6 +3,7 @@ import { Bot, Trash2, ShieldCheck } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Monogram } from './ui/primitives';
 import { listAgents, revokeAgent } from '../services/capability';
+import { scopeId } from '../lib/capability';
 import { useToast } from '../contexts/ToastContext';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
 
@@ -74,7 +75,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] text-ink truncate">{a.audience}</p>
                 <p className="text-[11px] text-faint truncate">
-                  {(a.scope || []).join(', ')} · {expiryLabel(a.exp)}
+                  {(a.scope || []).map(scopeId).join(', ')} · {expiryLabel(a.exp)}
                 </p>
               </div>
               <button

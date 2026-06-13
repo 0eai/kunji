@@ -17,12 +17,20 @@ const BASE = process.env.BASE || 'http://localhost:3000';
 const audience = new URL(BASE).hostname;
 const scope = (process.env.SCOPE || 'login').split(',');
 
+// Call the RP's scope-gated /api/profile (needs `read:profile`) to show enforcement end-to-end:
+// 200 if the granted scope covers it, 403 insufficient_scope otherwise.
+const callScoped = async (sessionId) => {
+  const resp = await fetch(`${BASE}/api/profile?sessionId=${sessionId}`);
+  console.log(`\nread:profile → ${resp.status}`, await resp.json());
+};
+
 // Fallback path: a capability pasted in via CAP= (skips the relay entirely).
 const CAP = process.env.CAP;
 if (CAP) {
   const r = await login(BASE, CAP);
   console.log('agent login →', r.agentResp);
   console.log('session    →', r.status); // { status:'approved', sub, scope, agent:true } on success
+  await callScoped(r.sessionId);
   process.exit(r.status?.status === 'approved' ? 0 : 1);
 }
 
@@ -46,6 +54,7 @@ try {
   const r = await login(BASE, capability);
   console.log('agent login →', r.agentResp);
   console.log('session    →', r.status); // { status:'approved', sub, scope, agent:true } on success
+  await callScoped(r.sessionId);
   process.exit(r.status?.status === 'approved' ? 0 : 1);
 } catch (e) {
   console.error('\n✗ ' + e.message);
