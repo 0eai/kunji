@@ -366,7 +366,7 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
   ("over 18", "student at X", "employee of Y"); the wallet later presents it to an RP with **selective
   disclosure**, verifiable **without kunji in the path** (the same backendless trust model as §6, just a
   different signer). This is a substantial effort — issuers, credential schemas, and DID/VC-style
-  verification — tracked as future work.
+  verification — tracked as future work. Design: [`verified-credentials.md`](./verified-credentials.md).
   - **Non-goal: RP-requested self-asserted attributes** (an app asking the user to *type* a DOB / student
     ID / employee ID at approval). Unverified data typed into kunji is no more trustworthy than the same
     field in the RP's own form, and it pushes sensitive PII into a zero-knowledge wallet for no assurance

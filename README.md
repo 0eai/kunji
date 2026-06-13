@@ -66,6 +66,7 @@ examples/                 reference relying parties: kunji-login-demo (Firebase)
 docs/discoverable-login.md  the v2 discoverable-login protocol
 docs/agentic-delegation.md  agentic delegation — capabilities for AI agents
 docs/ops-cost-controls.md   Cloud Functions abuse / cost controls
+docs/{scope,verified-credentials,push-relay}.md  design (proposed, not yet built)
 firestore.rules          Firestore security rules
 firebase.json            Hosting: app / landing / redirect targets
 ```

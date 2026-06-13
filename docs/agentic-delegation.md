@@ -136,6 +136,10 @@ Implemented across the wallet, the protocol core, the RP verifiers, and the MCP 
 
 ### Still open / deferred
 - **`scope` vocabulary** — the least-privilege action set apps and agents agree on (today `["login"]`).
+  Design: [`scope.md`](./scope.md) (grammar, reserved core, delegation-chain attenuation).
+- **Step-up / incremental authorization** — a connected agent requesting more scope or a verified
+  credential later, with the wallet notifying the user to approve. Design:
+  [`push-relay.md`](./push-relay.md), [`verified-credentials.md`](./verified-credentials.md).
 - **Token format** — compact JWT-like (today) vs macaroon/biscuit, which would allow offline
   *attenuation* (an agent narrows but never widens a capability).
 - **Agent-traffic lane** — whether agent calls get an App Check exemption (revisits the deferred App

@@ -98,6 +98,7 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
+  Proposed designs (NOT implemented): `docs/scope.md`, `docs/verified-credentials.md`, `docs/push-relay.md`.
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 
