@@ -62,9 +62,12 @@ const PresentCredentialSheet = ({ request, query, matches, masterKey, onClose })
         </>
       ) : (
         <>
-          <p className="text-[14px] text-muted leading-relaxed mb-4">
+          <p className="text-[14px] text-muted leading-relaxed mb-2">
             <span className="font-mono text-ink">{request.clientId || 'A verifier'}</span> wants you to prove{' '}
             <span className="font-mono text-ink">{(query.disclose || []).join(', ') || query.vct}</span>.
+          </p>
+          <p className="text-[12px] text-faint leading-relaxed mb-4">
+            kunji can't verify who this is — only present to verifiers you trust.
           </p>
 
           {matches.length === 0 ? (

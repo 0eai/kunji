@@ -15,7 +15,7 @@ import {
   requestsCredentials,
 } from '../services/identity';
 import { loadProfile } from '../services/profile';
-import { listCredentials } from '../services/credentials';
+import { listCredentials, responseTargetTrusted } from '../services/credentials';
 import { matchCredentialsByScope, buildPresentation } from '../lib/vc';
 import { parseAuthorizationRequest, pdToVcQuery } from '../lib/oid4vc';
 import { recordThisDevice } from '../services/devices';
@@ -146,6 +146,11 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthoriz
       setShowScanner(false);
       try {
         const request = parseAuthorizationRequest(raw);
+        // Refuse a request whose response endpoint isn't bound to the verifier identity it shows. [S20]
+        if (!responseTargetTrusted(request.clientId, request.responseUri)) {
+          showToast('Untrusted presentation request.', 'error');
+          return;
+        }
         const q = pdToVcQuery(request.presentationDefinition);
         const scopeId =
           'vc:' + q.vct + (q.iss ? '@' + q.iss : '') + (q.disclose?.length ? '#' + q.disclose.join(',') : '');

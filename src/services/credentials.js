@@ -196,6 +196,35 @@ export const receiveViaRelay = async (cryptoKey, issuerOrigin, { tries = 60, int
 // ── OpenID4VC interop (wallet side) ──────────────────────────────────────────
 // The standard rails over the SAME SD-JWT VC + per-issuer holder key. See docs/oid4vc.md.
 
+// An OpenID4VC counterparty endpoint must be HTTPS (except a loopback host for local dev) — the same
+// anti-MITM posture parseQRPayload/isSafeReturnUrl enforce for login callbacks. Returns the parsed URL
+// or null.
+const isLoopbackHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
+const httpsOrLoopback = (urlStr) => {
+  let u;
+  try {
+    u = new URL(urlStr);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && !isLoopbackHost(u.hostname)) return null;
+  return u;
+};
+
+/**
+ * Is a verifier's response endpoint safe to send a vp_token to? It must be HTTPS (except loopback) AND
+ * its host must match the verifier's displayed `client_id`. Without this, an attacker could craft an
+ * OpenID4VP request showing a trusted `client_id` while pointing `response_uri` at its own server: the
+ * vp_token is bound to that `client_id`, so the attacker can RELAY the captured presentation to the real
+ * verifier (response-redirection / verifier impersonation). Binding the destination host to the shown
+ * identity closes that. [S20]
+ */
+export const responseTargetTrusted = (clientId, responseUri) => {
+  const u = httpsOrLoopback(responseUri);
+  if (!u || !clientId) return false;
+  return u.hostname === clientId || u.origin === clientId;
+};
+
 /**
  * Receive a credential via an OpenID4VCI credential offer (pre-authorized_code grant): parse the offer,
  * exchange the pre-auth code for an access token + c_nonce, then request the credential with a holder
@@ -212,7 +241,7 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
   const issuer = String(offer.credentialIssuer || '')
     .trim()
     .replace(/\/$/, '');
-  if (!/^https?:\/\//.test(issuer)) throw new Error('Credential offer has no valid issuer.');
+  if (!httpsOrLoopback(issuer)) throw new Error('Credential offer issuer must be an https:// URL.'); // [S21]
   if (!offer.preAuthorizedCode) throw new Error('Unsupported offer (needs a pre-authorized code).');
 
   const { secretKey, publicKey } = await deriveCredentialHolderKey(cryptoKey, issuer);
@@ -257,6 +286,9 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
  */
 export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) => {
   if (!request?.responseUri) throw new Error('Invalid request (no response endpoint).');
+  // Bind the response destination to the shown verifier identity (anti response-redirection). [S20]
+  if (!responseTargetTrusted(request.clientId, request.responseUri))
+    throw new Error('Untrusted verifier: the response endpoint does not match its identity.');
   const { secretKey } = await deriveCredentialHolderKey(cryptoKey, cred.iss);
   const vpToken = await buildVpToken({
     sdjwt: cred.sdjwt,
