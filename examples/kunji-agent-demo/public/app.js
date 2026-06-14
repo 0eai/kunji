@@ -63,6 +63,8 @@ $('logout').onclick = () => {
 // code + QR from the live relay; the user approves in the wallet; we poll /agent/poll until the
 // server has received the capability over the relay and logged itself in here. ──
 let agentPoll = null;
+let rpSessionId = null; // the RP session the agent logged into — drives the step-up showcase below
+let stepupPoll = null;
 $('agentStart').onclick = async () => {
   $('agentStart').disabled = true;
   $('agentStart').textContent = 'Starting…';
@@ -98,12 +100,89 @@ const pollAgent = async (sessionId) => {
     $('agentStatus').innerHTML =
       `Agent signed in as <b>${escapeHtml((r.sub || '').slice(0, 16))}…</b> · scope: ` +
       escapeHtml((r.scope || []).join(', '));
+    // Reveal the step-up showcase: the agent has `login` but not read:profile yet.
+    rpSessionId = r.rpSessionId;
+    if (rpSessionId) $('stepupBox').hidden = false;
   } else {
     $('agentStatus').textContent = 'Authorization failed: ' + (r.error || r.status);
   }
   if (r.io) {
     $('agentIoPre').textContent = JSON.stringify(r.io, null, 2);
     $('agentIo').hidden = false;
+  }
+};
+
+// ── STEP-UP (push-relay.md Transport ①): call a scope-gated action with the agent's session; on a
+// 403 insufficient_scope, ask the user for the missing scope on the SAME relay (a deep link opens the
+// wallet's re-consent sheet), poll until approved, then retry with the broader session. No new infra. ──
+$('tryScoped').onclick = async () => {
+  $('stepupResult').hidden = true;
+  $('stepupStatus').textContent = 'Calling /api/profile…';
+  let resp, body;
+  try {
+    resp = await fetch(`/api/profile?sessionId=${encodeURIComponent(rpSessionId)}`);
+    body = await resp.json();
+  } catch {
+    $('stepupStatus').textContent = 'Network error.';
+    return;
+  }
+  if (resp.status === 200) {
+    $('stepupStatus').textContent = '200 — granted.';
+    $('stepupResult').textContent = JSON.stringify(body, null, 2);
+    $('stepupResult').hidden = false;
+    return;
+  }
+  if (resp.status === 403 && body.error === 'insufficient_scope') {
+    $('stepupStatus').textContent = `403 insufficient_scope — needs “${body.need}”.`;
+    await startStepUp();
+  } else {
+    $('stepupStatus').textContent = `${resp.status} ${body.error || ''}`;
+  }
+};
+
+const startStepUp = async () => {
+  let r;
+  try {
+    r = await fetch('/agent/stepup', { method: 'POST' }).then((x) => x.json());
+  } catch {
+    $('stepupStatus').textContent = 'Could not start step-up — is the relay reachable?';
+    return;
+  }
+  $('stepupFlow').hidden = false;
+  $('stepupLink').href = r.deepLink || '#';
+  $('stepupCode').textContent = r.code || '— (scan or paste)';
+  if (r.qrDataUri) {
+    $('stepupQr').src = r.qrDataUri;
+    $('stepupQr').hidden = false;
+  }
+  $('stepupPollStatus').textContent = 'Waiting for approval…';
+  clearInterval(stepupPoll);
+  stepupPoll = setInterval(() => pollStepUp(r.sessionId), 3000);
+};
+
+const pollStepUp = async (sessionId) => {
+  let r;
+  try {
+    r = await fetch(`/agent/poll?sessionId=${encodeURIComponent(sessionId)}`).then((x) => x.json());
+  } catch {
+    return; // transient; keep polling
+  }
+  if (r.status === 'pending') return;
+  clearInterval(stepupPoll);
+  if (r.status !== 'approved') {
+    $('stepupPollStatus').textContent = 'Step-up failed: ' + (r.error || r.status);
+    return;
+  }
+  $('stepupPollStatus').innerHTML = `✓ broader capability · scope: ${escapeHtml((r.scope || []).join(', '))}`;
+  // Retry the gated action with the NEW (broader) session.
+  try {
+    const resp = await fetch(`/api/profile?sessionId=${encodeURIComponent(r.rpSessionId)}`);
+    const body = await resp.json();
+    $('stepupStatus').textContent = `Retried /api/profile → ${resp.status}`;
+    $('stepupResult').textContent = JSON.stringify(body, null, 2);
+    $('stepupResult').hidden = false;
+  } catch {
+    $('stepupStatus').textContent = 'Retry network error.';
   }
 };
 

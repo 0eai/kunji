@@ -25,7 +25,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyAssertion } from './verify.js';
 import { verifyCapabilityAssertion, scopeSatisfies } from './capability.js';
-import { buildRequest, postForCode, dataUriQr, pollCapability, login as agentLogin } from './agent-client.js';
+import {
+  buildRequest,
+  postForCode,
+  dataUriQr,
+  pollCapability,
+  login as agentLogin,
+  authorizeDeepLink,
+} from './agent-client.js';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
@@ -285,6 +292,27 @@ const handler = async (req, res) => {
     return json(res, 200, { sessionId: request.sessionId, code, qrDataUri, request });
   }
 
+  // 3c-bis. STEP-UP (push-relay.md Transport ①): the already-connected agent asks for a BROADER scope
+  // after a 403 insufficient_scope. Same relay as /agent/start, requesting login + read:profile, plus
+  // a deep link that opens the wallet's re-consent sheet directly ("tap to approve in kunji"). The
+  // browser shows the code/QR/deep link and polls /agent/poll — no new kunji infra in the loop.
+  if (req.method === 'POST' && path === '/agent/stepup') {
+    const { audience, callbackUrl } = originOf(req);
+    const base = callbackUrl.replace(/\/kunji\/callback$/, '');
+    const need = 'read:profile';
+    const request = await buildRequest(audience, ['login', need]);
+    const [code, qrDataUri] = await Promise.all([postForCode(request), dataUriQr(request)]);
+    agentBase.set(request.sessionId, base);
+    return json(res, 200, {
+      sessionId: request.sessionId,
+      code,
+      qrDataUri,
+      deepLink: authorizeDeepLink(request),
+      need,
+      request,
+    });
+  }
+
   // 3d. The browser polls this. The server polls the relay once; on the wallet's approval it
   // decrypts the capability and logs itself in here, returning the verified id + the raw round-trip
   // I/O (so the demo can show developers exactly what crossed the wire).
@@ -314,6 +342,9 @@ const handler = async (req, res) => {
       status: r.status?.status === 'approved' ? 'approved' : 'failed',
       sub: r.status?.sub || null,
       scope: r.status?.scope || null,
+      // Expose the RP session so the browser can call a scope-gated action (/api/profile) and, on a
+      // 403, drive the step-up flow (/agent/stepup) — push-relay.md Transport ①.
+      rpSessionId: r.sessionId || null,
       capabilityClaims: { sub: claims.sub, aud: claims.aud, scope: claims.scope, exp: claims.exp, jti: claims.jti },
       io: { capability, agentProof: r.agentProof, agentResponse: r.agentResp, status: r.status },
     };

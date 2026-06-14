@@ -200,6 +200,33 @@
               <pre id="agentIoPre"></pre>
             </details>
           </div>
+
+          <!-- STEP-UP (push-relay.md Transport ①): once the agent is signed in with `login`, call a
+               scope-gated action; on a 403 insufficient_scope, ask the user for the extra scope right
+               here — a deep link opens the wallet's re-consent sheet. No new kunji infra. -->
+          <div id="stepupBox" hidden style="margin-top: 18px">
+            <button id="tryScoped" class="agentbtn">Try a scope-gated action (read:profile) →</button>
+            <p class="note" id="stepupStatus" style="margin: 12px 0 0"></p>
+            <div id="stepupFlow" hidden style="margin-top: 12px">
+              <p class="note" style="margin: 0 0 10px">
+                Denied — the agent only has <code style="display: inline; border: 0; padding: 0">login</code>.
+                Approve the extra scope in your wallet:
+              </p>
+              <a
+                id="stepupLink"
+                class="agentbtn"
+                style="display: block; text-align: center; text-decoration: none"
+                href="#"
+                target="_blank"
+                rel="noopener"
+                >Approve “read:profile” in kunji →</a
+              >
+              <div class="code6" id="stepupCode" style="margin-top: 14px">······</div>
+              <img id="stepupQr" alt="step-up request QR" width="180" height="180" hidden />
+              <p class="note" id="stepupPollStatus" style="margin: 12px 0 0">Waiting for approval…</p>
+            </div>
+            <pre id="stepupResult" hidden></pre>
+          </div>
         </div>
         <p class="note" style="margin-top: 22px">
           Prefer a terminal? <code style="display: inline; border: 0; padding: 0">npm run agent</code>

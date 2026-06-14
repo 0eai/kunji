@@ -8,8 +8,10 @@ import {
   issueCapability,
   depositAgentCapability,
   recordAgent,
+  revokeAgent,
+  listAgents,
 } from '../services/capability';
-import { scopeId } from '../lib/capability';
+import { scopeId, scopeSatisfies } from '../lib/capability';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -32,7 +34,7 @@ const RESERVED_LABELS = {
 // Wallet flow to authorize an agent: scan/paste the agent's request, review the requested
 // scope + audience, pick a TTL, then explicitly approve to mint a capability the agent
 // holds. The agent never receives any kunji key — only this scoped, expiring capability.
-const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
+const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => {
   const { showToast } = useToast();
   const [phase, setPhase] = useState('scan'); // scan → review → issued
   const [showScanner, setShowScanner] = useState(false);
@@ -46,7 +48,15 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
   const [result, setResult] = useState(null); // mint result
   const [copied, setCopied] = useState(false);
   const [delivered, setDelivered] = useState(false); // v2: relayed to the agent automatically
+  const [prior, setPrior] = useState([]); // live caps this SAME agent already holds here (step-up)
+  const [revokePrior, setRevokePrior] = useState(false); // replace the old capability on approve
   const qrRef = useRef(null);
+
+  // The union of scope already granted to this agent for this audience — used to mark which requested
+  // items are new vs. already-held, and to pre-tick the ones already covered (push-relay.md Transport ①).
+  const priorScope = prior.flatMap((a) => a.scope || []);
+  const alreadyGranted = (s) =>
+    prior.length > 0 && scopeId(s) !== 'login' && scopeSatisfies(priorScope, [s]);
 
   // Styled QR of the capability (no logo — it's a long opaque token; lighter EC).
   useEffect(() => {
@@ -69,11 +79,47 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
     try {
       setReq(parseAgentRequest(raw));
       setGrantedIds(new Set()); // default-deny: nothing granted until the user toggles it on
+      setPrior([]);
+      setRevokePrior(false);
       setPhase('review');
     } catch {
       setError('Not a valid kunji agent request.');
     }
   };
+
+  // Deep-link / programmatic entry (?authorize=…): ingest a provided request straight to review.
+  useEffect(() => {
+    if (initialRequest) ingest(initialRequest);
+  }, [initialRequest]);
+
+  // Step-up awareness: when a request is under review, look up any capability THIS SAME agent
+  // already holds for this audience. If found, pre-tick the requested items already covered (still
+  // editable) and default to replacing the old capability — the rest renders as the new delta.
+  useEffect(() => {
+    if (phase !== 'review' || !req) return;
+    let cancelled = false;
+    listAgents(masterKey)
+      .then((agents) => {
+        if (cancelled) return;
+        const mine = agents.filter((a) => a.audience === req.audience && a.agentPub === req.agentPub);
+        if (!mine.length) return;
+        setPrior(mine);
+        setRevokePrior(true); // default: the new capability supersedes the old one
+        const held = mine.flatMap((a) => a.scope || []);
+        setGrantedIds((prev) => {
+          const next = new Set(prev);
+          for (const s of req.scope) {
+            const id = scopeId(s);
+            if (id !== 'login' && scopeSatisfies(held, [s])) next.add(id);
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, req, masterKey]);
 
   // OTP path: resolve the agent's 6-digit code to its request, then ingest like a scan/paste.
   const submitCode = async () => {
@@ -133,6 +179,15 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
           console.warn('Agent capability relay failed:', e);
         }
       }
+      // Step-up: the new capability supersedes the old one — revoke it if the user kept that on.
+      // Best-effort and AFTER delivery, so a revoke hiccup never blocks the fresh capability.
+      if (revokePrior && prior.length) {
+        for (const p of prior) {
+          revokeAgent(userId, masterKey, { jti: p.jti, audience: p.audience }).catch((e) =>
+            console.warn('revoke prior capability failed:', e),
+          );
+        }
+      }
     } catch (e) {
       showToast('Could not authorize: ' + (e.message || e), 'error');
     } finally {
@@ -153,14 +208,23 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
           <div className="flex items-center gap-2.5 mb-1">
             <ShieldCheck size={18} className="text-success" />
             <h2 id="agent-title" className="text-lg font-semibold tracking-tight">
-              Authorize an agent
+              {prior.length ? 'Additional access' : 'Authorize an agent'}
             </h2>
           </div>
-          <p className="text-[14px] text-muted leading-relaxed mb-4">
-            An agent is requesting access to{' '}
-            <span className="font-mono text-ink">{req.audience}</span>. It will act for you there
-            within this scope until the capability expires — it never receives your keys.
-          </p>
+          {prior.length ? (
+            <p className="text-[14px] text-muted leading-relaxed mb-4">
+              You've already authorized an agent for{' '}
+              <span className="font-mono text-ink">{req.audience}</span>. It's now requesting more —
+              review the new access below. Approving issues a fresh capability; it never receives your
+              keys.
+            </p>
+          ) : (
+            <p className="text-[14px] text-muted leading-relaxed mb-4">
+              An agent is requesting access to{' '}
+              <span className="font-mono text-ink">{req.audience}</span>. It will act for you there
+              within this scope until the capability expires — it never receives your keys.
+            </p>
+          )}
           <div className="text-[12px] uppercase tracking-wide text-faint mb-2">Choose what to allow</div>
           <div className="flex flex-col gap-1.5 mb-5">
             {req.scope.map((s) => {
@@ -186,7 +250,16 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
                     {on ? <CheckCircle2 size={16} /> : <Circle size={16} />}
                   </span>
                   <span className="min-w-0">
-                    <span className="font-mono text-[12px] text-ink">{id}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-mono text-[12px] text-ink">{id}</span>
+                      {!implied &&
+                        prior.length > 0 &&
+                        (alreadyGranted(item) ? (
+                          <span className="text-[10px] uppercase tracking-wide text-faint">already granted</span>
+                        ) : (
+                          <span className="text-[10px] uppercase tracking-wide text-accent">new</span>
+                        ))}
+                    </span>
                     {reservedLabel ? (
                       <span className="block text-[12px] text-muted">{reservedLabel}</span>
                     ) : rpLabel ? (
@@ -218,6 +291,34 @@ const AuthorizeAgentSheet = ({ userId, masterKey, onClose }) => {
               </button>
             ))}
           </div>
+          {prior.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setRevokePrior((v) => !v)}
+              aria-pressed={revokePrior}
+              className="w-full flex items-center gap-3 text-left mb-6 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-ink">
+                  Revoke the previous capability
+                </span>
+                <span className="block text-[12px] text-muted">
+                  The new one replaces it. Leave on unless the old agent should keep working.
+                </span>
+              </span>
+              <span
+                className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+                  revokePrior ? 'bg-accent-fill' : 'bg-line'
+                }`}
+              >
+                <span
+                  className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                    revokePrior ? 'translate-x-4' : ''
+                  }`}
+                />
+              </span>
+            </button>
+          )}
           <div className="flex items-center justify-end gap-1">
             <Btn variant="quiet" onClick={onClose} disabled={busy}>
               Cancel

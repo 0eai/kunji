@@ -24,7 +24,9 @@ is **no kunji server in the login path**.
 | `POST /kunji/callback` | the wallet (human)  | verify the §6 signed assertion, approve the session       |
 | `POST /kunji/agent`    | an agent            | verify `{ capability, agentProof }`, approve the session  |
 | `GET  /kunji/status`   | the frontend        | poll `{ status, sub, claims, scope, agent }`              |
+| `GET  /api/profile`    | agent **or** page   | a scope-gated resource: `200` if scope covers `read:profile`, else `403 insufficient_scope` |
 | `POST /agent/start`    | the page (as agent) | get a 6-digit code + QR from the relay for the user to authorize |
+| `POST /agent/stepup`   | the page (as agent) | **step-up**: request a broader scope (`read:profile`) + a `?authorize=` deep link |
 | `GET  /agent/poll`     | the page            | once approved, decrypt the relayed capability + log in here; returns the I/O |
 
 An agent login resolves to the **same `sub`** a human login would — the agent acts as the user, on
@@ -73,7 +75,10 @@ whatever is in `BASE`/`PUBLIC_ORIGIN` otherwise). The wallet derives the per-app
 Open `http://localhost:3000` → **"Authorize an agent →"**. The page asks the relay for a **6-digit
 code + QR**; in your wallet do **Security → Authorize an agent**, type the code (or scan), Approve.
 The page receives the capability over the encrypted relay, logs itself in here, and shows the
-verified `sub` plus the **raw request/response** that crossed the wire.
+verified `sub` plus the **raw request/response** that crossed the wire. Then **"Try a scope-gated
+action (read:profile)"** demonstrates **step-up** (push-relay.md Transport ①): the `login`-only agent
+gets a `403`, and the page surfaces a **deep link** (plus code/QR) that opens the wallet's re-consent
+sheet directly — approve the extra scope and the action succeeds, no re-scan.
 
 ### b) Headless simulator (live QR + OTP relay — no copy/paste)
 
@@ -82,13 +87,23 @@ node agent-sim.js
 ```
 
 Prints a **6-digit code**, a **terminal QR**, and the raw request. Authorize in the wallet (type the
-code or scan); the simulator receives the capability over the relay and logs in:
+code or scan); the simulator receives the capability over the relay and logs in, then calls the
+scope-gated `/api/profile`. With only `login` granted, that `403`s — so the sim **steps up**
+(push-relay.md Transport ①): it re-requests the missing scope on the same relay (printing a fresh
+code/QR and a `?authorize=` **deep link** you can tap), and on approval retries → `200`:
 
 ```
 ✓ capability received over the relay
-agent login → { status: 'ok' }
 session    → { status: 'approved', sub: '…', scope: [ 'login' ], agent: true }
+read:profile → 403 { error: 'insufficient_scope', need: 'read:profile', have: [ 'login' ] }
+↑ Step-up: requesting the missing scope "read:profile" — approve it in the kunji wallet:
+  • Type this 6-digit code:  123456
+  • …or tap this deep link:  https://app.kunji.cc/?authorize=eyJrdW5q…
+✓ broader capability received over the relay
+read:profile → 200 { sub: '…', profile: { plan: 'pro', since: 2024 } }
 ```
+
+Skip the step-up by granting it up front: `SCOPE=login,read:profile node agent-sim.js`.
 
 Offline / relay-down fallback (paste a capability, no relay):
 

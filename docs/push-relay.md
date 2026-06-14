@@ -1,11 +1,13 @@
 # kunji step-up authorization & the opt-in push relay — design
 
-**Status:** Design (proposed) — **not implemented.** This covers how an **already-connected** app or
-agent can later ask the user for **more scope** ([`scope.md`](./scope.md)) or a **verified
-credential** ([`verified-credentials.md`](./verified-credentials.md)), and how the kunji wallet
-notifies the user to approve — **without** kunji becoming a user directory. The **push relay is
-opt-in and only for the case where the RP has no channel of its own to the user**; the default path
-uses no new kunji infrastructure.
+**Status:** **Transport ① (step-up) implemented**; **Transport ② (Web Push relay) proposed — not
+implemented.** This covers how an **already-connected** app or agent can later ask the user for
+**more scope** ([`scope.md`](./scope.md)) or a **verified credential**
+([`verified-credentials.md`](./verified-credentials.md)), and how the kunji wallet notifies the user
+to approve — **without** kunji becoming a user directory. The default, shipped path (Transport ①, §4)
+uses **no new kunji infrastructure**: the RP nudges the user through its own channel and deep-links
+the wallet, which returns the result over the existing encrypted relay. The **push relay (②, §5) is
+opt-in and only for the case where the RP has no channel of its own to the user**.
 
 ## 1. The problem
 
@@ -40,23 +42,36 @@ authorization** of that app and hands it over:
 The channel says nothing to kunji about *who* the user is or *what* the app is — it's an opaque
 mailbox the user consented to expose to exactly one audience.
 
-## 4. Transport ① — RP notifies, kunji approves (recommended; zero new kunji infra)
+## 4. Transport ① — RP notifies, kunji approves (recommended; zero new kunji infra) — **implemented**
 
 Most apps already have their **own** relationship with the user (an account, a UI, maybe their own
 push/email). Use it: the **RP** does the nudging through its own channel and **deep-links into the
 wallet** with the pending request.
 
 ```
+agent/app calls a scope-gated action ──▶ RP: 403 { error:"insufficient_scope", need, have }   (scope.md §5)
 connected app  ──(its own UI/push/email: "tap to approve in kunji")──▶ user
-user taps ──▶ deep link  https://app.kunji.cc/approve?req=<id|payload>  (opens the wallet)
-wallet ──▶ shows the re-consent sheet ──▶ user approves ──▶ mints capability / presents VC
+user taps ──▶ deep link  https://app.kunji.cc/?authorize=<base64url(JSON agent request)>  (opens the wallet)
+wallet ──▶ shows the re-consent sheet (delta-aware) ──▶ user approves ──▶ mints capability / presents VC
        ──▶ returns it to the RP over the encrypted return relay (agentSessions / agentCapabilityPoll)
+agent ──▶ retries with the broader capability ──▶ 200
 ```
 
 - **No new kunji state, no push subscriptions, no directory** — kunji is just the approval surface
   and the (already-existing) encrypted return relay.
-- The request payload can ride the deep link (small) or be fetched by `req` id from the existing
-  agent request relay (`agentRequestRelay`), then decrypted client-side.
+- **Shipped pieces.** The wallet reads the same-device deep link `?authorize=<base64url(JSON request)>`
+  ([`src/App.jsx`](../src/App.jsx) `readIncomingLinks`) and opens the agent re-consent sheet straight
+  to review ([`AuthorizeAgentSheet.jsx`](../src/components/AuthorizeAgentSheet.jsx) `initialRequest`),
+  which is **delta-aware**: it calls `listAgents`, shows "already connected — additional access",
+  marks each requested scope item *already granted* vs *new*, and offers to revoke the superseded
+  capability. The RP-side loop (`403 insufficient_scope` → re-request the delta → await the broader
+  capability → retry) is demonstrated end-to-end by `examples/kunji-agent-demo` (`agent-sim.js`
+  headless, and the browser "Try a scope-gated action" showcase via `/agent/stepup`). Login-side VC
+  step-up reuses the existing `?approve=` deep link → `ApprovalModal` (now delta-aware) →
+  `submitDiscoverableAssertion`.
+- The request payload rides the deep link inline (it's not secret — public keys + scope); for a
+  non-trivial payload it can instead be fetched by 6-digit code / `req` id from the existing agent
+  request relay (`agentRequestRelay`) and decrypted client-side.
 - Use this whenever the app has *any* contact with the user — which is most apps.
 
 ## 5. Transport ② — the opt-in kunji push relay (only when ① is impossible)
@@ -161,11 +176,13 @@ metadata-bearing state that kunji otherwise doesn't keep.
 
 ## 11. Phasing
 
-1. **Step-up via ①** — `insufficient_scope` → re-request → deep link → re-consent sheet → existing
-   return relay. Needs only the scope engine + VC presentation + a `/approve?req=` deep link. **No new
-   kunji infra.**
-2. **Push relay ②** — service worker + Web Push in the wallet, `pushChannels` + `pushDispatch`,
-   opt-in registration, cost-controls entry. Gate behind a clear product decision.
+1. **Step-up via ① — implemented.** `insufficient_scope` → re-request → deep link
+   (`?authorize=`/`?approve=`) → delta-aware re-consent sheet → existing return relay. Built on the
+   scope engine + VC presentation; **no new kunji infra** (no new Function, rule, or rewrite).
+2. **Push relay ② — proposed, not implemented.** Service worker + Web Push in the wallet,
+   `pushChannels` + `pushDispatch`, opt-in registration, cost-controls entry. Gate behind a clear
+   product decision (the new persistent state + client attack surface in §7 is the reason ① is
+   preferred).
 
 ## 12. Open decisions
 

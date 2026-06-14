@@ -142,8 +142,10 @@ Scope is requested in three places, all already-existing or designed elsewhere:
 
 - **At login** — the QR's `scope[]` (`discoverable-login.md` §5.1).
 - **At capability issuance** — the agent's request `scope[]` (`agentic-delegation.md`).
-- **Later, from a connected app/agent** (step-up) — an `insufficient_scope` response triggers a
-  re-request; the user approves the delta in the wallet. See [`push-relay.md`](./push-relay.md).
+- **Later, from a connected app/agent** (step-up — implemented) — a protected action returns
+  `403 { error:"insufficient_scope", need, have }`; the client re-requests the missing scope on the
+  existing relay and the user approves the **delta** in the wallet (a `?authorize=` deep link opens the
+  re-consent sheet directly). No new kunji infra. See [`push-relay.md`](./push-relay.md) §4/§11.
 
 ## 8. Open decisions
 

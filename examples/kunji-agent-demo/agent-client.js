@@ -103,6 +103,27 @@ export const dataUriQr = async (req) => {
 };
 
 /**
+ * Same-device deep link that opens the wallet STRAIGHT to the agent re-consent sheet
+ * (push-relay.md Transport ①). The request isn't secret (public keys + scope), so it rides the
+ * link inline as base64url JSON — `app.kunji.cc/?authorize=…`. The RP nudges the user through its
+ * own UI ("tap to approve in kunji") and this is the link it sends; no new kunji infra.
+ */
+export const authorizeDeepLink = (req) =>
+  `${KUNJI_APP_URL}/?authorize=${Buffer.from(JSON.stringify(req)).toString('base64url')}`;
+
+/**
+ * Step-up: ask the user for a BROADER scope on an app this agent is already connected to (after an
+ * `insufficient_scope` 403). Builds a fresh request (new transport key + sessionId), registers it
+ * for an OTP code, and returns the code + QR + the deep link. Await the new, broader capability with
+ * `awaitCapability(sessionId)` exactly like the first authorization — then re-`login` and retry.
+ */
+export const stepUp = async (audience, scope) => {
+  const req = await buildRequest(audience, scope);
+  const [code, qr] = await Promise.all([postForCode(req), terminalQr(req)]);
+  return { req, sessionId: req.sessionId, code, qr, deepLink: authorizeDeepLink(req) };
+};
+
+/**
  * Poll the relay ONCE for the wallet-deposited capability; returns the JWT string, or null if the
  * user hasn't approved yet (404/429). Throws on an expired authorization (410) or unknown session.
  * Decrypts with the per-session transport key (consumed on success).

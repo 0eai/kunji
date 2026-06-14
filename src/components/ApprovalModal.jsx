@@ -29,6 +29,15 @@ const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
       return next;
     });
 
+  // Step-up context (push-relay.md Transport ①): when an app you already use asks for something
+  // beyond plain login (a profile share or a verified credential), name the delta so it's clear
+  // this is an incremental request, not a first sign-in.
+  const stepUpAsks = [];
+  if (session && !session.isNew) {
+    if (session.requestProfile) stepUpAsks.push('share your profile');
+    if (session.requestCredentials) stepUpAsks.push('prove a verified credential');
+  }
+
   // Layer 1: the default pseudonymous identity the app will see (derived from sub).
   const handle = useMemo(() => (sub ? deriveHandle(sub) : null), [sub]);
 
@@ -133,6 +142,16 @@ const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
           </div>
         )}
       </div>
+
+      {/* Step-up: an app you already use is asking for something extra this time. */}
+      {stepUpAsks.length > 0 && (
+        <div className="rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-3 mb-6">
+          <p className="text-[13px] text-ink leading-relaxed">
+            You already use <span className="font-medium">{session?.appName || 'this app'}</span>. This
+            time it's also asking to {stepUpAsks.join(' and ')} — approve only what you want below.
+          </p>
+        </div>
+      )}
 
       {/* Layer 2 — optional custom profile sharing (only if the RP requested it) */}
       {canShare && (
