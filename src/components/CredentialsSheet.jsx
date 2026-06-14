@@ -6,17 +6,22 @@ import {
   listCredentials,
   deleteCredential,
   receiveFromIssuer,
+  receiveBbsFromIssuer,
   receiveViaOffer,
   groupByPool,
 } from '../services/credentials';
 import { parseSdJwt } from '../lib/vc';
+import { bbsClaimNames } from '../lib/vcBbs';
 import { useToast } from '../contexts/ToastContext';
 
 const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
-const claimNames = (sdjwt) => {
+// Claim names for the list — SD-JWT reads the disclosures; a BBS (v3) credential carries its names.
+const claimNamesOf = (cred) => {
+  if (!cred) return [];
+  if (cred.format === 'bbs') return bbsClaimNames(cred.bbs);
   try {
-    return parseSdJwt(sdjwt).disclosures.map((d) => d.name);
+    return parseSdJwt(cred.sdjwt).disclosures.map((d) => d.name);
   } catch {
     return [];
   }
@@ -36,6 +41,7 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
   const { showToast } = useToast();
   const [creds, setCreds] = useState(null); // null = loading
   const [issuerUrl, setIssuerUrl] = useState('');
+  const [unlinkable, setUnlinkable] = useState(false); // request a BBS (v3) credential instead of SD-JWT
   const [offer, setOffer] = useState(''); // an OpenID4VCI credential offer (openid-credential-offer://…)
   const [busy, setBusy] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -55,7 +61,12 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
   const receive = async () => {
     setBusy(true);
     try {
-      showToast(received(await receiveFromIssuer(masterKey, issuerUrl)));
+      if (unlinkable) {
+        await receiveBbsFromIssuer(masterKey, issuerUrl);
+        showToast('Unlinkable credential received.');
+      } else {
+        showToast(received(await receiveFromIssuer(masterKey, issuerUrl)));
+      }
       setIssuerUrl('');
       refresh();
     } catch (e) {
@@ -140,8 +151,11 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] text-ink truncate">{g.vct}</p>
                 <p className="text-[11px] text-faint truncate">
-                  {claimNames(g.sample?.sdjwt).join(', ')} · from {issuerLabel(g.iss)}
+                  {claimNamesOf(g.sample).join(', ')} · from {issuerLabel(g.iss)}
                 </p>
+                {g.unlinkable && (
+                  <p className="text-[11px] text-accent mt-0.5">unlinkable · a fresh proof each time</p>
+                )}
                 {g.oneTime && (
                   <p className="text-[11px] text-faint mt-0.5">
                     {g.remaining > 0 ? (
@@ -197,6 +211,15 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
 
       <div className="text-[12px] uppercase tracking-wide text-faint mb-2 mt-6">Receive from an issuer</div>
       <Field label="Issuer URL (https://…)" value={issuerUrl} onChange={(e) => setIssuerUrl(e.target.value)} />
+      <label className="flex items-center gap-2 mt-2 text-[13px] text-muted cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={unlinkable}
+          onChange={(e) => setUnlinkable(e.target.checked)}
+          className="accent-accent"
+        />
+        Unlinkable credential (BBS) — one credential, a fresh proof every time
+      </label>
       <Btn variant="primary" onClick={receive} disabled={busy || !issuerUrl.trim()} className="w-full mt-3">
         <DownloadCloud size={16} /> {busy ? 'Receiving…' : 'Receive credential'}
       </Btn>

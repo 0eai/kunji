@@ -136,7 +136,7 @@ identical across presentations). This is in tension with kunji's per-app unlinka
 |---|---|---|---|---|
 | **v1** | SD-JWT + per-issuer holder key + **predicate pre-baking** + audience-bound KB-JWT | Linkable across **colluding** RPs (same issuer sig); minimal PII | none beyond Ed25519 (reuses today's crypto) | shipped |
 | **v2** | **Batch / one-time-use** credentials (issuer mints N single-use SD-JWTs) | Presentations share no correlation handle | issuer-side issuance volume | **shipped** |
-| **v3** | **BBS+** signatures (derive an unlinkable proof per presentation + predicate proofs) | True unlinkable selective disclosure from ONE credential | new dep: BLS12-381 pairings (`@noble/curves` has it) — a real lift | proposed |
+| **v3** | **BBS** signatures (derive a fresh randomized proof per presentation) | True unlinkable selective disclosure from ONE credential | dep: `@digitalbazaar/bbs-signatures` (pure JS over `@noble/curves`) | **shipped (foundation)** |
 
 **v2 — how it works (shipped).** A correlation handle is more than the issuer signature: the holder key
 `cnf.jwk` lives in the issuer-signed payload and is revealed at **every** presentation, so distinct
@@ -156,9 +156,37 @@ implementation: `src/services/credentials.js` (`receiveFromIssuer`/`receiveViaOf
 `selectForPresentation`/`spendIfOneTime`), the issuer demo `issueBatch`, and the runnable proof
 `examples/kunji-node-demo/unlinkable-sim.js` (`npm run unlinkable`).
 
-**Recommendation:** **v1 + v2 are shipped** (the wallet still warns at consent that a verified credential
-is more identifiable than the default per-app `sub`, a §9.2-style caveat). Move to **v3 (BBS+)** only if
-the privacy bar demands single-credential unlinkable proofs (no per-presentation issuance cost).
+**v3 — how it works (foundation shipped).** BBS signs a VECTOR of messages (one per claim, plus an
+always-revealed `header` of `{iss, vct, exp}`) with one short signature; the holder derives a fresh,
+**randomized** zero-knowledge proof that reveals only a chosen subset and binds to a presentation header
+(`{aud, nonce}`). Two presentations of the **same** credential share **no** bytes/handle — no signature,
+no holder key — so they're unlinkable from **ONE** credential (v2 needed N copies). The header's `exp` is
+coarsened to the UTC day (the same anonymity-set reasoning as v2). Library: `@digitalbazaar/bbs-signatures`
+(pure JS over `@noble/curves` — no WASM, isomorphic). Modules: `src/lib/bbs.js` (primitive wrapper) +
+`src/lib/vcBbs.js` (`mintBbsCredential`/`buildBbsPresentation`/`verifyBbsPresentation`) — **parallel to
+the SD-JWT core, which is untouched**; byte-identical Node ports in the demos. Issuer: `issueBbs` + the
+BBS key in `/.well-known`; wallet: `receiveBbsFromIssuer` + a `format:'bbs'` record + the
+"unlinkable (BBS)" receive toggle in `CredentialsSheet`; runnable proof
+`examples/kunji-node-demo/bbs-sim.js` (`npm run bbs`) — one credential → two unlinkable proofs.
+**Present over OID4VP + login (shipped).** A BBS credential presents over the **same envelopes** as
+SD-JWT: an OpenID4VP `vc+bbs` DCQL request → `buildBbsVpToken` → `verifyVpToken` (which **dispatches by
+format**), and the discoverable-login assertion (`vc_presentations`). On the wire a BBS presentation is a
+**tagged string** (`bbs~<base64url(JSON)>`) so every envelope stays string-typed and the assertion's
+canonical-JSON signing is undisturbed; verifiers dispatch on the `bbs~` tag. The wallet's
+`presentViaOid4vp` + login `handleApprove` branch on `cred.format`; an OID4VP request offers a BBS
+credential only when it asks `vc+bbs`, and login prefers SD-JWT when both formats satisfy the request
+(generic-RP compatibility — login-protocol format negotiation is a follow-on). All three demo RPs
+(`kunji-{login,node}-demo`) verify both formats.
+
+**Deferred (next slice):** **holder binding** — the BBS foundation is replay-protected (the proof binds
+aud+nonce) but **not yet holder-bound**, so a leaked credential blob is transferable (a committed holder
+secret / per-verifier pseudonym, blind-BBS, comes next; the `@digitalbazaar/bbs-signatures` lib has the
+code but does not export it yet).
+
+**Recommendation:** **v1 + v2 shipped, v3 foundation shipped** (the wallet still warns at consent that a
+verified credential is more identifiable than the default per-app `sub`, a §9.2-style caveat). v3 is
+presentable over OID4VP + login; the one remaining v3 slice is **holder binding** (blind-BBS / per-verifier
+pseudonym) for non-transferability.
 
 ## 8. Issuance
 
@@ -256,7 +284,14 @@ byte-stable (the holder key is additive); the wallet stays anonymous.
    SD-JWTs, each bound to a distinct random holder key; the wallet spends one per presentation, so
    presentations share no correlation handle (signature, holder key, or status idx). Graceful fallback
    to a reusable v1 credential for non-batch issuers; pre-v2 credentials still present. See §7 + the
-   `npm run unlinkable` sim. **Proposed next:** v3 (BBS+) — single-credential unlinkable proofs.
+   `npm run unlinkable` sim.
+5. **Unlinkability — v3 (done: foundation + present-over-OID4VP/login).** BBS signatures: ONE credential
+   derives a fresh randomized ZK proof per presentation (no copies), revealing only a chosen subset, bound
+   to (aud, nonce). Modules `src/lib/bbs.js` + `src/lib/vcBbs.js` (parallel to the SD-JWT core),
+   `@digitalbazaar/bbs-signatures`, the issuer-demo `issueBbs` + BBS `.well-known` key, the wallet
+   receive/list/**present** (`format:'bbs'` record; present over OpenID4VP `vc+bbs` + the login assertion
+   via a `bbs~` tagged-string), all three demo RPs verifying both formats, and `npm run bbs` /
+   `wallet-sim --bbs`. **Deferred next:** holder binding (blind-BBS / per-verifier pseudonym). See §7.
 
 ## 15. Open decisions
 

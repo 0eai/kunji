@@ -6,6 +6,7 @@
 // oid4vc-sim acts as the holder. Byte-identical across the demo copies. See docs/oid4vc.md.
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { buildPresentation, verifyCredentialPresentation } from './vc.js';
+import { buildBbsPresentation, verifyBbsPresentation, encodeBbsPresentation, decodeBbsPresentation, isBbsPresentation } from './vcBbs.js';
 
 const b64u = {
   fromBytes: (b) => Buffer.from(b).toString('base64url'),
@@ -38,6 +39,7 @@ const pubFromOkpJwk = (jwk) => {
 };
 
 export const SD_JWT_VC_FORMAT = 'vc+sd-jwt'; // kunji's `typ`; the ecosystem is renaming this to `dc+sd-jwt`
+export const BBS_VC_FORMAT = 'vc+bbs'; // the unlinkable (v3) credential format — verified-credentials.md §7
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
 
 const queryOf = (s) => new URLSearchParams(String(s).includes('?') ? String(s).split('?').slice(1).join('?') : '');
@@ -116,7 +118,8 @@ export const buildPresentationDefinition = ({ vct, disclose = [] }) => ({
 });
 
 export const pdToVcQuery = (pd) => {
-  const fields = pd?.input_descriptors?.[0]?.constraints?.fields || [];
+  const descriptor = pd?.input_descriptors?.[0];
+  const fields = descriptor?.constraints?.fields || [];
   let vct;
   let iss;
   const disclose = [];
@@ -127,7 +130,8 @@ export const pdToVcQuery = (pd) => {
     else if (key === 'iss') iss = f.filter?.const;
     else if (key) disclose.push(key);
   }
-  return { vct, iss, disclose };
+  const format = descriptor?.format ? Object.keys(descriptor.format)[0] : undefined;
+  return { vct, iss, disclose, format };
 };
 
 export const buildPresentationSubmission = (pd) => ({
@@ -137,10 +141,8 @@ export const buildPresentationSubmission = (pd) => ({
 });
 
 // ── OpenID4VP — DCQL (the presentation_definition successor, OpenID4VP 1.0) ───
-export const buildDcqlQuery = ({ id = 'cred', vct, disclose = [] }) => ({
-  credentials: [
-    { id, format: SD_JWT_VC_FORMAT, meta: { vct_values: [vct] }, claims: disclose.map((c) => ({ path: [c] })) },
-  ],
+export const buildDcqlQuery = ({ id = 'cred', vct, disclose = [], format = SD_JWT_VC_FORMAT }) => ({
+  credentials: [{ id, format, meta: { vct_values: [vct] }, claims: disclose.map((c) => ({ path: [c] })) }],
 });
 
 export const dcqlToVcQuery = (dcql) => {
@@ -148,7 +150,7 @@ export const dcqlToVcQuery = (dcql) => {
   const disclose = (c.claims || [])
     .map((cl) => (Array.isArray(cl.path) ? cl.path[cl.path.length - 1] : undefined))
     .filter(Boolean);
-  return { id: c.id, vct: c.meta?.vct_values?.[0], iss: undefined, disclose };
+  return { id: c.id, vct: c.meta?.vct_values?.[0], iss: undefined, disclose, format: c.format };
 };
 
 export const requestQuery = (request) => {
@@ -255,11 +257,20 @@ export const verifyRequestObject = async ({ requestJwt, getVerifierKeys, clientI
 export const buildVpToken = ({ sdjwt, disclose, clientId, nonce, holderSecretKey, now = Date.now() }) =>
   buildPresentation({ sdjwt, disclose, audience: clientId, nonce, holderSecretKey, now });
 
+/**
+ * Build a `vc+bbs` vp_token: an unlinkable BBS presentation (a fresh randomized proof) bound to the
+ * verifier (aud=clientId, the request nonce), serialized as a tagged string. `issuerPublicKey` is the
+ * issuer's BBS key. No holder secret — the proof is derived from the credential itself.
+ */
+export const buildBbsVpToken = async ({ credential, disclose, clientId, nonce, issuerPublicKey }) =>
+  encodeBbsPresentation(await buildBbsPresentation({ credential, disclose, audience: clientId, nonce, issuerPublicKey }));
+
 export const verifyVpToken = async ({
   vpToken,
   presentationDefinition,
   dcqlQuery,
   getIssuerKeys,
+  getIssuerBbsKey,
   checkStatus,
   clientId,
   nonce,
@@ -270,14 +281,14 @@ export const verifyVpToken = async ({
     : { kind: 'pd', ...pdToVcQuery(presentationDefinition) };
   const presentation = q.kind === 'dcql' ? (vpToken && typeof vpToken === 'object' ? vpToken[q.id] : undefined) : vpToken;
   if (!presentation || typeof presentation !== 'string') return { ok: false, error: 'missing_vp_token' };
-  const r = await verifyCredentialPresentation({
-    presentation,
-    getIssuerKeys,
-    checkStatus,
-    audience: clientId,
-    nonce,
-    now,
-  });
+  // Enforce the requested format (default SD-JWT): a request must not silently accept the other format —
+  // e.g. an SD-JWT request (expecting holder binding) accepting a non-holder-bound BBS proof. [S25]
+  const isBbs = isBbsPresentation(presentation);
+  if ((q.format === BBS_VC_FORMAT) !== isBbs) return { ok: false, error: 'format_mismatch' };
+  // Dispatch by format: a `bbs~`-tagged token is an unlinkable BBS presentation (v3); otherwise SD-JWT.
+  const r = isBbs
+    ? await verifyBbsPresentation({ presentation: decodeBbsPresentation(presentation), getIssuerBbsKey, audience: clientId, nonce, now })
+    : await verifyCredentialPresentation({ presentation, getIssuerKeys, checkStatus, audience: clientId, nonce, now });
   if (!r.ok) return r;
   if (q.vct && r.vct !== q.vct) return { ok: false, error: 'vct_mismatch' };
   if (q.iss && r.iss !== q.iss) return { ok: false, error: 'issuer_mismatch' };

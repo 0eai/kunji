@@ -22,10 +22,12 @@ import {
   deriveECDHSharedSecret,
 } from '../lib/crypto';
 import { holderJwkFor, parseSdJwt, matchCredentialsByScope } from '../lib/vc';
+import { b64uToBytes } from '../lib/bbs';
 import {
   parseCredentialOffer,
   buildProofJwt,
   buildVpToken,
+  buildBbsVpToken,
   buildVpResponse,
 } from '../lib/oid4vc';
 
@@ -101,15 +103,18 @@ const credentialVaultWrite = async (cryptoKey, op, credId, docPayload) => {
  * and `oneTime:true` (spent on presentation). A v1 credential omits these (its holder key is re-derived
  * from the issuer; reusable). Back-compat: legacy records simply have none of the three fields.
  */
-export const storeCredential = async (cryptoKey, { vct, iss, sdjwt, holderSk, poolId, oneTime }) => {
+export const storeCredential = async (cryptoKey, { vct, iss, sdjwt, bbs, format, holderSk, poolId, oneTime }) => {
   const credId = randomCredId();
-  const record = { vct, iss, sdjwt, receivedAt: Math.floor(Date.now() / 1000) };
+  const record = { vct, iss, receivedAt: Math.floor(Date.now() / 1000) };
+  if (format) record.format = format; // absent ⇒ SD-JWT (v1/v2); 'bbs' ⇒ unlinkable (v3)
+  if (sdjwt) record.sdjwt = sdjwt;
+  if (bbs) record.bbs = bbs; // the BBS credential blob (mintBbsCredential output)
   if (holderSk) record.holderSk = holderSk;
   if (poolId) record.poolId = poolId;
   if (oneTime) record.oneTime = true;
   const payload = await encryptData(record, cryptoKey);
   await credentialVaultWrite(cryptoKey, 'set', credId, payload);
-  return { credId, vct, iss, poolId };
+  return { credId, vct, iss, poolId, format };
 };
 
 // Generate N random holder keypairs for a batch — each becomes one one-time copy's `cnf.jwk`.
@@ -164,10 +169,11 @@ export const groupByPool = (held) => {
     const key = c.poolId || c.credId;
     let g = groups.get(key);
     if (!g) {
-      g = { key, vct: c.vct, iss: c.iss, oneTime: false, copies: [] };
+      g = { key, vct: c.vct, iss: c.iss, oneTime: false, unlinkable: false, copies: [] };
       groups.set(key, g);
     }
     if (c.oneTime) g.oneTime = true;
+    if (c.format === 'bbs') g.unlinkable = true; // v3 — one credential, unlinkable proofs
     g.copies.push(c);
   }
   return Array.from(groups.values())
@@ -292,6 +298,61 @@ export const receiveViaRelay = async (cryptoKey, issuerOrigin, { tries = 60, int
   throw new Error('Timed out waiting for the issuer to deliver the credential.');
 };
 
+// ── Unlinkable credentials (v3, BBS) ─────────────────────────────────────────
+// One credential derives a fresh, randomized zero-knowledge proof per presentation, so presentations
+// share no correlation handle — no signature, no holder key — without issuing N copies (v2). See
+// docs/verified-credentials.md §7. NOTE (this slice): replay-protected (the proof binds aud+nonce) but
+// not yet holder-bound — a leaked credential blob is transferable; holder binding is the next slice.
+
+/** Resolve an issuer's BBS public key (the `alg:'BBS'` entry) from its `.well-known` → Uint8Array. */
+export const getIssuerBbsKey = async (iss) => {
+  const u = httpsOrLoopback(iss);
+  if (!u) throw new Error('issuer_origin_invalid');
+  const resp = await fetch(`${u.origin}/.well-known/kunji-issuer.json`);
+  if (!resp.ok) throw new Error('issuer_unreachable');
+  const k = ((await resp.json()).keys || []).find((x) => x.alg === 'BBS' && x.pub);
+  if (!k) throw new Error('issuer_has_no_bbs_key');
+  return b64uToBytes(k.pub);
+};
+
+/**
+ * Receive an UNLINKABLE (BBS) credential from an issuer: `POST {origin}/issue { format:'bbs' }` → store
+ * the BBS credential blob (format:'bbs'). One credential suffices (no batch — v3 needs no copies). The
+ * issuer's `iss` MUST equal the origin. Returns `{ credId, vct, iss, format:'bbs' }`.
+ */
+export const receiveBbsFromIssuer = async (cryptoKey, issuerOrigin) => {
+  const origin = String(issuerOrigin || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (!/^https?:\/\//.test(origin)) throw new Error('Enter the issuer URL (https://…).');
+  let resp;
+  try {
+    resp = await fetch(`${origin}/issue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format: 'bbs' }),
+    });
+  } catch {
+    throw new Error('Could not reach the issuer.');
+  }
+  if (!resp.ok) throw new Error('The issuer declined to issue a credential.');
+  const { credential } = await resp.json().catch(() => ({}));
+  if (credential?.format !== 'bbs') throw new Error('The issuer did not return an unlinkable credential.');
+  if (credential.iss !== origin) throw new Error('Issuer identity mismatch — cannot trust credential.');
+  return storeCredential(cryptoKey, { vct: credential.vct, iss: credential.iss, format: 'bbs', bbs: credential });
+};
+
+/**
+ * Build a BBS presentation for the discoverable-login assertion: a fresh unlinkable proof bound to
+ * (audience, challenge), revealing only `disclose`, serialized as a tagged string (so `vc_presentations`
+ * stays a string[] and the assertion's canonical-JSON signing is undisturbed). The RP dispatches on the
+ * `bbs~` tag → verifyBbsPresentation. Mirrors `buildBbsVpToken` (which the OID4VP present path uses).
+ */
+export const presentBbsForLogin = async (cryptoKey, { cred, disclose, audience, nonce }) => {
+  const issuerPublicKey = await getIssuerBbsKey(cred.iss);
+  return buildBbsVpToken({ credential: cred.bbs, disclose, clientId: audience, nonce, issuerPublicKey });
+};
+
 // ── OpenID4VC interop (wallet side) ──────────────────────────────────────────
 // The standard rails over the SAME SD-JWT VC + per-issuer holder key. See docs/oid4vc.md.
 
@@ -406,14 +467,16 @@ export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) =
   // Bind the response destination to the shown verifier identity (anti response-redirection). [S20]
   if (!responseTargetTrusted(request.clientId, request.responseUri))
     throw new Error('Untrusted verifier: the response endpoint does not match its identity.');
-  const holderSecretKey = await holderKeyFor(cryptoKey, cred);
-  const vpToken = await buildVpToken({
-    sdjwt: cred.sdjwt,
-    disclose,
-    clientId: request.clientId,
-    nonce: request.nonce,
-    holderSecretKey,
-  });
+  // Branch by credential format: BBS (v3) derives an unlinkable proof from the issuer's BBS key; SD-JWT
+  // (v1/v2) signs a KB-JWT with the holder key. Both yield a string vp_token for buildVpResponse.
+  let vpToken;
+  if (cred.format === 'bbs') {
+    const issuerPublicKey = await getIssuerBbsKey(cred.iss);
+    vpToken = await buildBbsVpToken({ credential: cred.bbs, disclose, clientId: request.clientId, nonce: request.nonce, issuerPublicKey });
+  } else {
+    const holderSecretKey = await holderKeyFor(cryptoKey, cred);
+    vpToken = await buildVpToken({ sdjwt: cred.sdjwt, disclose, clientId: request.clientId, nonce: request.nonce, holderSecretKey });
+  }
   // The direct_post body differs by query form (DCQL → vp_token keyed by id; PD → vp_token + submission).
   const responseBody = buildVpResponse({ request, presentation: vpToken });
   let resp;

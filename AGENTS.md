@@ -113,11 +113,12 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
   Implemented: `docs/scope.md` (Phase 1 scope engine), `docs/verified-credentials.md` (Phases 2–3
-  verified credentials **+ §7 unlinkability v2 — batch/one-time-use**), `docs/push-relay.md` **both
-  transports** (① step-up via deep link, no new infra; ② the opt-in Web Push relay — `pushDispatch` +
-  `pushChannels` + a service worker), and `docs/oid4vc.md` (**OpenID4VCI/VP interop** + verifier
-  auth/DCQL). Proposed (not implemented): `docs/verified-credentials.md` §7/§14 **v3** (VC unlinkability
-  via BBS+ — single-credential unlinkable proofs).
+  verified credentials **+ §7 unlinkability v2 batch/one-time-use + v3 BBS foundation**),
+  `docs/push-relay.md` **both transports** (① step-up via deep link, no new infra; ② the opt-in Web Push
+  relay — `pushDispatch` + `pushChannels` + a service worker), and `docs/oid4vc.md` (**OpenID4VCI/VP
+  interop** + verifier auth/DCQL, **incl. `vc+bbs` present**). Proposed (not implemented):
+  `docs/verified-credentials.md` §7/§14 **v3 holder binding** (blind-BBS / per-verifier pseudonym —
+  the one remaining v3 slice; the lib has the code but doesn't export it).
 - `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
   user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
   `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). **Unlinkability v2:** a
@@ -128,6 +129,19 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   mints batches via `issueBatch`; runnable proof `kunji-node-demo/unlinkable-sim.js` (`npm run
   unlinkable`). RP verifier `vc.js` is a byte-identical Node port across `kunji-{node,issuer,login}-demo`
   (parity-guarded) — **unchanged by v2 (it's pure orchestration over the existing core).**
+- `src/lib/bbs.js` + `src/lib/vcBbs.js` — **unlinkability v3 (BBS)**, a SECOND credential format PARALLEL
+  to the SD-JWT core (which is untouched). `bbs.js` wraps `@digitalbazaar/bbs-signatures` (pure JS over
+  `@noble/curves`, isomorphic, no WASM); `vcBbs.js` = `mintBbsCredential`/`buildBbsPresentation`/
+  `verifyBbsPresentation` (one credential → a fresh randomized ZK proof per presentation, bound to
+  aud+nonce; coarse `exp` in the always-revealed header). **Byte-identical** Node ports in
+  `kunji-{issuer,node}-demo` (file-equality parity test). Wallet: `receiveBbsFromIssuer`/`presentBbs`/
+  `getIssuerBbsKey` + a `format:'bbs'` credential record (`storeCredential`); issuer `issueBbs` + a BBS
+  `.well-known` key. **Presented over the standard envelopes** (OpenID4VP `vc+bbs` + the login assertion)
+  as a **tagged string** `bbs~<base64url(JSON)>` (`encodeBbsPresentation`/`decodeBbsPresentation`/
+  `isBbsPresentation` in `vcBbs.js`); `oid4vc.js` `verifyVpToken` dispatches by format (the SD-JWT core is
+  untouched) and gained `BBS_VC_FORMAT`/`buildBbsVpToken`; all three demo RPs (`kunji-{login,node}-demo`)
+  verify both formats; wallet `presentViaOid4vp`/`presentBbsForLogin`. Proofs `npm run bbs` (OID4VP) +
+  `wallet-sim --bbs` (login). **Still NOT holder-bound (a leaked blob is transferable)** — the remaining v3 slice.
 - `src/lib/oid4vc.js` — **OpenID4VCI/VP interop** envelope over `vc.js` (offer/proof/token for issuance;
   presentation_definition/vp_token/direct_post for presentation); pure, no new crypto. Byte-identical Node
   port in `kunji-{node,issuer}-demo/oid4vc.js` (parity-guarded). Demos: issuer OpenID4VCI endpoints

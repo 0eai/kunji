@@ -82,7 +82,7 @@ describe('OpenID4VCI envelope', () => {
 describe('OpenID4VP presentation_definition ↔ vc query', () => {
   it('maps a presentation_definition to { vct, disclose }', () => {
     const pd = buildPresentationDefinition({ vct: 'age', disclose: ['age_over_18'] });
-    expect(pdToVcQuery(pd)).toEqual({ vct: 'age', iss: undefined, disclose: ['age_over_18'] });
+    expect(pdToVcQuery(pd)).toEqual({ vct: 'age', iss: undefined, disclose: ['age_over_18'], format: 'vc+sd-jwt' });
   });
 
   it('builds a presentation_submission referencing the PD', () => {
@@ -110,7 +110,7 @@ describe('OpenID4VP presentation_definition ↔ vc query', () => {
       state: 'st-123',
       responseUri: 'https://verifier.example/response',
     });
-    expect(pdToVcQuery(ar.presentationDefinition)).toEqual({ vct: 'age', iss: undefined, disclose: ['age_over_18'] });
+    expect(pdToVcQuery(ar.presentationDefinition)).toEqual({ vct: 'age', iss: undefined, disclose: ['age_over_18'], format: 'vc+sd-jwt' });
   });
 });
 
@@ -210,7 +210,7 @@ describe('OpenID4VP signed request objects', () => {
 describe('OpenID4VP DCQL', () => {
   it('buildDcqlQuery → dcqlToVcQuery / requestQuery map to {vct,disclose}', () => {
     const dcql = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] });
-    expect(dcqlToVcQuery(dcql)).toEqual({ id: 'c', vct: 'age', iss: undefined, disclose: ['age_over_18'] });
+    expect(dcqlToVcQuery(dcql)).toEqual({ id: 'c', vct: 'age', iss: undefined, disclose: ['age_over_18'], format: 'vc+sd-jwt' });
     expect(requestQuery({ dcqlQuery: dcql })).toMatchObject({ kind: 'dcql', id: 'c', vct: 'age', disclose: ['age_over_18'] });
     expect(requestQuery({ presentationDefinition: buildPresentationDefinition({ vct: 'age', disclose: ['age_over_18'] }) })).toMatchObject({ kind: 'pd', vct: 'age', disclose: ['age_over_18'] });
   });

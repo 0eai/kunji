@@ -7,6 +7,8 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { mintCredential } from './vc.js';
+import { mintBbsCredential, bbsKeyGen, bbsPublicFromSecret } from './vcBbs.js';
+import { bytesToB64u, b64uToBytes } from './bbs.js';
 
 const KEYFILE = new URL('./.issuer-key', import.meta.url);
 const KID = 'issuer-key-1';
@@ -23,6 +25,22 @@ const loadIssuerKey = () => {
   return { secretKey: sk, publicKey: ed25519.getPublicKey(sk) };
 };
 
+// The issuer's BBS key (verified-credentials.md §7 v3 — unlinkable credentials). Persisted to
+// .issuer-bbs-key (git-ignored). Loaded once at startup (top-level await) so wellKnown() is sync.
+const BBS_KEYFILE = new URL('./.issuer-bbs-key', import.meta.url);
+const BBS_KID = 'issuer-bbs-1';
+const loadIssuerBbsKey = async () => {
+  let secretKey;
+  if (existsSync(BBS_KEYFILE)) {
+    secretKey = b64uToBytes(readFileSync(BBS_KEYFILE, 'utf8').trim());
+  } else {
+    ({ secretKey } = await bbsKeyGen());
+    writeFileSync(BBS_KEYFILE, bytesToB64u(secretKey));
+  }
+  return { secretKey, publicKey: await bbsPublicFromSecret(secretKey) };
+};
+const issuerBbs = await loadIssuerBbsKey();
+
 // The issuer's own public origin — the `iss` baked into credentials and the host the RP fetches
 // keys from. Override for a real domain; defaults to the local dev origin.
 export const issuerOrigin = () =>
@@ -31,7 +49,11 @@ export const issuerOrigin = () =>
 export const wellKnown = () => ({
   issuer: issuerOrigin(),
   name: 'kunji issuer demo',
-  keys: [{ kid: KID, kty: 'OKP', crv: 'Ed25519', x: b64u(loadIssuerKey().publicKey) }],
+  keys: [
+    { kid: KID, kty: 'OKP', crv: 'Ed25519', x: b64u(loadIssuerKey().publicKey) },
+    // The BBS public key the wallet/verifier uses to verify unlinkable (v3) presentations.
+    { kid: BBS_KID, alg: 'BBS', crv: 'BLS12-381-G2', pub: bytesToB64u(issuerBbs.publicKey) },
+  ],
 });
 
 // In-memory StatusList — a set of revoked indices. The credential carries status:{ uri, idx };
@@ -97,3 +119,17 @@ export const issue = ({ holderJwk, dob, vct, claims }) => {
  */
 export const issueBatch = ({ holderJwks, dob, vct, claims }) =>
   (holderJwks || []).map((holderJwk) => issue({ holderJwk, dob, vct, claims }));
+
+/**
+ * Mint an UNLINKABLE (BBS, v3) age credential. No holderJwk: a BBS credential needs no per-issuance
+ * holder key — ONE credential derives a fresh randomized proof per presentation. Same predicate
+ * pre-baking; the header carries a coarse (day) exp. Returns `{ credential }` (a BBS credential blob).
+ */
+export const issueBbs = async ({ dob, vct, claims }) => ({
+  credential: await mintBbsCredential(issuerBbs.secretKey, issuerBbs.publicKey, {
+    iss: issuerOrigin(),
+    vct: vct || 'age',
+    claims: claims || ageClaims(dob || DEFAULT_DOB),
+    ttlSeconds: 365 * DAY,
+  }),
+});

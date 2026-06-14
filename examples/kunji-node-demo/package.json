@@ -8,9 +8,11 @@
     "start": "node server.js",
     "wallet": "node wallet-sim.js",
     "oid4vc": "node oid4vc-sim.js",
-    "unlinkable": "node unlinkable-sim.js"
+    "unlinkable": "node unlinkable-sim.js",
+    "bbs": "node bbs-sim.js"
   },
   "dependencies": {
+    "@digitalbazaar/bbs-signatures": "^3.1.0",
     "@noble/curves": "^2.0.1"
   }
 }

@@ -5,6 +5,8 @@ import { randomBytes } from 'node:crypto';
 import { verifyAssertion } from './verify.js';
 import { verifyCapabilityAssertion } from './capability.js';
 import { verifyCredentialPresentation, parseVcScope } from './vc.js';
+import { verifyBbsPresentation, isBbsPresentation, decodeBbsPresentation } from './vcBbs.js';
+import { b64uToBytes } from './bbs.js';
 
 initializeApp();
 const db = getFirestore();
@@ -28,6 +30,12 @@ const fetchStatus = async (uri, idx) => {
   const r = await fetch(`${uri}?idx=${encodeURIComponent(idx)}`);
   if (!r.ok) throw new Error('status_unreachable');
   return (await r.json()).valid !== false; // false ⇒ revoked
+};
+// The issuer's BBS public key (the `alg:'BBS'` .well-known entry) — for v3 unlinkable presentations.
+const fetchIssuerBbsKey = async (iss) => {
+  const k = (await fetchIssuerKeys(iss)).find((x) => x.alg === 'BBS' && x.pub);
+  if (!k) throw new Error('issuer_bbs_key_not_found');
+  return b64uToBytes(k.pub);
 };
 
 // A globally-unique 6-digit code (equality-only query → no composite index needed).
@@ -170,13 +178,21 @@ export const kunjiCallback = onRequest({ cors: true, maxInstances: 5, memory: '2
       if (!session) return res.status(400).json({ error: 'unknown_session' });
       verified = [];
       for (const presentation of presentations) {
-        const vr = await verifyCredentialPresentation({
-          presentation,
-          audience: session.audience,
-          nonce: session.challenge,
-          getIssuerKeys: fetchIssuerKeys,
-          checkStatus: fetchStatus,
-        });
+        // Dispatch by format: a `bbs~`-tagged entry is an unlinkable BBS proof (v3); else SD-JWT.
+        const vr = isBbsPresentation(presentation)
+          ? await verifyBbsPresentation({
+              presentation: decodeBbsPresentation(presentation),
+              getIssuerBbsKey: fetchIssuerBbsKey,
+              audience: session.audience,
+              nonce: session.challenge,
+            })
+          : await verifyCredentialPresentation({
+              presentation,
+              audience: session.audience,
+              nonce: session.challenge,
+              getIssuerKeys: fetchIssuerKeys,
+              checkStatus: fetchStatus,
+            });
         if (!vr.ok) return res.status(400).json({ error: 'vc_' + vr.error });
         verified.push({ iss: vr.iss, vct: vr.vct, claims: vr.claims });
       }

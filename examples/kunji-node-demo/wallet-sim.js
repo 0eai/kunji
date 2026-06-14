@@ -18,12 +18,16 @@ import { buildPresentation, holderJwkFor, parseVcScope } from './vc.js';
 // Reuse kunji's shared default-identity helper for a friendly printout. A real RP would
 // use window.kunji.handle(sub) from rp.js (see public/index.html).
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
+import { buildBbsVpToken } from './oid4vc.js';
+import { b64uToBytes } from './bbs.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const wantClaims = process.argv.includes('--claims');
 // --vc: also act as a credential HOLDER — fetch a VC from the issuer and present it. --revoke first
 // revokes it at the issuer (the RP should then reject the presentation).
 const wantVc = process.argv.includes('--vc');
+// --bbs: present an UNLINKABLE (BBS, v3) age credential at login instead of an SD-JWT one.
+const wantBbs = process.argv.includes('--bbs');
 const wantRevoke = process.argv.includes('--revoke');
 const ISSUER = process.env.ISSUER;
 
@@ -109,6 +113,32 @@ const main = async () => {
       console.log(`presenting ${req.vct} disclosing [${req.disclose.join(', ')}] from`, issued.issuer);
     }
     signedPayload.vc_presentations = presentations;
+  }
+
+  // --bbs: present an UNLINKABLE (v3) age credential at login — one BBS credential → a fresh randomized
+  // proof bound to this session, carried as a tagged string in vc_presentations (the RP dispatches on it).
+  if (wantBbs) {
+    if (!ISSUER) throw new Error('Set ISSUER=<issuer origin>, e.g. ISSUER=http://localhost:4000');
+    const issued = await (
+      await fetch(`${ISSUER}/issue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: 'bbs' }),
+      })
+    ).json();
+    if (issued.credential?.format !== 'bbs') throw new Error('issuer BBS /issue failed: ' + JSON.stringify(issued));
+    const wk = await (await fetch(`${ISSUER}/.well-known/kunji-issuer.json`)).json();
+    const bbsKey = (wk.keys || []).find((k) => k.alg === 'BBS');
+    if (!bbsKey) throw new Error('issuer published no BBS key');
+    const token = await buildBbsVpToken({
+      credential: issued.credential,
+      disclose: ['age_over_18'],
+      clientId: session.audience,
+      nonce: session.challenge,
+      issuerPublicKey: b64uToBytes(bbsKey.pub),
+    });
+    signedPayload.vc_presentations = [token];
+    console.log('presenting an UNLINKABLE (BBS) age credential disclosing [age_over_18] from', issued.issuer);
   }
 
   const signedToken = b64(

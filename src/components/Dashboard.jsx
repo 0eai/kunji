@@ -22,6 +22,7 @@ import {
   selectForPresentation,
   holderKeyFor,
   spendIfOneTime,
+  presentBbsForLogin,
 } from '../services/credentials';
 import { buildPresentation } from '../lib/vc';
 import { parseAuthorizationRequest, requestQuery, verifyRequestObject } from '../lib/oid4vc';
@@ -216,8 +217,12 @@ const Dashboard = ({
         const q = requestQuery(request); // unified DCQL / presentation_definition view
         const scopeId =
           'vc:' + q.vct + (q.iss ? '@' + q.iss : '') + (q.disclose?.length ? '#' + q.disclose.join(',') : '');
-        // One copy per logical credential (a v2 pool collapses to a single presentable/spendable copy).
-        const matches = selectForPresentation(await listCredentials(cryptoKey), [scopeId]);
+        // One copy per logical credential; offer only credentials whose format the request asked for
+        // (a `vc+bbs` request → BBS creds; SD-JWT request → SD-JWT creds).
+        const wantBbs = q.format === 'vc+bbs';
+        const matches = selectForPresentation(await listCredentials(cryptoKey), [scopeId]).filter(
+          (m) => (m.cred.format === 'bbs') === wantBbs,
+        );
         setPendingPresentation({ request, query: q, matches, verified });
       } catch {
         showToast('Invalid presentation request.', 'error');
@@ -254,7 +259,15 @@ const Dashboard = ({
         if (requestsCredentials(qr)) {
           try {
             // One copy per logical credential (a v2 pool presents — and spends — a single copy).
-            credentialMatches = selectForPresentation(await listCredentials(cryptoKey), qr.scope);
+            const all = selectForPresentation(await listCredentials(cryptoKey), qr.scope);
+            // Login has no format negotiation: prefer SD-JWT when both formats satisfy the same request
+            // (max RP compatibility); present a BBS credential only when it's the sole match for its vct.
+            const sdjwtKeys = new Set(
+              all.filter((m) => m.cred.format !== 'bbs').map((m) => `${m.cred.vct}@${m.cred.iss}`),
+            );
+            credentialMatches = all.filter(
+              (m) => m.cred.format !== 'bbs' || !sdjwtKeys.has(`${m.cred.vct}@${m.cred.iss}`),
+            );
           } catch {
             credentialMatches = [];
           }
@@ -310,15 +323,27 @@ const Dashboard = ({
       if (credentials.length) {
         vcPresentations = [];
         for (const { cred, disclose } of credentials) {
-          vcPresentations.push(
-            await buildPresentation({
-              sdjwt: cred.sdjwt,
-              disclose,
-              audience: pendingSession.audience,
-              nonce: pendingSession.challenge,
-              holderSecretKey: await holderKeyFor(cryptoKey, cred),
-            }),
-          );
+          if (cred.format === 'bbs') {
+            // Unlinkable (v3): a fresh BBS proof bound to this session, as a tagged string.
+            vcPresentations.push(
+              await presentBbsForLogin(cryptoKey, {
+                cred,
+                disclose,
+                audience: pendingSession.audience,
+                nonce: pendingSession.challenge,
+              }),
+            );
+          } else {
+            vcPresentations.push(
+              await buildPresentation({
+                sdjwt: cred.sdjwt,
+                disclose,
+                audience: pendingSession.audience,
+                nonce: pendingSession.challenge,
+                holderSecretKey: await holderKeyFor(cryptoKey, cred),
+              }),
+            );
+          }
         }
       }
       await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims, vcPresentations);

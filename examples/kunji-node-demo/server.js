@@ -27,11 +27,14 @@ import { dirname, join } from 'node:path';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { verifyAssertion } from './verify.js';
 import { verifyCredentialPresentation, parseVcScope } from './vc.js';
+import { verifyBbsPresentation, isBbsPresentation, decodeBbsPresentation } from './vcBbs.js';
+import { b64uToBytes } from './bbs.js';
 import {
   buildPresentationDefinition,
   buildDcqlQuery,
   buildSignedAuthorizationRequest,
   verifyVpToken,
+  BBS_VC_FORMAT,
 } from './oid4vc.js';
 
 const PORT = process.env.PORT || 3000;
@@ -137,6 +140,14 @@ const fetchStatus = async (uri, idx) => {
   if (!resp.ok) throw new Error('status_unreachable');
   return (await resp.json()).valid !== false; // false ⇒ revoked
 };
+// Resolve the issuer's BBS public key (the `alg:'BBS'` entry) from its /.well-known — for v3 (BBS)
+// unlinkable presentations. Same trust anchor as fetchIssuerKeys; kunji is not in the path.
+const fetchIssuerBbsKey = async (iss) => {
+  const keys = await fetchIssuerKeys(iss);
+  const k = keys.find((x) => x.alg === 'BBS' && x.pub);
+  if (!k) throw new Error('issuer_bbs_key_not_found');
+  return b64uToBytes(k.pub);
+};
 
 const handler = async (req, res) => {
   // CORS: the wallet (app.kunji.cc) POSTs the assertion cross-origin, and the JSON
@@ -196,13 +207,21 @@ const handler = async (req, res) => {
     if (Array.isArray(presentations) && presentations.length) {
       verified = [];
       for (const presentation of presentations) {
-        const vr = await verifyCredentialPresentation({
-          presentation,
-          audience: session.audience,
-          nonce: session.challenge,
-          getIssuerKeys: fetchIssuerKeys,
-          checkStatus: fetchStatus,
-        });
+        // Dispatch by format: a `bbs~`-tagged entry is an unlinkable BBS proof (v3); else SD-JWT.
+        const vr = isBbsPresentation(presentation)
+          ? await verifyBbsPresentation({
+              presentation: decodeBbsPresentation(presentation),
+              getIssuerBbsKey: fetchIssuerBbsKey,
+              audience: session.audience,
+              nonce: session.challenge,
+            })
+          : await verifyCredentialPresentation({
+              presentation,
+              audience: session.audience,
+              nonce: session.challenge,
+              getIssuerKeys: fetchIssuerKeys,
+              checkStatus: fetchStatus,
+            });
         if (!vr.ok) return json(res, 400, { error: 'vc_' + vr.error });
         verified.push({ iss: vr.iss, vct: vr.vct, claims: vr.claims });
       }
@@ -254,10 +273,13 @@ const handler = async (req, res) => {
     const state = token(16);
     const nonce = token(24);
     const clientId = base; // the verifier's origin (HTTPS-anchored client_id) — also the KB-JWT `aud`
-    const usePd = url.searchParams.get('query') === 'pd';
+    const wantBbs = url.searchParams.get('format') === 'bbs'; // request an unlinkable (v3) credential
+    const usePd = !wantBbs && url.searchParams.get('query') === 'pd'; // BBS uses DCQL
     const signed = url.searchParams.get('signed') !== '0';
     const presentationDefinition = usePd ? buildPresentationDefinition(VP_QUERY) : undefined;
-    const dcqlQuery = usePd ? undefined : buildDcqlQuery({ id: 'age_cred', ...VP_QUERY });
+    const dcqlQuery = usePd
+      ? undefined
+      : buildDcqlQuery({ id: 'age_cred', ...VP_QUERY, ...(wantBbs ? { format: BBS_VC_FORMAT } : {}) });
     vpRequests.set(state, {
       nonce,
       clientId,
@@ -301,6 +323,7 @@ const handler = async (req, res) => {
       presentationDefinition: r.presentationDefinition,
       dcqlQuery: r.dcqlQuery,
       getIssuerKeys: fetchIssuerKeys,
+      getIssuerBbsKey: fetchIssuerBbsKey, // dispatches when the vp_token is a `bbs~` BBS proof (v3)
       checkStatus: fetchStatus,
       clientId: r.clientId,
       nonce: r.nonce,
@@ -317,6 +340,9 @@ const handler = async (req, res) => {
     if (!r) return json(res, 404, { error: 'unknown_state' });
     return json(res, 200, { approved: r.approved, claims: r.claims });
   }
+
+  // (v3 BBS presentation is now served by the unified /oid4vp/{request,response} above — a
+  // `?format=bbs` request → a `vc+bbs` DCQL query → verifyVpToken dispatches on the `bbs~` token.)
 
   // 4. Static frontend + its externalized script.
   if (req.method === 'GET' && path === '/app.js') {

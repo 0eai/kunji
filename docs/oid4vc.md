@@ -78,7 +78,13 @@ holder   ──POST {response_uri}  { vp_token, [presentation_submission], state
 Implemented: the **pre-authorized_code** grant (VCI); **direct_post** (VP) with **both**
 `presentation_definition` and **DCQL**, and **both** unsigned and **signed (JAR)** requests — a signed
 request is verified against the verifier's `.well-known` key (the **HTTPS-anchored `client_id` scheme**);
-SD-JWT VC only, EdDSA. Deferred (documented, not built): the `authorization_code` grant + PKCE, DPoP,
+SD-JWT VC (EdDSA) **and `vc+bbs`** (the unlinkable v3 credential — verified-credentials.md §7). A DCQL
+query carries `format: 'vc+bbs'`; the holder answers with `buildBbsVpToken` and the verifier's
+`verifyVpToken` **dispatches by format**. A BBS `vp_token` is a **tagged string** `bbs~<base64url(JSON)>`
+(not a nested object) — so it rides the existing string-typed `vp_token`/`vc_presentations` slots and the
+login assertion's canonical-JSON signing is undisturbed; verifiers dispatch on the `bbs~` tag, resolving
+the issuer's BBS key from its `.well-known` (`alg:'BBS'`). BBS uses DCQL (not presentation_definition).
+Deferred (documented, not built): the `authorization_code` grant + PKCE, DPoP,
 `request_uri` by-reference, **x509/DID `client_id` schemes**, encrypted requests, and the in-flight
 `vc+sd-jwt` → `dc+sd-jwt` format rename (kept as the `SD_JWT_VC_FORMAT` knob in `oid4vc.js`). These are
 envelope-only extensions — none touches the SD-JWT VC core.

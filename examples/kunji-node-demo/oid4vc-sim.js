@@ -99,8 +99,12 @@ if (ar.signed) {
   const vr = await verifyRequestObject({ requestJwt: ar.requestJwt, getVerifierKeys, clientId: ar.clientId });
   if (!vr.ok) fail('signed request did not verify', vr);
   console.log('  ✓ request verified  signed by', ar.clientId, '(via its .well-known key)');
-  // Forgery check: tamper the JWS signature → must NOT verify.
-  const forged = ar.requestJwt.slice(0, -1) + (ar.requestJwt.endsWith('A') ? 'B' : 'A');
+  // Forgery check: tamper the JWS signature → must NOT verify. Flip the FIRST char of the signature
+  // segment (always data bits); flipping the LAST base64url char can hit padding bits and decode
+  // unchanged (a no-op), which would make this probe intermittently pass a forgery.
+  const dot = ar.requestJwt.lastIndexOf('.');
+  const sig = ar.requestJwt.slice(dot + 1);
+  const forged = ar.requestJwt.slice(0, dot + 1) + (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1);
   const fr = await verifyRequestObject({ requestJwt: forged, getVerifierKeys, clientId: ar.clientId });
   if (fr.ok) fail('a forged request unexpectedly verified');
   console.log('  ✓ forgery rejected  tampered request →', fr.error);
