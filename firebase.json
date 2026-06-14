@@ -29,6 +29,10 @@
           "source": "/credential/offer",
           "function": { "functionId": "credentialOfferRelay", "region": "us-central1" }
         },
+        {
+          "source": "/push/dispatch",
+          "function": { "functionId": "pushDispatch", "region": "us-central1" }
+        },
         { "source": "**", "destination": "/index.html" }
       ],
       "headers": [
@@ -62,6 +66,14 @@
         },
         {
           "source": "/manifest.json",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        },
+        {
+          "source": "/sw.js",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        },
+        {
+          "source": "/sw-init.js",
           "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
         }
       ]

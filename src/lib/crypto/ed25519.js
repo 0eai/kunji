@@ -78,6 +78,29 @@ export const deriveCredentialHolderKey = async (masterKey, issuer) => {
   return { secretKey, publicKey };
 };
 
+// Deterministically derive a per-app OPAQUE channel id (not a keypair) from the master key — the push
+// relay's mailbox address (push-relay.md §3). Per-audience + domain-separated, so it's unlinkable across
+// apps and kunji learns nothing about who/what the channel is. 256-bit → 64-hex. Additive; the existing
+// byte-stable derivations are untouched.
+export const deriveChannelId = async (masterKey, audience) => {
+  const normalized = normalizeDomain(audience);
+  const raw = await window.crypto.subtle.exportKey('raw', masterKey);
+  const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+  const bits = await window.crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode('kunji-channel-v1'),
+      info: new TextEncoder().encode(`kunji-channel:${normalized}`),
+    },
+    ikm,
+    256,
+  );
+  return Array.from(new Uint8Array(bits))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+};
+
 export const exportEd25519SecretKey = (secretKey) => bufferToBase64(secretKey.buffer ?? secretKey);
 
 export const exportEd25519PublicKey = (publicKey) => bufferToBase64(publicKey.buffer ?? publicKey);

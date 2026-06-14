@@ -44,6 +44,7 @@ export {
   deriveAppKeyPair,
   deriveVaultWriteKeyPair,
   deriveCredentialHolderKey,
+  deriveChannelId,
   exportEd25519SecretKey,
   exportEd25519PublicKey,
   importEd25519SecretKey,

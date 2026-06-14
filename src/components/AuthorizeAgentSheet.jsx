@@ -12,6 +12,7 @@ import {
   listAgents,
 } from '../services/capability';
 import { scopeId, scopeSatisfies } from '../lib/capability';
+import { pushSupported, enablePushForAudience } from '../services/push';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -50,6 +51,8 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
   const [delivered, setDelivered] = useState(false); // v2: relayed to the agent automatically
   const [prior, setPrior] = useState([]); // live caps this SAME agent already holds here (step-up)
   const [revokePrior, setRevokePrior] = useState(false); // replace the old capability on approve
+  const [notify, setNotify] = useState(false); // opt-in Web Push channel (Transport ②), default off
+  const [pushChannelId, setPushChannelId] = useState(''); // set after a channel is registered
   const qrRef = useRef(null);
 
   // The union of scope already granted to this agent for this audience — used to mark which requested
@@ -188,6 +191,16 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
           );
         }
       }
+      // Opt-in Web Push (Transport ②): register a channel so this agent can ping the wallet for future
+      // step-ups. Best-effort + AFTER the capability — a permission denial never blocks authorization.
+      if (notify && pushSupported()) {
+        try {
+          const { channelId } = await enablePushForAudience(masterKey, req.audience, req.agentPub);
+          setPushChannelId(channelId);
+        } catch (e) {
+          showToast('Authorized, but enabling notifications failed: ' + (e.message || e), 'error');
+        }
+      }
     } catch (e) {
       showToast('Could not authorize: ' + (e.message || e), 'error');
     } finally {
@@ -319,6 +332,34 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
               </span>
             </button>
           )}
+          {pushSupported() && (
+            <button
+              type="button"
+              onClick={() => setNotify((v) => !v)}
+              aria-pressed={notify}
+              className="w-full flex items-center gap-3 text-left mb-6 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-medium text-ink">
+                  Notify me for this agent's future requests
+                </span>
+                <span className="block text-[12px] text-muted">
+                  Lets it ping you to approve more access later — asks your permission to send notifications.
+                </span>
+              </span>
+              <span
+                className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+                  notify ? 'bg-accent-fill' : 'bg-line'
+                }`}
+              >
+                <span
+                  className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                    notify ? 'translate-x-4' : ''
+                  }`}
+                />
+              </span>
+            </button>
+          )}
           <div className="flex items-center justify-end gap-1">
             <Btn variant="quiet" onClick={onClose} disabled={busy}>
               Cancel
@@ -344,6 +385,14 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
             )}
             <span className="font-mono text-ink">{req.audience}</span> and expires automatically.
           </p>
+          {pushChannelId && (
+            <div className="rounded-xl border border-accent/30 bg-accent-soft px-3.5 py-3 mb-4">
+              <p className="text-[13px] text-ink leading-relaxed mb-1">
+                Notifications on for this agent. Give it this push channel so it can ping you for future requests:
+              </p>
+              <code className="block text-[11px] font-mono text-ink break-all">{pushChannelId}</code>
+            </div>
+          )}
           {delivered && (
             <div className="flex items-center gap-2 text-[13px] text-success mb-4">
               <CheckCircle2 size={15} className="shrink-0" />

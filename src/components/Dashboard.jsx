@@ -31,13 +31,21 @@ import CodeEntryModal from './CodeEntryModal';
 import CodePickerSheet from './CodePickerSheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Btn } from './ui/primitives';
-import { listAgents } from '../services/capability';
+import { listAgents, lookupAgentRequest } from '../services/capability';
 import { useToast } from '../contexts/ToastContext';
 
 // Lazy: the camera scanner (jsqr) loads only when opened.
 const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
-const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthorize, incomingPresentation }) => {
+const Dashboard = ({
+  user,
+  cryptoKey,
+  onLock,
+  incomingApproval,
+  incomingAuthorize,
+  incomingPresentation,
+  incomingPush,
+}) => {
   const { showToast } = useToast();
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +67,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthoriz
   const incomingHandled = useRef(false);
   const authorizeHandled = useRef(false);
   const presentationHandled = useRef(false);
+  const pushHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
   useEffect(() => {
@@ -138,6 +147,37 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthoriz
     handlePresentationRequest(incomingPresentation);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, incomingPresentation]);
+
+  // Web Push (push-relay.md Transport ②): a tapped notification points at a step-up request id (the
+  // agent-relay code). Look it up and open the SAME re-consent sheet as the ?authorize= deep link.
+  const handlePushPointer = useCallback(
+    async (requestId) => {
+      try {
+        const raw = await lookupAgentRequest(requestId);
+        setPendingAuthorize(raw);
+      } catch {
+        showToast('Could not load the pushed request.', 'error');
+      }
+    },
+    [showToast],
+  );
+
+  // Cold open from a tapped notification: app.kunji.cc/?push=<requestId>, once the vault is ready.
+  useEffect(() => {
+    if (!vaultId || !incomingPush || pushHandled.current) return;
+    pushHandled.current = true;
+    handlePushPointer(incomingPush);
+  }, [vaultId, incomingPush, handlePushPointer]);
+
+  // Warm open: the service worker postMessages an already-open wallet when a notification is tapped.
+  useEffect(() => {
+    if (!vaultId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMsg = (e) => {
+      if (e?.data?.type === 'kunji-push' && /^\d{6}$/.test(e.data.requestId || '')) handlePushPointer(e.data.requestId);
+    };
+    navigator.serviceWorker.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg);
+  }, [vaultId, handlePushPointer]);
 
   // OpenID4VP: a verifier asked the wallet to present a credential (a distinct flow from the kunji
   // login QR — docs/oid4vc.md). Match held credentials to the request and open the present sheet.

@@ -101,14 +101,22 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   banner, new-vs-granted per item, revoke-prior). The RP loop (`403 insufficient_scope` → re-request →
   retry) is shown in `examples/kunji-agent-demo` (`agent-sim.js` + the `/agent/stepup` browser demo).
   No new Function/rule — it reuses `agentRequestRelay`/`agentCapabilityPoll`.
+- **Push relay** (push-relay.md Transport ②, **opt-in**): for a channel-less requester. `deriveChannelId`
+  (HKDF, `src/lib/crypto`) → an opaque per-app mailbox; the wallet (opt-in toggle in `AuthorizeAgentSheet`)
+  subscribes to Web Push (`public/sw.js` + `public/sw-init.js`) and registers `pushChannels/{channelId}`
+  ({pushSub, postKeyJwk}) via `src/services/push.js`. The `pushDispatch` Function (`functions/index.js`,
+  holder-of-key via `functions/pushProof.js`, per-IP+per-channel rate-limit, `web-push`+VAPID secret) sends
+  an **opaque pointer** (`{requestId}`); the wallet receives it (`?push=`/SW `postMessage` → `Dashboard` →
+  the Transport-① re-consent) and returns over `agentSessions`. Requester: `requestViaPush`
+  (`kunji-agent-demo`). VAPID setup in `docs/ops-cost-controls.md`.
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
   Implemented: `docs/scope.md` (Phase 1 scope engine), `docs/verified-credentials.md` (Phases 2–3
-  verified credentials), `docs/push-relay.md` **Transport ①** (step-up authorization — re-consent
-  via deep link, no new infra), and `docs/oid4vc.md` (**OpenID4VCI/VP interop**, headless — envelope
-  lib + demo endpoints + sim; wallet UI is the follow-on). Proposed (not implemented):
-  `docs/push-relay.md` **Transport ②** (the opt-in Web Push relay).
+  verified credentials), `docs/push-relay.md` **both transports** (① step-up via deep link, no new infra;
+  ② the opt-in Web Push relay — `pushDispatch` + `pushChannels` + a service worker), and `docs/oid4vc.md`
+  (**OpenID4VCI/VP interop** + verifier auth/DCQL). Proposed (not implemented): `docs/verified-credentials.md`
+  §14.4 (VC unlinkability — batch/BBS+).
 - `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
   user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
   `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). RP verifier `vc.js` is a

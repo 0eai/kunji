@@ -4,13 +4,23 @@
 // master-key-derived). The function never sees the master key or plaintext — only the
 // vault PUBLIC key, signatures, and already-encrypted app blobs.
 import { onRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { randomInt } from 'node:crypto';
+import webpush from 'web-push';
+import { verifyPostProof } from './pushProof.js';
 
 initializeApp();
 const db = getFirestore();
+
+// VAPID keys for the opt-in Web Push relay (pushDispatch). Generate once with
+// `npx web-push generate-vapid-keys` and set as Functions secrets (see docs/ops-cost-controls.md);
+// the PUBLIC key is also shipped to the wallet as VITE_VAPID_PUBLIC_KEY. Not in the login path.
+const VAPID_PUBLIC_KEY = defineSecret('VAPID_PUBLIC_KEY');
+const VAPID_PRIVATE_KEY = defineSecret('VAPID_PRIVATE_KEY');
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:security@kunji.cc';
 
 // Canonical JSON (sorted keys, no whitespace) — MUST match the client signer.
 const canonicalJson = (o) =>
@@ -382,5 +392,49 @@ export const credentialPoll = onRequest(
     const s = snap.data();
     if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired' });
     res.json({ issuerPubE: s.issuerPubE, encryptedCredential: s.encryptedCredential, issuer: s.issuer });
+  },
+);
+
+// ── Opt-in Web Push relay (push-relay.md Transport ②) ────────────────────────
+// A channel-less requester (headless agent / app with no UI to the user) pings the wallet to ask for
+// a step-up. The wallet registered `pushChannels/{channelId}` (an opaque per-app id) with its Web Push
+// subscription + the authorized poster's Ed25519 pubkey (`postKeyJwk`). The requester proves
+// holder-of-key with a `kunji-agentproof+jwt` over (aud=channelId, challenge=requestId), and the push
+// carries ONLY the opaque `requestId` (the agentRequestRelay code) — never the request contents. kunji
+// learns nothing about who/what the channel is; the request itself rides the existing encrypted relay.
+// Holder-of-key proof verification lives in ./pushProof.js (pure, unit-tested against buildAgentProof).
+export const pushDispatch = onRequest(
+  { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10, secrets: [VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY] },
+  async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+    // Validate shape BEFORE the limiter so malformed spam can't generate rate-limit writes.
+    const { channelId, requestId, proof } = req.body || {};
+    if (!HEX64_SESSION.test(channelId || '') || !CODE6.test(requestId || '') || typeof proof !== 'string')
+      return res.status(400).json({ error: 'bad_request' });
+    // Per-IP first (bounds anonymous spam), then prove holder-of-key, then per-channel (bounds a valid poster).
+    if (await rateLimited(req.ip, 20, 60 * 1000, 'push'))
+      return res.status(429).json({ error: 'rate_limited' });
+    const snap = await db.collection('pushChannels').doc(channelId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+    const ch = snap.data();
+    if (Date.now() > ch.expiresAt) return res.status(410).json({ error: 'expired' });
+    if (!verifyPostProof(proof, ch.postKeyJwk, channelId, requestId))
+      return res.status(401).json({ error: 'bad_proof' });
+    if (await rateLimited(channelId, 10, 60 * 1000, 'pushch'))
+      return res.status(429).json({ error: 'rate_limited' });
+    // The Web Push payload is the OPAQUE pointer only (web-push E2E-encrypts it to the subscription).
+    try {
+      webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY.value(), VAPID_PRIVATE_KEY.value());
+      await webpush.sendNotification(ch.pushSub, JSON.stringify({ requestId }));
+    } catch (e) {
+      // 404/410 = the subscription is gone (uninstalled/expired) — drop the channel so it stops being pinged.
+      if (e?.statusCode === 404 || e?.statusCode === 410) {
+        await db.collection('pushChannels').doc(channelId).delete().catch(() => {});
+        return res.status(410).json({ error: 'subscription_gone' });
+      }
+      return res.status(502).json({ error: 'push_failed' });
+    }
+    return res.json({ status: 'ok' });
   },
 );

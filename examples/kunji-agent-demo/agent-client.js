@@ -124,6 +124,31 @@ export const stepUp = async (audience, scope) => {
 };
 
 /**
+ * Step-up via the push relay (push-relay.md Transport ②): for a channel-less agent the user enabled
+ * notifications for. Deposit a step-up request (→ a 6-digit relay code = the opaque pointer), then ping
+ * the wallet's `channelId` via /push/dispatch with a holder-of-key proof. The wallet's notification
+ * fires; the user approves; the broader capability comes back over the return relay. `channelId` is the
+ * value the wallet showed at authorization. Then `awaitCapability(sessionId)` + `login` as usual.
+ */
+export const requestViaPush = async (channelId, audience, scope) => {
+  const req = await buildRequest(audience, scope); // stores the per-session transport key
+  const requestId = await postForCode(req); // the agent-request relay code = the push pointer
+  if (!requestId) throw new Error('could not deposit the step-up request');
+  const { secretKey } = loadAgentKey();
+  const proof = buildAgentProof(secretKey, { audience: channelId, challenge: requestId, capJti: channelId });
+  const resp = await fetch(`${KUNJI_APP_URL}/push/dispatch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channelId, requestId, proof }),
+  });
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error('push dispatch failed: ' + (e.error || resp.status));
+  }
+  return { requestId, sessionId: req.sessionId };
+};
+
+/**
  * Poll the relay ONCE for the wallet-deposited capability; returns the JWT string, or null if the
  * user hasn't approved yet (404/429). Throws on an expired authorization (410) or unknown session.
  * Decrypts with the per-session transport key (consumed on success).

@@ -78,6 +78,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Opt-in Web Push relay (push-relay.md Transport ②). The wallet (authed) registers/refreshes its
+    // own channel and may delete it to revoke — all gated by the high-entropy, master-key-derived
+    // `channelId` (256-bit, unguessable, like vaultId). NO client reads (the doc holds the push
+    // subscription + the authorized poster key); `pushDispatch` reads it via Admin. Holds no master key
+    // or plaintext. The doc is per-audience and opaque, so it reveals no app↔user link to kunji.
+    match /pushChannels/{channelId} {
+      allow create, update: if request.auth != null
+        && 'pushSub' in request.resource.data
+        && 'postKeyJwk' in request.resource.data
+        && 'expiresAt' in request.resource.data;
+      allow delete: if request.auth != null;
+      allow read: if false;
+    }
+
     // Agent authorization-request relay (OTP / QR). Fully function-mediated, both ways:
     // the unauthenticated agent POSTs its request via agentRequestRelay (Admin) and the wallet
     // GETs it by 6-digit code through the same function — neither touches the doc directly. The

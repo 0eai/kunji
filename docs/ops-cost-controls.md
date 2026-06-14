@@ -17,6 +17,7 @@ the (default 80) concurrency is the hard ceiling on simultaneous work; scale-to-
 | `agentRequestRelay` | `app` | 5 |
 | `credentialPoll` | `app` | 5 |
 | `credentialOfferRelay` | `app` | 5 |
+| `pushDispatch` | `app` | 5 |
 | demo `createSession` / `lookupSession` / `getSessionStatus` / `kunjiCallback` / `kunjiAgent` | demo codebases | 5 |
 
 To change a cap, edit the `onRequest({ …, maxInstances: N })` option and redeploy that function with
@@ -26,6 +27,27 @@ an explicit `--only` (see the `deploy` skill — never a bare `firebase deploy`)
 so malformed spam can't generate rate-limit writes. The agent relays are per-IP rate-limited the
 same way — `agentCapabilityPoll` at 60/min (a human-in-the-loop poll across the approval window) and
 `agentRequestRelay` at 20–30/min — and reject malformed input before the limiter.
+
+`pushDispatch` (the opt-in Web Push relay, push-relay.md Transport ②) validates the request shape
+**before** the limiter, then rate-limits **per-IP** (20/min) and, after proving holder-of-key against the
+channel's registered key, **per-channel** (10/min, keyed by `channelId`) — so neither anonymous spam nor a
+single authorized poster can flood a wallet with notifications. The Web Push payload is the opaque pointer
+only (`{requestId}`), E2E-encrypted by `web-push` to the subscription.
+
+## VAPID keys for the push relay (one-time, manual)
+
+`pushDispatch` signs Web Push with a VAPID keypair. Generate once and store as Functions secrets:
+
+```bash
+npx web-push generate-vapid-keys                      # prints a Public Key + Private Key
+firebase functions:secrets:set VAPID_PUBLIC_KEY        # paste the Public Key
+firebase functions:secrets:set VAPID_PRIVATE_KEY       # paste the Private Key
+# optionally pin the contact subject (defaults to mailto:security@kunji.cc):
+#   set VAPID_SUBJECT in the function env
+```
+
+Ship the **public** key to the wallet build as `VITE_VAPID_PUBLIC_KEY` (it's public — used by
+`pushManager.subscribe`). Rotating the private key invalidates existing subscriptions (wallets re-subscribe).
 
 ## 2. Cloud Billing budget + alert (project-wide backstop — manual, one-time)
 

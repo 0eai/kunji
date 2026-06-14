@@ -1,13 +1,14 @@
 # kunji step-up authorization & the opt-in push relay — design
 
-**Status:** **Transport ① (step-up) implemented**; **Transport ② (Web Push relay) proposed — not
-implemented.** This covers how an **already-connected** app or agent can later ask the user for
-**more scope** ([`scope.md`](./scope.md)) or a **verified credential**
-([`verified-credentials.md`](./verified-credentials.md)), and how the kunji wallet notifies the user
-to approve — **without** kunji becoming a user directory. The default, shipped path (Transport ①, §4)
-uses **no new kunji infrastructure**: the RP nudges the user through its own channel and deep-links
-the wallet, which returns the result over the existing encrypted relay. The **push relay (②, §5) is
-opt-in and only for the case where the RP has no channel of its own to the user**.
+**Status:** **Both transports implemented.** Transport ① (step-up via the RP's own channel + a deep
+link, no new infra) and Transport ② (the **opt-in Web Push relay** for channel-less requesters). This
+covers how an **already-connected** app or agent can later ask the user for **more scope**
+([`scope.md`](./scope.md)) or a **verified credential** ([`verified-credentials.md`](./verified-credentials.md)),
+and how the kunji wallet notifies the user to approve — **without** kunji becoming a user directory.
+The default path (Transport ①, §4) uses **no new kunji infrastructure**. The **push relay (②, §5) is
+opt-in and only for the case where the RP has no channel of its own to the user** — it adds a service
+worker + Web Push + a `pushChannels` collection + the `pushDispatch` Function, the deliberate new
+surface §7 weighs (now accepted, gated behind the user's per-app notification opt-in).
 
 ## 1. The problem
 
@@ -74,26 +75,39 @@ agent ──▶ retries with the broader capability ──▶ 200
   request relay (`agentRequestRelay`) and decrypted client-side.
 - Use this whenever the app has *any* contact with the user — which is most apps.
 
-## 5. Transport ② — the opt-in kunji push relay (only when ① is impossible)
+## 5. Transport ② — the opt-in kunji push relay (only when ① is impossible) — **implemented**
 
-For a **headless agent** or an app with **no channel of its own to the user**, kunji can run a thin
+For a **headless agent** or an app with **no channel of its own to the user**, kunji runs a thin
 **push relay** keyed by the opaque `channelId` from §3. This is a **deliberate, consented
 relaxation** — the same shape as the agent capability relay kunji already runs, but **persistent +
 push-capable**.
 
+**Shipped pieces.** `deriveChannelId(masterKey, audience)` (`src/lib/crypto`); the service worker
+(`public/sw.js` + `public/sw-init.js`); `src/services/push.js` `enablePushForAudience`/`revokePushForAudience`
+(opt-in toggle in `AuthorizeAgentSheet`, default off); the `pushChannels` collection + `firestore.rules`
+block; the `pushDispatch` Cloud Function (`functions/index.js`, holder-of-key via `functions/pushProof.js`,
+per-IP + per-channel rate-limited, `web-push` + a VAPID secret); the `?push=`/SW-postMessage receive path
+(`src/App.jsx` + `Dashboard`) → the existing re-consent; and the requester side
+(`examples/kunji-agent-demo` `requestViaPush`). The return hop is the **unchanged**
+`agentRequestRelay`(request) + `agentSessions`/`agentCapabilityPoll`(return). VAPID setup: see
+[`ops-cost-controls.md`](./ops-cost-controls.md).
+
 ### 5.1 Registration (at first consent, with the user's permission)
 
-The wallet adds a service worker + Web Push (VAPID), requests the OS notification permission, and
-registers its push subscription **against the per-app `channelId`** in a kunji relay:
+When the user opts in (the "notify me" toggle while authorizing an agent), the wallet requests the OS
+notification permission, subscribes to Web Push (the SW registered at load), derives the per-app
+`channelId`, and writes its subscription + the authorized poster key:
 
 ```
 pushChannels/{channelId} = {
-  pushSub: <ciphertext or opaque endpoint+keys>,   // the Web Push subscription
-  postKeyJwk: <OKP jwk>,                            // who may post (holder-of-key)
-  ecdhPubE:  <wallet ECDH pub for encrypted payload return, like agentSessions>,
-  expiresAt, ttl
+  pushSub:    <the Web Push subscription — web-push E2E-encrypts the payload to it>,
+  postKeyJwk: <OKP jwk>,   // who may post (holder-of-key) — the agent's Ed25519 pubkey
+  expiresAt, ttl           // 30-day TTL; the requester re-subscribes after expiry
 }
 ```
+
+(The return is per-session at approval time via `agentSessions`, so no per-channel ECDH pub is stored.)
+The wallet writes this directly (authed, gated by the unguessable `channelId`, like `agentSessions`).
 
 ### 5.2 Request → push → approve → deliver
 
@@ -179,10 +193,12 @@ metadata-bearing state that kunji otherwise doesn't keep.
 1. **Step-up via ① — implemented.** `insufficient_scope` → re-request → deep link
    (`?authorize=`/`?approve=`) → delta-aware re-consent sheet → existing return relay. Built on the
    scope engine + VC presentation; **no new kunji infra** (no new Function, rule, or rewrite).
-2. **Push relay ② — proposed, not implemented.** Service worker + Web Push in the wallet,
-   `pushChannels` + `pushDispatch`, opt-in registration, cost-controls entry. Gate behind a clear
-   product decision (the new persistent state + client attack surface in §7 is the reason ① is
-   preferred).
+2. **Push relay ② — implemented (opt-in).** Service worker + Web Push in the wallet, `pushChannels` +
+   `pushDispatch` (holder-of-key + per-IP/per-channel rate limit + `web-push`/VAPID), the default-off
+   notification opt-in, and a cost-controls entry. The new persistent state + client attack surface in §7
+   is why ② is gated behind the user's explicit per-app opt-in and ① stays the default. The dispatch
+   authorizes on the **registered `postKeyJwk` (holder-of-key)** — a kunji-cap+jwt with a `channel:post`
+   scope (§12) was considered but the direct postKeyJwk model is simpler and equally sound.
 
 ## 12. Open decisions
 

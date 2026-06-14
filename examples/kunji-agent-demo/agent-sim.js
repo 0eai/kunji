@@ -16,7 +16,16 @@
 // Point at another host with BASE (e.g. BASE="http://192.168.1.5:3000" node agent-sim.js); the
 // capability's audience is that host's hostname. Offline/relay-down fallback (paste a capability):
 //     CAP="<capability JWT>" BASE="http://localhost:3000" node agent-sim.js
-import { buildRequest, postForCode, terminalQr, awaitCapability, login, agentPubB64, stepUp } from './agent-client.js';
+import {
+  buildRequest,
+  postForCode,
+  terminalQr,
+  awaitCapability,
+  login,
+  agentPubB64,
+  stepUp,
+  requestViaPush,
+} from './agent-client.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const audience = new URL(BASE).hostname;
@@ -46,6 +55,25 @@ const runStepUp = async (need) => {
   console.log('session    →', r.status); // now includes read:profile
   return callScoped(r.sessionId);
 };
+
+// Push-relay path (Transport ②): the agent is channel-less and the user enabled notifications for it,
+// giving it a CHANNEL id at authorization. `CHANNEL=<id> node agent-sim.js --push` pings the wallet via
+// the push relay; the user's notification fires, they approve, and the capability returns over the relay.
+if (process.argv.includes('--push')) {
+  const channelId = process.env.CHANNEL;
+  if (!channelId) {
+    console.error('Set CHANNEL=<channelId the wallet showed when you enabled notifications>.');
+    process.exit(1);
+  }
+  console.log('Pinging the wallet via the push relay (it should show a notification)…\n');
+  const { sessionId } = await requestViaPush(channelId, audience, scope);
+  console.log('✓ dispatched — waiting for the user to approve the notification…  (Ctrl-C to cancel)\n');
+  const capability = await awaitCapability(sessionId);
+  console.log('✓ capability received over the relay\n');
+  const r = await login(BASE, capability);
+  console.log('session    →', r.status);
+  process.exit(r.status?.status === 'approved' ? 0 : 1);
+}
 
 // Fallback path: a capability pasted in via CAP= (skips the relay entirely, so no step-up).
 const CAP = process.env.CAP;

@@ -32,8 +32,11 @@ function readIncomingLinks() {
   // The OpenID4VP request is a URI (not JSON); URLSearchParams decodes the single `vp` value for us.
   const vpRaw = new URLSearchParams(window.location.search).get('vp');
   const vp = vpRaw && vpRaw.startsWith('openid4vp://') ? vpRaw : null;
-  if (approve || authorize || vp) history.replaceState(null, '', window.location.pathname);
-  return { approve, authorize, vp };
+  // A Web Push notification opens app.kunji.cc/?push=<requestId> (the agent-request relay code).
+  const pushRaw = new URLSearchParams(window.location.search).get('push');
+  const push = pushRaw && /^\d{6}$/.test(pushRaw) ? pushRaw : null;
+  if (approve || authorize || vp || push) history.replaceState(null, '', window.location.pathname);
+  return { approve, authorize, vp, push };
 }
 
 export default function App() {
@@ -166,6 +169,7 @@ export default function App() {
       incomingApproval={incoming.approve}
       incomingAuthorize={incoming.authorize}
       incomingPresentation={incoming.vp}
+      incomingPush={incoming.push}
       onLock={() => {
         logActivity(user.uid, 'Vault Locked', 'info', 'Lock', cryptoKey);
         lockVault();
