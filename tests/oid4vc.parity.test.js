@@ -10,12 +10,19 @@ import {
   buildVpToken as libBuildVp,
   verifyVpToken as libVerifyVp,
   buildPresentationDefinition,
+  buildDcqlQuery,
+  buildVpResponse as libBuildVpResponse,
+  buildSignedAuthorizationRequest as libBuildSignedReq,
+  verifyRequestObject as libVerifyReq,
 } from '../src/lib/oid4vc.js';
 import {
   buildProofJwt as nodeBuildProof,
   verifyProofJwt as nodeVerifyProof,
   buildVpToken as nodeBuildVp,
   verifyVpToken as nodeVerifyVp,
+  buildVpResponse as nodeBuildVpResponse,
+  buildSignedAuthorizationRequest as nodeBuildSignedReq,
+  verifyRequestObject as nodeVerifyReq,
 } from '../examples/kunji-node-demo/oid4vc.js';
 import { mintCredential as nodeMint } from '../examples/kunji-node-demo/vc.js';
 import { generateEd25519KeyPair } from '../src/lib/crypto/index.js';
@@ -62,6 +69,27 @@ describe('OpenID4VC parity (wallet lib ↔ demo Node port)', () => {
     const vpToken = await libBuildVp({ sdjwt, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
     const r = await nodeVerifyVp({ vpToken, presentationDefinition: pd, getIssuerKeys, clientId: CLIENT, nonce: NONCE });
     expect(r).toMatchObject({ ok: true, iss: ISS, vct: 'age', claims: { age_over_18: true } });
+  });
+
+  it('signed request: lib signs → Node verifies, and the reverse', async () => {
+    const v = generateEd25519KeyPair();
+    const getVerifierKeys = async () => [{ ...okpJwk(v.publicKey), kid: 'vk' }];
+    const params = { client_id: 'https://v.example', response_type: 'vp_token', response_uri: 'https://v.example/r', nonce: NONCE, state: 's' };
+    const libJwt = libBuildSignedReq(v.secretKey, { kid: 'vk', params });
+    expect((await nodeVerifyReq({ requestJwt: libJwt, getVerifierKeys, clientId: 'https://v.example' })).ok).toBe(true);
+    const nodeJwt = nodeBuildSignedReq(v.secretKey, { kid: 'vk', params });
+    expect((await libVerifyReq({ requestJwt: nodeJwt, getVerifierKeys, clientId: 'https://v.example' })).ok).toBe(true);
+  });
+
+  it('DCQL: Node builds the keyed response → lib verifies (and reverse)', async () => {
+    const { holder, sdjwt, getIssuerKeys } = ctx();
+    const dcqlQuery = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] });
+    const request = { dcqlQuery, clientId: CLIENT, nonce: NONCE, state: 's' };
+    const present = await libBuildVp({ sdjwt, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
+    const nodeBody = nodeBuildVpResponse({ request, presentation: present });
+    expect(await libVerifyVp({ vpToken: nodeBody.vp_token, dcqlQuery, getIssuerKeys, clientId: CLIENT, nonce: NONCE })).toMatchObject({ ok: true, claims: { age_over_18: true } });
+    const libBody = libBuildVpResponse({ request, presentation: present });
+    expect(await nodeVerifyVp({ vpToken: libBody.vp_token, dcqlQuery, getIssuerKeys, clientId: CLIENT, nonce: NONCE })).toMatchObject({ ok: true, claims: { age_over_18: true } });
   });
 
   it('the demo oid4vc.js copies are byte-identical', () => {

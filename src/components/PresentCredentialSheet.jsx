@@ -18,7 +18,7 @@ const issuerHost = (iss) => {
 // caveat, and on approve the wallet builds a vp_token and direct_posts it. Mirrors ApprovalModal's
 // verified-credential consent section. `request` = parseAuthorizationRequest(...), `matches` =
 // matchCredentialsByScope(...) → [{ cred, disclose }].
-const PresentCredentialSheet = ({ request, query, matches, masterKey, onClose }) => {
+const PresentCredentialSheet = ({ request, query, matches, verified, masterKey, onClose }) => {
   const { showToast } = useToast();
   const [chosen, setChosen] = useState(null); // credId to present (default-deny: nothing selected)
   const [busy, setBusy] = useState(false);
@@ -66,9 +66,15 @@ const PresentCredentialSheet = ({ request, query, matches, masterKey, onClose })
             <span className="font-mono text-ink">{request.clientId || 'A verifier'}</span> wants you to prove{' '}
             <span className="font-mono text-ink">{(query.disclose || []).join(', ') || query.vct}</span>.
           </p>
-          <p className="text-[12px] text-faint leading-relaxed mb-4">
-            kunji can't verify who this is — only present to verifiers you trust.
-          </p>
+          {verified ? (
+            <p className="text-[12px] text-success leading-relaxed mb-4 flex items-center gap-1">
+              <CheckCircle2 size={13} className="shrink-0" /> Verified verifier — it proved control of this domain.
+            </p>
+          ) : (
+            <p className="text-[12px] text-faint leading-relaxed mb-4">
+              kunji can't verify who this is — only present to verifiers you trust.
+            </p>
+          )}
 
           {matches.length === 0 ? (
             <p className="text-[13px] text-faint leading-relaxed mb-6">

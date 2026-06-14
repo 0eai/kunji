@@ -120,7 +120,10 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   and the headless holder `kunji-node-demo/oid4vc-sim.js` (`npm run oid4vc`). **Wallet UI**:
   `src/services/credentials.js` `receiveViaOffer`/`presentViaOid4vp`, an offer entry in
   `CredentialsSheet.jsx`, and `PresentCredentialSheet.jsx` (opened from `Dashboard.handleQRScan` on an
-  `openid4vp://` scan or the `?vp=` deep link in `src/App.jsx`). See `docs/oid4vc.md`.
+  `openid4vp://` scan or the `?vp=` deep link in `src/App.jsx`). **Verifier auth + DCQL**: OpenID4VP
+  signed request objects verified against the verifier's `.well-known/kunji-verifier.json`
+  (`buildSignedAuthorizationRequest`/`verifyRequestObject`, the HTTPS-anchored `client_id` scheme;
+  `fetchVerifierKeys`) + DCQL queries (`buildDcqlQuery`/`requestQuery`/`buildVpResponse`). See `docs/oid4vc.md`.
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 

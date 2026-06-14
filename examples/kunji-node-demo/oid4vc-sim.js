@@ -3,28 +3,31 @@
 //
 //   OpenID4VCI (issuance): credential offer → token (pre-authorized_code) → credential request with a
 //                          holder proof JWT → an SD-JWT VC.
-//   OpenID4VP (presentation): authorization request (presentation_definition) → vp_token → direct_post
-//                          → the verifier approves with the verified claim.
+//   OpenID4VP (presentation): a SIGNED authorization request (verified against the verifier's published
+//                          key) carrying a DCQL query → vp_token → direct_post → approved. Also checks a
+//                          forged request is rejected. `--legacy` exercises the unsigned + presentation_definition path.
 //
 // Run both demos first, then this:
 //     (cd ../kunji-issuer-demo && PORT=4000 node server.js)   # the issuer
 //     node server.js                                          # this RP/verifier (port 3000)
 //     node oid4vc-sim.js                                      # the holder
-// Override hosts: ISSUER=http://… BASE=http://… node oid4vc-sim.js   ·   add --revoke to test rejection.
+// Override hosts: ISSUER=http://… BASE=http://… node oid4vc-sim.js   ·   --revoke / --legacy flags.
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { parseSdJwt } from './vc.js';
 import {
   parseCredentialOffer,
   buildProofJwt,
   parseAuthorizationRequest,
-  pdToVcQuery,
+  verifyRequestObject,
+  requestQuery,
   buildVpToken,
-  buildPresentationSubmission,
+  buildVpResponse,
 } from './oid4vc.js';
 
 const ISSUER = (process.env.ISSUER || 'http://localhost:4000').replace(/\/$/, '');
 const BASE = (process.env.BASE || 'http://localhost:3000').replace(/\/$/, '');
 const wantRevoke = process.argv.includes('--revoke');
+const legacy = process.argv.includes('--legacy'); // unsigned request + presentation_definition
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
 
 const getJson = async (u, init) => {
@@ -83,26 +86,35 @@ if (wantRevoke) {
   console.log('  ! revoked          status idx', idx, '(expecting the presentation to be rejected)');
 }
 
-// ── 2. OpenID4VP: request → vp_token → direct_post → result ──────────────────
-console.log('\n② OpenID4VP presentation');
-const reqResp = await getJson(`${BASE}/oid4vp/request`);
+// ── 2. OpenID4VP: (verify signed request →) present → direct_post → result ───────
+console.log(`\n② OpenID4VP presentation (${legacy ? 'unsigned + presentation_definition' : 'signed request + DCQL'})`);
+const reqUrl = legacy ? `${BASE}/oid4vp/request?signed=0&query=pd` : `${BASE}/oid4vp/request`;
+const reqResp = await getJson(reqUrl);
 if (reqResp.status !== 200) fail('oid4vp/request failed', reqResp);
 const ar = parseAuthorizationRequest(reqResp.body.requestUri);
-const q = pdToVcQuery(ar.presentationDefinition);
-console.log('  • request          client_id =', ar.clientId, '· asks vct =', q.vct, '· disclose =', q.disclose.join(','));
 
-const vpToken = await buildVpToken({
-  sdjwt,
-  disclose: q.disclose,
-  clientId: ar.clientId,
-  nonce: ar.nonce,
-  holderSecretKey,
-});
-const presentationSubmission = buildPresentationSubmission(ar.presentationDefinition);
+// Verifier authentication: a signed request must verify against the verifier's published key.
+const getVerifierKeys = async (clientId) => (await getJson(`${clientId}/.well-known/kunji-verifier.json`)).body.keys || [];
+if (ar.signed) {
+  const vr = await verifyRequestObject({ requestJwt: ar.requestJwt, getVerifierKeys, clientId: ar.clientId });
+  if (!vr.ok) fail('signed request did not verify', vr);
+  console.log('  ✓ request verified  signed by', ar.clientId, '(via its .well-known key)');
+  // Forgery check: tamper the JWS signature → must NOT verify.
+  const forged = ar.requestJwt.slice(0, -1) + (ar.requestJwt.endsWith('A') ? 'B' : 'A');
+  const fr = await verifyRequestObject({ requestJwt: forged, getVerifierKeys, clientId: ar.clientId });
+  if (fr.ok) fail('a forged request unexpectedly verified');
+  console.log('  ✓ forgery rejected  tampered request →', fr.error);
+} else {
+  console.log('  • request unsigned  (verifier identity unverified)');
+}
+
+const q = requestQuery(ar);
+console.log('  • asks             client_id =', ar.clientId, '· vct =', q.vct, '· disclose =', q.disclose.join(','), '· query =', q.kind);
+const vpToken = await buildVpToken({ sdjwt, disclose: q.disclose, clientId: ar.clientId, nonce: ar.nonce, holderSecretKey });
 const respResp = await getJson(ar.responseUri, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ vp_token: vpToken, presentation_submission: presentationSubmission, state: reqResp.body.state }),
+  body: JSON.stringify(buildVpResponse({ request: ar, presentation: vpToken })),
 });
 
 if (wantRevoke) {

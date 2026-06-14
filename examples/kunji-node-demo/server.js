@@ -21,12 +21,18 @@
 import { createServer as httpServer } from 'node:http';
 import { createServer as httpsServer } from 'node:https';
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { verifyAssertion } from './verify.js';
 import { verifyCredentialPresentation, parseVcScope } from './vc.js';
-import { buildPresentationDefinition, verifyVpToken } from './oid4vc.js';
+import {
+  buildPresentationDefinition,
+  buildDcqlQuery,
+  buildSignedAuthorizationRequest,
+  verifyVpToken,
+} from './oid4vc.js';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
@@ -50,6 +56,27 @@ const sweep = () => {
 // The single credential this verifier asks for over OpenID4VP (an age proof). Reuses the same
 // SD-JWT VC + KB-JWT as the login path — only the request/response envelope differs.
 const VP_QUERY = { vct: 'age', disclose: ['age_over_18'] };
+
+// The verifier's request-signing key — published at /.well-known/kunji-verifier.json so a wallet can
+// verify a signed authorization request (the HTTPS-anchored client_id scheme; mirrors the issuer key).
+// Persisted to .verifier-key (git-ignored), like the issuer demo's .issuer-key. See docs/oid4vc.md.
+const VKEYFILE = new URL('./.verifier-key', import.meta.url);
+const VERIFIER_KID = 'verifier-key-1';
+const loadVerifierKey = () => {
+  let sk;
+  if (existsSync(VKEYFILE)) {
+    sk = new Uint8Array(Buffer.from(readFileSync(VKEYFILE, 'utf8').trim(), 'base64'));
+  } else {
+    ({ secretKey: sk } = ed25519.keygen());
+    writeFileSync(VKEYFILE, Buffer.from(sk).toString('base64'));
+  }
+  return { secretKey: sk, publicKey: ed25519.getPublicKey(sk) };
+};
+const verifierWellKnown = (clientId) => ({
+  client_id: clientId,
+  name: 'kunji node demo (verifier)',
+  keys: [{ kid: VERIFIER_KID, kty: 'OKP', crv: 'Ed25519', x: Buffer.from(loadVerifierKey().publicKey).toString('base64url') }],
+});
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -210,36 +237,60 @@ const handler = async (req, res) => {
   // Verified locally with the SAME verifyCredentialPresentation; the wallet talks to us directly, no
   // kunji server. See docs/oid4vc.md. ──────────────────────────────────────────────────────────────
   //
-  // 3a. Build an authorization request (direct_post): a presentation_definition for an age VC.
+  // 3z. The verifier's signing key (HTTPS-anchored client_id scheme) — the wallet fetches this to
+  // verify a signed authorization request, proving this verifier controls its origin.
+  if (req.method === 'GET' && path === '/.well-known/kunji-verifier.json') {
+    const base = originOf(req).callbackUrl.replace(/\/kunji\/callback$/, '');
+    return json(res, 200, verifierWellKnown(base));
+  }
+
+  // 3a. Build an authorization request (direct_post) for an age VC. Defaults to a SIGNED request (JAR)
+  // carrying a DCQL query; `?signed=0` emits the unsigned query-param form and `?query=pd` uses a
+  // presentation_definition instead of DCQL (so both interop paths stay exercisable).
   if (req.method === 'GET' && path === '/oid4vp/request') {
     sweep();
-    const { audience, callbackUrl } = originOf(req);
+    const { callbackUrl } = originOf(req);
     const base = callbackUrl.replace(/\/kunji\/callback$/, '');
     const state = token(16);
     const nonce = token(24);
-    const clientId = audience; // the KB-JWT `aud` the holder must bind to
-    const presentationDefinition = buildPresentationDefinition(VP_QUERY);
+    const clientId = base; // the verifier's origin (HTTPS-anchored client_id) — also the KB-JWT `aud`
+    const usePd = url.searchParams.get('query') === 'pd';
+    const signed = url.searchParams.get('signed') !== '0';
+    const presentationDefinition = usePd ? buildPresentationDefinition(VP_QUERY) : undefined;
+    const dcqlQuery = usePd ? undefined : buildDcqlQuery({ id: 'age_cred', ...VP_QUERY });
     vpRequests.set(state, {
       nonce,
       clientId,
       presentationDefinition,
+      dcqlQuery,
       approved: null,
       claims: null,
       expiresAt: Date.now() + SESSION_TTL_MS,
     });
-    const params = new URLSearchParams({
+    const params = {
       response_type: 'vp_token',
       client_id: clientId,
       response_mode: 'direct_post',
       response_uri: `${base}/oid4vp/response`,
       nonce,
       state,
-      presentation_definition: JSON.stringify(presentationDefinition),
-    });
-    return json(res, 200, { state, requestUri: `openid4vp://?${params.toString()}` });
+      ...(usePd ? { presentation_definition: presentationDefinition } : { dcql_query: dcqlQuery }),
+    };
+    let requestUri;
+    if (signed) {
+      const requestJwt = buildSignedAuthorizationRequest(loadVerifierKey().secretKey, { kid: VERIFIER_KID, params });
+      requestUri = `openid4vp://?${new URLSearchParams({ client_id: clientId, request: requestJwt }).toString()}`;
+    } else {
+      const q = { ...params };
+      if (q.presentation_definition) q.presentation_definition = JSON.stringify(q.presentation_definition);
+      if (q.dcql_query) q.dcql_query = JSON.stringify(q.dcql_query);
+      requestUri = `openid4vp://?${new URLSearchParams(q).toString()}`;
+    }
+    return json(res, 200, { state, requestUri });
   }
 
-  // 3b. direct_post: the wallet posts { vp_token, presentation_submission, state }. Verify locally.
+  // 3b. direct_post: the wallet posts { vp_token, presentation_submission?, state }. The vp_token is a
+  // bare SD-JWT string (presentation_definition) or an object keyed by the DCQL credential id. Verify locally.
   if (req.method === 'POST' && path === '/oid4vp/response') {
     const body = await readBody(req);
     const r = body?.state && vpRequests.get(body.state);
@@ -248,6 +299,7 @@ const handler = async (req, res) => {
     const vr = await verifyVpToken({
       vpToken: body.vp_token,
       presentationDefinition: r.presentationDefinition,
+      dcqlQuery: r.dcqlQuery,
       getIssuerKeys: fetchIssuerKeys,
       checkStatus: fetchStatus,
       clientId: r.clientId,

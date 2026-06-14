@@ -29,9 +29,10 @@ holder-of-key, per-issuer separation, and unlinkability are exactly as in the na
 | per-issuer holder key (`deriveCredentialHolderKey(masterKey, iss)`) | proof JWT `jwk` **=** credential `cnf.jwk` **=** KB-JWT signer |
 | issuer origin (`iss`, the `.well-known` trust anchor) | `credential_issuer` (VCI) / proof+KB `aud` is the issuer/verifier respectively |
 | `buildPresentation({audience,nonce})` | the `vp_token`; `aud` = VP `client_id`, `nonce` = VP request `nonce` |
-| `vc:<vct>[@iss]#claim,…` scope ([`scope.md`](./scope.md)) | a `presentation_definition` input_descriptor (`$.vct` const + claim `path`s) — `pdToVcQuery` is the inverse |
+| `vc:<vct>[@iss]#claim,…` scope ([`scope.md`](./scope.md)) | a `presentation_definition` input_descriptor **or** a `dcql_query` (`pdToVcQuery`/`dcqlToVcQuery`/`requestQuery` map either → `{vct,disclose}`) |
+| issuer `.well-known/kunji-issuer.json` (key by origin) | verifier `.well-known/kunji-verifier.json` — the HTTPS-anchored `client_id` scheme for signed requests (`verifyRequestObject`) |
 | StatusList `status:{uri,idx}` + `checkStatus` | unchanged — the verifier polls the issuer's status endpoint |
-| `verifyCredentialPresentation` | `verifyVpToken` wraps it, then enforces the PD constraints (vct + each requested claim `=== true`) |
+| `verifyCredentialPresentation` | `verifyVpToken` wraps it, then enforces the query constraints (vct + each requested claim `=== true`) |
 
 ## 3. OpenID4VCI (issuance) — pre-authorized_code
 
@@ -47,25 +48,40 @@ The proof JWT: header `{typ:'openid4vci-proof+jwt',alg:'EdDSA',jwk:<holder OKP>}
 Issuer metadata is served at `/.well-known/openid-credential-issuer` (+ `/.well-known/oauth-authorization-server`
 for the token endpoint). Lib: `parseCredentialOffer`, `buildProofJwt`, `verifyProofJwt`.
 
-## 4. OpenID4VP (presentation) — direct_post + presentation_definition
+## 4. OpenID4VP (presentation) — direct_post, signed requests + DCQL
 
 ```
-verifier ──GET /oid4vp/request──▶ openid4vp://?response_type=vp_token&client_id=…&response_mode=direct_post&response_uri=…&nonce=…&presentation_definition=<JSON>&state=…
-holder   builds vp_token = buildPresentation(sdjwt, disclose, aud=client_id, nonce) ; presentation_submission
-holder   ──POST {response_uri}  { vp_token, presentation_submission, state }──▶ verified locally → { approved, claims }
+verifier ──GET /oid4vp/request──▶ openid4vp://?client_id=<origin>&request=<signed JWS>   (or the unsigned query-param form)
+holder   verifies the request JWS against {client_id}/.well-known/kunji-verifier.json  (verifier authentication)
+holder   builds vp_token = buildPresentation(sdjwt, disclose, aud=client_id, nonce)
+holder   ──POST {response_uri}  { vp_token, [presentation_submission], state }──▶ verified locally → { approved, claims }
 ```
 
-Lib: `parseAuthorizationRequest`, `pdToVcQuery`, `buildVpToken`, `buildPresentationSubmission`,
-`verifyVpToken`. The verifier resolves issuer keys from the credential's own `.well-known` — **no kunji
-server in the path** — and checks the KB-JWT `aud`/`nonce` against the request, exactly like the login path.
+- **Signed requests (verifier authentication).** The request can be a **signed JWS** (JAR, request-by-value):
+  header `{alg:'EdDSA',typ:'oauth-authz-req+jwt',kid}`, payload = the authz params. The verifier publishes
+  its signing key at **`https://<client_id>/.well-known/kunji-verifier.json`** (the kunji HTTPS-anchored
+  `client_id` scheme — `client_id` is the verifier's origin, mirroring the issuer-key model). The wallet
+  fetches that key and verifies (`verifyRequestObject`), so the shown verifier is **cryptographically
+  proven** to control its origin. An **unsigned** request still works but is shown as unverified and stays
+  bound to its claimed `client_id` host (the S20 `responseTargetTrusted` check).
+- **DCQL.** The request carries either a `presentation_definition` or a **`dcql_query`** (OpenID4VP 1.0).
+  The DCQL response is a `vp_token` **object keyed by the credential id** (no `presentation_submission`);
+  the PD response is the bare `vp_token` + a submission. `requestQuery`/`buildVpResponse` handle both.
+- Lib: `parseAuthorizationRequest` (sets `signed`/`requestJwt`, parses either query form),
+  `buildSignedAuthorizationRequest`, `verifyRequestObject`, `buildDcqlQuery`/`dcqlToVcQuery`/`requestQuery`,
+  `buildVpToken`, `buildVpResponse`, `verifyVpToken`. The verifier resolves **issuer** keys from the
+  credential's own `.well-known` and the **request** key from the *verifier's* `.well-known` — **no kunji
+  server in the path**; KB-JWT `aud`/`nonce` are checked against the request, exactly like the login path.
 
 ## 5. Scope & pinned shapes
 
-Implemented: the **pre-authorized_code** grant (VCI), **direct_post** + **presentation_definition** (VP),
+Implemented: the **pre-authorized_code** grant (VCI); **direct_post** (VP) with **both**
+`presentation_definition` and **DCQL**, and **both** unsigned and **signed (JAR)** requests — a signed
+request is verified against the verifier's `.well-known` key (the **HTTPS-anchored `client_id` scheme**);
 SD-JWT VC only, EdDSA. Deferred (documented, not built): the `authorization_code` grant + PKCE, DPoP,
-signed/encrypted request objects and `request_uri`/`client_id` scheme prefixes, DCQL (the
-presentation_definition successor), and the in-flight `vc+sd-jwt` → `dc+sd-jwt` format rename (kept as the
-`SD_JWT_VC_FORMAT` knob in `oid4vc.js`). These are envelope-only extensions — none touches the SD-JWT VC core.
+`request_uri` by-reference, **x509/DID `client_id` schemes**, encrypted requests, and the in-flight
+`vc+sd-jwt` → `dc+sd-jwt` format rename (kept as the `SD_JWT_VC_FORMAT` knob in `oid4vc.js`). These are
+envelope-only extensions — none touches the SD-JWT VC core.
 
 ## 6. Where it lives
 
@@ -73,11 +89,16 @@ presentation_definition successor), and the in-flight `vc+sd-jwt` → `dc+sd-jwt
   byte-identical Node port in `examples/kunji-node-demo/oid4vc.js` + `examples/kunji-issuer-demo/oid4vc.js`
   (parity-guarded by `tests/oid4vc.parity.test.js`, like `vc.js`).
 - Issuer: `examples/kunji-issuer-demo/oid4vci.js` (offer/token/credential store) + the routes in its `server.js`.
-- Verifier: the `/oid4vp/{request,response,result}` routes in `examples/kunji-node-demo/server.js`.
-- Holder sim: `examples/kunji-node-demo/oid4vc-sim.js` (`npm run oid4vc`) — offer→token→credential, then
-  request→vp_token→direct_post, end-to-end.
-- **Wallet:** `src/services/credentials.js` `receiveViaOffer` (OpenID4VCI redeem → store) and
-  `presentViaOid4vp` (vp_token + direct_post); `CredentialsSheet.jsx` accepts an offer (paste/scan);
-  `PresentCredentialSheet.jsx` is the consent sheet (default-deny + linkability caveat), opened from
-  `Dashboard.handleQRScan` on an `openid4vp://` scan or the `?vp=` deep link (`src/App.jsx`).
+- Verifier: the `/oid4vp/{request,response,result}` routes + `GET /.well-known/kunji-verifier.json` and the
+  persisted `.verifier-key` (request signing) in `examples/kunji-node-demo/server.js`. `/oid4vp/request`
+  emits a signed request + DCQL by default (`?signed=0`, `?query=pd` toggle the legacy/interop matrix).
+- Holder sim: `examples/kunji-node-demo/oid4vc-sim.js` (`npm run oid4vc`) — offer→token→credential, then a
+  signed+DCQL request (verified, forgery-rejected) → vp_token → direct_post; `--legacy` runs unsigned+PD.
+- **Wallet:** `src/services/credentials.js` `receiveViaOffer` (OpenID4VCI redeem → store), `presentViaOid4vp`
+  (`buildVpResponse` — DCQL keyed vs PD), and `fetchVerifierKeys` (the verifier's `.well-known`);
+  `CredentialsSheet.jsx` accepts an offer (paste/scan); `PresentCredentialSheet.jsx` is the consent sheet
+  (default-deny + linkability caveat + a **"Verified verifier"** badge when the request signature checks
+  out), opened from `Dashboard.handleQRScan` (which calls `verifyRequestObject` on a signed request) on an
+  `openid4vp://` scan or the `?vp=` deep link (`src/App.jsx`). This **closes the S20 "verifier identity
+  unverified" caveat** for signed requests; unsigned requests stay host-bound + flagged.
 - The kunji-native `POST /issue` and the login-QR `vc_presentations` paths are **unchanged** (interop is additive).

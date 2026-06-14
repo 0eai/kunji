@@ -23,7 +23,7 @@ import {
   parseCredentialOffer,
   buildProofJwt,
   buildVpToken,
-  buildPresentationSubmission,
+  buildVpResponse,
 } from '../lib/oid4vc';
 
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
@@ -226,6 +226,19 @@ export const responseTargetTrusted = (clientId, responseUri) => {
 };
 
 /**
+ * Resolve a verifier's request-signing keys from its own `.well-known/kunji-verifier.json` — the
+ * HTTPS-anchored client_id scheme (mirrors `fetchIssuerKeys`). `clientId` is the verifier's origin
+ * (https except loopback dev). Used to verify a signed OpenID4VP request. [verifier authentication]
+ */
+export const fetchVerifierKeys = async (clientId) => {
+  const u = httpsOrLoopback(clientId);
+  if (!u) throw new Error('verifier_origin_invalid');
+  const resp = await fetch(`${u.origin}/.well-known/kunji-verifier.json`);
+  if (!resp.ok) throw new Error('verifier_unreachable');
+  return (await resp.json()).keys || [];
+};
+
+/**
  * Receive a credential via an OpenID4VCI credential offer (pre-authorized_code grant): parse the offer,
  * exchange the pre-auth code for an access token + c_nonce, then request the credential with a holder
  * proof JWT (its `jwk` becomes the credential's `cnf.jwk`). Same holder-binding + issuer-origin guard as
@@ -297,13 +310,14 @@ export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) =
     nonce: request.nonce,
     holderSecretKey: secretKey,
   });
-  const presentationSubmission = buildPresentationSubmission(request.presentationDefinition);
+  // The direct_post body differs by query form (DCQL → vp_token keyed by id; PD → vp_token + submission).
+  const responseBody = buildVpResponse({ request, presentation: vpToken });
   let resp;
   try {
     resp = await fetch(request.responseUri, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vp_token: vpToken, presentation_submission: presentationSubmission, state: request.state }),
+      body: JSON.stringify(responseBody),
     });
   } catch {
     throw new Error('Could not reach the verifier.');

@@ -15,9 +15,9 @@ import {
   requestsCredentials,
 } from '../services/identity';
 import { loadProfile } from '../services/profile';
-import { listCredentials, responseTargetTrusted } from '../services/credentials';
+import { listCredentials, responseTargetTrusted, fetchVerifierKeys } from '../services/credentials';
 import { matchCredentialsByScope, buildPresentation } from '../lib/vc';
-import { parseAuthorizationRequest, pdToVcQuery } from '../lib/oid4vc';
+import { parseAuthorizationRequest, requestQuery, verifyRequestObject } from '../lib/oid4vc';
 import { recordThisDevice } from '../services/devices';
 import { deriveVaultId, deriveCredentialHolderKey } from '../lib/crypto';
 import AppRow from './AppRow';
@@ -146,16 +146,31 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthoriz
       setShowScanner(false);
       try {
         const request = parseAuthorizationRequest(raw);
+        // Verifier authentication: a SIGNED request must verify against the verifier's published key
+        // (the HTTPS-anchored client_id scheme) — proves who's asking. [oid4vc hardening]
+        let verified = false;
+        if (request.signed) {
+          const vr = await verifyRequestObject({
+            requestJwt: request.requestJwt,
+            getVerifierKeys: fetchVerifierKeys,
+            clientId: request.clientId,
+          });
+          if (!vr.ok) {
+            showToast('Untrusted presentation request (bad signature).', 'error');
+            return;
+          }
+          verified = true;
+        }
         // Refuse a request whose response endpoint isn't bound to the verifier identity it shows. [S20]
         if (!responseTargetTrusted(request.clientId, request.responseUri)) {
           showToast('Untrusted presentation request.', 'error');
           return;
         }
-        const q = pdToVcQuery(request.presentationDefinition);
+        const q = requestQuery(request); // unified DCQL / presentation_definition view
         const scopeId =
           'vc:' + q.vct + (q.iss ? '@' + q.iss : '') + (q.disclose?.length ? '#' + q.disclose.join(',') : '');
         const matches = matchCredentialsByScope(await listCredentials(cryptoKey), [scopeId]);
-        setPendingPresentation({ request, query: q, matches });
+        setPendingPresentation({ request, query: q, matches, verified });
       } catch {
         showToast('Invalid presentation request.', 'error');
       }
@@ -508,6 +523,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthoriz
           request={pendingPresentation.request}
           query={pendingPresentation.query}
           matches={pendingPresentation.matches}
+          verified={pendingPresentation.verified}
           masterKey={cryptoKey}
           onClose={() => setPendingPresentation(null)}
         />

@@ -136,7 +136,39 @@ export const buildPresentationSubmission = (pd) => ({
   descriptor_map: [{ id: pd.input_descriptors?.[0]?.id, format: SD_JWT_VC_FORMAT, path: '$' }],
 });
 
+// ── OpenID4VP — DCQL (the presentation_definition successor, OpenID4VP 1.0) ───
+export const buildDcqlQuery = ({ id = 'cred', vct, disclose = [] }) => ({
+  credentials: [
+    { id, format: SD_JWT_VC_FORMAT, meta: { vct_values: [vct] }, claims: disclose.map((c) => ({ path: [c] })) },
+  ],
+});
+
+export const dcqlToVcQuery = (dcql) => {
+  const c = dcql?.credentials?.[0] || {};
+  const disclose = (c.claims || [])
+    .map((cl) => (Array.isArray(cl.path) ? cl.path[cl.path.length - 1] : undefined))
+    .filter(Boolean);
+  return { id: c.id, vct: c.meta?.vct_values?.[0], iss: undefined, disclose };
+};
+
+export const requestQuery = (request) => {
+  if (request?.dcqlQuery) return { kind: 'dcql', ...dcqlToVcQuery(request.dcqlQuery) };
+  return { kind: 'pd', id: request?.presentationDefinition?.id, ...pdToVcQuery(request?.presentationDefinition) };
+};
+
+export const buildVpResponse = ({ request, presentation }) => {
+  const q = requestQuery(request);
+  if (q.kind === 'dcql') return { vp_token: { [q.id]: presentation }, state: request.state };
+  return {
+    vp_token: presentation,
+    presentation_submission: buildPresentationSubmission(request.presentationDefinition),
+    state: request.state,
+  };
+};
+
 // ── OpenID4VP — holder & verifier ────────────────────────────────────────────
+const asObj = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
+
 export const parseAuthorizationRequest = (input) => {
   let get;
   if (typeof input === 'string') {
@@ -145,16 +177,79 @@ export const parseAuthorizationRequest = (input) => {
   } else {
     get = (k) => input?.[k];
   }
-  const pd = get('presentation_definition');
+  const requestJwt = get('request');
+  if (requestJwt) {
+    let c = {};
+    try {
+      c = decodeJWS(requestJwt).claims || {};
+    } catch {
+      c = {};
+    }
+    return {
+      signed: true,
+      requestJwt,
+      responseType: c.response_type,
+      clientId: get('client_id') || c.client_id,
+      nonce: c.nonce,
+      state: c.state,
+      responseMode: c.response_mode,
+      responseUri: c.response_uri,
+      presentationDefinition: asObj(c.presentation_definition),
+      dcqlQuery: asObj(c.dcql_query),
+    };
+  }
   return {
+    signed: false,
     responseType: get('response_type'),
     clientId: get('client_id'),
     nonce: get('nonce'),
     state: get('state'), // echoed back in the direct_post so the verifier can correlate the response
     responseMode: get('response_mode'),
     responseUri: get('response_uri'),
-    presentationDefinition: typeof pd === 'string' ? JSON.parse(pd) : pd,
+    presentationDefinition: asObj(get('presentation_definition')),
+    dcqlQuery: asObj(get('dcql_query')),
   };
+};
+
+export const buildSignedAuthorizationRequest = (verifierSecretKey, { kid, params, ttlSeconds = 300, now = Date.now() }) => {
+  const iat = Math.floor(now / 1000);
+  const claims = { ...params, iat, exp: iat + Math.max(1, Math.floor(ttlSeconds)) };
+  return signJWS({ alg: 'EdDSA', typ: 'oauth-authz-req+jwt', kid }, claims, verifierSecretKey);
+};
+
+export const verifyRequestObject = async ({ requestJwt, getVerifierKeys, clientId, now = Date.now() }) => {
+  let decoded;
+  try {
+    decoded = decodeJWS(requestJwt);
+  } catch {
+    return { ok: false, error: 'malformed_request' };
+  }
+  if (decoded.header?.typ !== 'oauth-authz-req+jwt' || decoded.header?.alg !== 'EdDSA') {
+    return { ok: false, error: 'bad_request_header' };
+  }
+  const cid = clientId || decoded.claims?.client_id;
+  if (!cid) return { ok: false, error: 'no_client_id' };
+  if (clientId && decoded.claims?.client_id && decoded.claims.client_id !== clientId) {
+    return { ok: false, error: 'client_id_mismatch' };
+  }
+  let keys;
+  try {
+    keys = await getVerifierKeys(cid);
+  } catch {
+    return { ok: false, error: 'verifier_unresolved' };
+  }
+  const jwk = (keys || []).find((k) => k.kid === decoded.header.kid) || (keys || [])[0];
+  let pub;
+  try {
+    pub = pubFromOkpJwk(jwk);
+  } catch {
+    return { ok: false, error: 'bad_verifier_key' };
+  }
+  if (!verifyJWS(requestJwt, pub)) return { ok: false, error: 'bad_request_signature' };
+  const p = decoded.claims || {};
+  if (typeof p.exp === 'number' && now > p.exp * 1000) return { ok: false, error: 'request_expired' };
+  if (typeof p.iat === 'number' && now < p.iat * 1000 - 120_000) return { ok: false, error: 'request_not_yet_valid' };
+  return { ok: true, clientId: cid };
 };
 
 export const buildVpToken = ({ sdjwt, disclose, clientId, nonce, holderSecretKey, now = Date.now() }) =>
@@ -163,14 +258,20 @@ export const buildVpToken = ({ sdjwt, disclose, clientId, nonce, holderSecretKey
 export const verifyVpToken = async ({
   vpToken,
   presentationDefinition,
+  dcqlQuery,
   getIssuerKeys,
   checkStatus,
   clientId,
   nonce,
   now = Date.now(),
 }) => {
+  const q = dcqlQuery
+    ? { kind: 'dcql', ...dcqlToVcQuery(dcqlQuery) }
+    : { kind: 'pd', ...pdToVcQuery(presentationDefinition) };
+  const presentation = q.kind === 'dcql' ? (vpToken && typeof vpToken === 'object' ? vpToken[q.id] : undefined) : vpToken;
+  if (!presentation || typeof presentation !== 'string') return { ok: false, error: 'missing_vp_token' };
   const r = await verifyCredentialPresentation({
-    presentation: vpToken,
+    presentation,
     getIssuerKeys,
     checkStatus,
     audience: clientId,
@@ -178,7 +279,6 @@ export const verifyVpToken = async ({
     now,
   });
   if (!r.ok) return r;
-  const q = pdToVcQuery(presentationDefinition);
   if (q.vct && r.vct !== q.vct) return { ok: false, error: 'vct_mismatch' };
   if (q.iss && r.iss !== q.iss) return { ok: false, error: 'issuer_mismatch' };
   for (const c of q.disclose) {

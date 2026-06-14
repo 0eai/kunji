@@ -9,6 +9,12 @@ import {
   buildVpToken,
   buildPresentationSubmission,
   verifyVpToken,
+  buildSignedAuthorizationRequest,
+  verifyRequestObject,
+  buildDcqlQuery,
+  dcqlToVcQuery,
+  requestQuery,
+  buildVpResponse,
 } from '../src/lib/oid4vc.js';
 import { mintCredential, holderJwkFor, matchCredentialsByScope } from '../src/lib/vc.js';
 import { generateEd25519KeyPair, exportEd25519PublicKey } from '../src/lib/crypto/index.js';
@@ -155,5 +161,81 @@ describe('OpenID4VP vp_token end-to-end (over the SD-JWT VC core)', () => {
     const pd = buildPresentationDefinition({ vct: 'age', disclose: ['age_over_18'] });
     const vpToken = await buildVpToken({ sdjwt, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
     expect(await verifyVpToken({ vpToken, presentationDefinition: pd, getIssuerKeys, clientId: CLIENT, nonce: NONCE })).toMatchObject({ ok: false, error: 'vct_mismatch' });
+  });
+});
+
+// Verifier authentication: a signed authorization request (JAR) verified against the verifier's
+// published key (HTTPS-anchored client_id scheme) — proves who's asking.
+describe('OpenID4VP signed request objects', () => {
+  const VKID = 'v1';
+  const VCID = 'https://verifier.example';
+  const verifier = generateEd25519KeyPair();
+  const verifierKeys = async () => [{ ...okpJwk(verifier.publicKey), kid: VKID }];
+  const params = () => ({
+    client_id: VCID,
+    response_type: 'vp_token',
+    response_mode: 'direct_post',
+    response_uri: `${VCID}/response`,
+    nonce: NONCE,
+    state: 'st',
+    dcql_query: buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] }),
+  });
+
+  it('build → parse (signed:true, params from the JWS) → verify against the verifier key', async () => {
+    const jwt = buildSignedAuthorizationRequest(verifier.secretKey, { kid: VKID, params: params() });
+    const ar = parseAuthorizationRequest(`openid4vp://?client_id=${encodeURIComponent(VCID)}&request=${jwt}`);
+    expect(ar).toMatchObject({ signed: true, clientId: VCID, nonce: NONCE, responseUri: `${VCID}/response` });
+    expect(ar.dcqlQuery).toBeTruthy();
+    expect(await verifyRequestObject({ requestJwt: ar.requestJwt, getVerifierKeys: verifierKeys, clientId: ar.clientId })).toMatchObject({ ok: true, clientId: VCID });
+  });
+
+  it('rejects forged signature / wrong key / client_id mismatch / expired', async () => {
+    const jwt = buildSignedAuthorizationRequest(verifier.secretKey, { kid: VKID, params: params() });
+    const forged = jwt.slice(0, -1) + (jwt.endsWith('A') ? 'B' : 'A');
+    expect(await verifyRequestObject({ requestJwt: forged, getVerifierKeys: verifierKeys, clientId: VCID })).toMatchObject({ ok: false, error: 'bad_request_signature' });
+    const attacker = generateEd25519KeyPair();
+    const wrongKeys = async () => [{ ...okpJwk(attacker.publicKey), kid: VKID }];
+    expect(await verifyRequestObject({ requestJwt: jwt, getVerifierKeys: wrongKeys, clientId: VCID })).toMatchObject({ ok: false, error: 'bad_request_signature' });
+    expect(await verifyRequestObject({ requestJwt: jwt, getVerifierKeys: verifierKeys, clientId: 'https://evil.example' })).toMatchObject({ ok: false, error: 'client_id_mismatch' });
+    const stale = buildSignedAuthorizationRequest(verifier.secretKey, { kid: VKID, params: params(), ttlSeconds: 1, now: Date.now() - 10_000 });
+    expect(await verifyRequestObject({ requestJwt: stale, getVerifierKeys: verifierKeys, clientId: VCID })).toMatchObject({ ok: false, error: 'request_expired' });
+  });
+
+  it('an unsigned request parses as signed:false', () => {
+    const ar = parseAuthorizationRequest(`openid4vp://?client_id=${encodeURIComponent(VCID)}&nonce=${NONCE}&response_uri=${encodeURIComponent(VCID + '/r')}`);
+    expect(ar.signed).toBe(false);
+  });
+});
+
+describe('OpenID4VP DCQL', () => {
+  it('buildDcqlQuery → dcqlToVcQuery / requestQuery map to {vct,disclose}', () => {
+    const dcql = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] });
+    expect(dcqlToVcQuery(dcql)).toEqual({ id: 'c', vct: 'age', iss: undefined, disclose: ['age_over_18'] });
+    expect(requestQuery({ dcqlQuery: dcql })).toMatchObject({ kind: 'dcql', id: 'c', vct: 'age', disclose: ['age_over_18'] });
+    expect(requestQuery({ presentationDefinition: buildPresentationDefinition({ vct: 'age', disclose: ['age_over_18'] }) })).toMatchObject({ kind: 'pd', vct: 'age', disclose: ['age_over_18'] });
+  });
+
+  it('DCQL: keyed vp_token (no submission) → verify', async () => {
+    const { holder, sdjwt, getIssuerKeys } = await setup();
+    const dcql = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] });
+    const request = { dcqlQuery: dcql, clientId: CLIENT, nonce: NONCE, state: 'st' };
+    const presentation = await buildVpToken({ sdjwt, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
+    const body = buildVpResponse({ request, presentation });
+    expect(body.vp_token).toHaveProperty('c');
+    expect(body.presentation_submission).toBeUndefined();
+    const r = await verifyVpToken({ vpToken: body.vp_token, dcqlQuery: dcql, getIssuerKeys, clientId: CLIENT, nonce: NONCE });
+    expect(r).toMatchObject({ ok: true, vct: 'age', claims: { age_over_18: true } });
+  });
+
+  it('PD: bare vp_token + a submission → verify (unchanged path)', async () => {
+    const { holder, sdjwt, getIssuerKeys } = await setup();
+    const pd = buildPresentationDefinition({ vct: 'age', disclose: ['age_over_18'] });
+    const request = { presentationDefinition: pd, clientId: CLIENT, nonce: NONCE, state: 'st' };
+    const presentation = await buildVpToken({ sdjwt, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
+    const body = buildVpResponse({ request, presentation });
+    expect(typeof body.vp_token).toBe('string');
+    expect(body.presentation_submission).toBeTruthy();
+    const r = await verifyVpToken({ vpToken: body.vp_token, presentationDefinition: pd, getIssuerKeys, clientId: CLIENT, nonce: NONCE });
+    expect(r).toMatchObject({ ok: true, claims: { age_over_18: true } });
   });
 });
