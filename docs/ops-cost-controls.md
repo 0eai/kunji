@@ -18,6 +18,7 @@ the (default 80) concurrency is the hard ceiling on simultaneous work; scale-to-
 | `credentialPoll` | `app` | 5 |
 | `credentialOfferRelay` | `app` | 5 |
 | `pushDispatch` | `app` | 5 |
+| `pushChannelRegister` | `app` | 5 |
 | demo `createSession` / `lookupSession` / `getSessionStatus` / `kunjiCallback` / `kunjiAgent` | demo codebases | 5 |
 
 To change a cap, edit the `onRequest({ …, maxInstances: N })` option and redeploy that function with
@@ -33,6 +34,10 @@ same way — `agentCapabilityPoll` at 60/min (a human-in-the-loop poll across th
 channel's registered key, **per-channel** (10/min, keyed by `channelId`) — so neither anonymous spam nor a
 single authorized poster can flood a wallet with notifications. The Web Push payload is the opaque pointer
 only (`{requestId}`), E2E-encrypted by `web-push` to the subscription.
+
+`pushChannelRegister` (the signed channel registration, push-relay.md §8 / S22) verifies the wallet's
+Ed25519 signature (the vault-write key) over the canonical request, TOFU-binds `writePublicKey` per
+`channelId`, then rate-limits per-IP (20/min). It reaches it via the `/push/register` Hosting rewrite.
 
 ## VAPID keys for the push relay (one-time, manual)
 

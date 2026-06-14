@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bot, Trash2, ShieldCheck } from 'lucide-react';
+import { Bot, Trash2, ShieldCheck, Bell, BellRing } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Monogram } from './ui/primitives';
-import { listAgents, revokeAgent } from '../services/capability';
+import { listAgents, revokeAgent, setAgentPushEnabled } from '../services/capability';
+import { pushSupported, enablePushForAudience, revokePushForAudience } from '../services/push';
 import { scopeId } from '../lib/capability';
 import { useToast } from '../contexts/ToastContext';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
@@ -24,7 +25,9 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
   const [agents, setAgents] = useState(null); // null = loading
   const [showAuthorize, setShowAuthorize] = useState(false);
   const [revoking, setRevoking] = useState('');
+  const [pushBusy, setPushBusy] = useState(''); // jti whose notifications toggle is in flight
   const [confirm, setConfirm] = useState(null); // agent pending revoke confirmation
+  const supportsPush = pushSupported();
 
   const refresh = useCallback(() => {
     listAgents(masterKey)
@@ -38,6 +41,8 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
     setRevoking(a.jti);
     try {
       await revokeAgent(userId, masterKey, { jti: a.jti, audience: a.audience });
+      // Also tear down its push channel (best-effort) so a revoked agent can't be pinged.
+      if (a.pushEnabled) await revokePushForAudience(masterKey, a.audience).catch(() => {});
       showToast('Agent revoked.');
       setAgents((list) => (list || []).filter((x) => x.jti !== a.jti));
       return true;
@@ -46,6 +51,27 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
       return false;
     } finally {
       setRevoking('');
+    }
+  };
+
+  // Toggle the per-app push channel: on → register (re-subscribes this device); off → signed delete.
+  const toggleNotify = async (a) => {
+    setPushBusy(a.jti);
+    try {
+      if (a.pushEnabled) {
+        await revokePushForAudience(masterKey, a.audience);
+        await setAgentPushEnabled(masterKey, a, false);
+        showToast('Notifications turned off.');
+      } else {
+        await enablePushForAudience(masterKey, a.audience, a.agentPub);
+        await setAgentPushEnabled(masterKey, a, true);
+        showToast('Notifications turned on.');
+      }
+      setAgents((list) => (list || []).map((x) => (x.jti === a.jti ? { ...x, pushEnabled: !a.pushEnabled } : x)));
+    } catch (e) {
+      showToast((a.pushEnabled ? 'Could not turn off: ' : 'Could not turn on: ') + (e.message || e), 'error');
+    } finally {
+      setPushBusy('');
     }
   };
 
@@ -77,6 +103,17 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
                 <p className="text-[11px] text-faint truncate">
                   {(a.scope || []).map(scopeId).join(', ')} · {expiryLabel(a.exp)}
                 </p>
+                {supportsPush && (
+                  <button
+                    onClick={() => toggleNotify(a)}
+                    disabled={pushBusy === a.jti}
+                    className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:opacity-80 transition-opacity disabled:opacity-50"
+                    title={a.pushEnabled ? 'Turn off notifications for this app' : 'Let this app notify you to approve more access'}
+                  >
+                    {a.pushEnabled ? <BellRing size={12} /> : <Bell size={12} />}
+                    {pushBusy === a.jti ? '…' : a.pushEnabled ? 'Notifications on' : 'Turn on notifications'}
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => setConfirm(a)}

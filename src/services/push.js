@@ -2,16 +2,15 @@
 // Web Push and register a per-app push channel so a channel-less requester (a headless agent / an app
 // with no UI to the user) can later ping the wallet for a step-up. The channel is addressed by an opaque,
 // per-audience `channelId` (master-key-derived → kunji can't correlate it) and authorizes exactly one
-// poster key (`postKeyJwk` = the requester's Ed25519 pubkey, holder-of-key). The wallet writes the channel
-// doc directly (authed, gated by the unguessable channelId, like `agentSessions`); `pushDispatch` reads it.
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { deriveChannelId } from '../lib/crypto';
+// poster key (`postKeyJwk` = the requester's Ed25519 pubkey, holder-of-key). Registration is a SIGNED
+// write through the `pushChannelRegister` function (master-key-derived vault-write key, TOFU-bound per
+// channelId — S22), so a leaked channelId alone can't overwrite/delete it; `pushDispatch` reads it.
+import { deriveChannelId, deriveVaultWriteKeyPair, exportEd25519PublicKey, signWithEd25519 } from '../lib/crypto';
 import { base64ToBuffer } from '../lib/crypto/helpers';
 import { okpJwk } from '../lib/capability';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
-const CHANNEL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days; the requester re-subscribes after expiry
+const PUSH_REGISTER_URL = import.meta.env.VITE_PUSH_REGISTER_URL || '/push/register';
 
 // True only where Web Push can actually work (SW + PushManager + Notification).
 export const pushSupported = () =>
@@ -27,6 +26,23 @@ const vapidKeyBytes = (b64url) => {
   const pad = '='.repeat((4 - (b64url.length % 4)) % 4);
   const b64 = (b64url + pad).replace(/-/g, '+').replace(/_/g, '/');
   return new Uint8Array(base64ToBuffer(b64));
+};
+
+// Signed write to the push-channel registration function (mirrors credentialVaultWrite): the wallet signs
+// {channelId, op, publicKey, timestamp, …} with its vault-write key; the function verifies + TOFU-binds it.
+const pushChannelWrite = async (cryptoKey, channelId, op, extra) => {
+  const { secretKey, publicKey } = await deriveVaultWriteKeyPair(cryptoKey);
+  const payload = { channelId, op, publicKey: exportEd25519PublicKey(publicKey), timestamp: Date.now(), ...extra };
+  const signedToken = signWithEd25519(payload, secretKey);
+  const resp = await fetch(PUSH_REGISTER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, signedToken }),
+  });
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error('push_register_failed:' + (e.error || resp.status));
+  }
 };
 
 /**
@@ -45,18 +61,14 @@ export const enablePushForAudience = async (cryptoKey, audience, requesterPubB64
   });
   const channelId = await deriveChannelId(cryptoKey, audience);
   const postKeyJwk = okpJwk(new Uint8Array(base64ToBuffer(requesterPubB64)));
-  const expiresAt = Date.now() + CHANNEL_TTL_MS;
-  await setDoc(doc(db, 'pushChannels', channelId), {
-    pushSub: sub.toJSON(), // { endpoint, keys:{ p256dh, auth } } — web-push E2E-encrypts the payload to it
-    postKeyJwk,
-    expiresAt,
-    ttl: new Date(expiresAt + 5 * 60 * 1000),
-  });
+  // pushSub = { endpoint, keys:{p256dh,auth} } — web-push E2E-encrypts the payload to it. expiresAt/ttl
+  // are set server-side by the function. The signed payload binds the subscription + poster key.
+  await pushChannelWrite(cryptoKey, channelId, 'set', { postKeyJwk, pushSub: sub.toJSON() });
   return { channelId };
 };
 
-/** Revoke push for `audience` — deletes the channel so it can no longer be pinged. */
+/** Revoke push for `audience` — a signed delete so the channel can no longer be pinged. */
 export const revokePushForAudience = async (cryptoKey, audience) => {
   const channelId = await deriveChannelId(cryptoKey, audience);
-  await deleteDoc(doc(db, 'pushChannels', channelId));
+  await pushChannelWrite(cryptoKey, channelId, 'delete', {});
 };

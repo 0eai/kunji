@@ -83,13 +83,13 @@ service cloud.firestore {
     // `channelId` (256-bit, unguessable, like vaultId). NO client reads (the doc holds the push
     // subscription + the authorized poster key); `pushDispatch` reads it via Admin. Holds no master key
     // or plaintext. The doc is per-audience and opaque, so it reveals no app↔user link to kunji.
+    // Writes go through the signed-write Cloud Function (pushChannelRegister, Admin SDK) — the wallet
+    // signs with its master-key-derived vault-write key and the function TOFU-binds it per channelId, so
+    // a leaked channelId alone can't overwrite/delete the channel (S22). Direct client writes are denied;
+    // reads are too (pushDispatch reads via Admin). The doc holds no master key or plaintext, and is
+    // per-audience + opaque, so it reveals no app↔user link.
     match /pushChannels/{channelId} {
-      allow create, update: if request.auth != null
-        && 'pushSub' in request.resource.data
-        && 'postKeyJwk' in request.resource.data
-        && 'expiresAt' in request.resource.data;
-      allow delete: if request.auth != null;
-      allow read: if false;
+      allow read, write: if false;
     }
 
     // Agent authorization-request relay (OTP / QR). Fully function-mediated, both ways:

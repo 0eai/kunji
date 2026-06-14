@@ -100,14 +100,19 @@ notification permission, subscribes to Web Push (the SW registered at load), der
 
 ```
 pushChannels/{channelId} = {
-  pushSub:    <the Web Push subscription — web-push E2E-encrypts the payload to it>,
-  postKeyJwk: <OKP jwk>,   // who may post (holder-of-key) — the agent's Ed25519 pubkey
-  expiresAt, ttl           // 30-day TTL; the requester re-subscribes after expiry
+  pushSub:        <the Web Push subscription — web-push E2E-encrypts the payload to it>,
+  postKeyJwk:     <OKP jwk>,   // who may post (holder-of-key) — the agent's Ed25519 pubkey
+  writePublicKey: <OKP raw>,   // the vault-write key bound (TOFU) at first registration — gates writes
+  expiresAt, ttl               // 30-day TTL (server-set); the requester re-subscribes after expiry
 }
 ```
 
 (The return is per-session at approval time via `agentSessions`, so no per-channel ECDH pub is stored.)
-The wallet writes this directly (authed, gated by the unguessable `channelId`, like `agentSessions`).
+The wallet **registers this via a SIGNED write** through the `pushChannelRegister` Function (the
+master-key-derived vault-write key signs `{channelId, op, postKeyJwk, pushSub, publicKey, timestamp}`,
+the same contract as `vaultWrite`); the Function TOFU-binds `writePublicKey` per `channelId`. So a leaked
+`channelId` alone can't overwrite/delete the channel without the master key's signature (closes S22).
+The channel stays **opaque** (no `vaultId` linkage — the TOFU binding is per-channelId).
 
 ### 5.2 Request → push → approve → deliver
 
@@ -165,21 +170,27 @@ with the new capability.
 - **Rate limits** per `channelId` and per IP (the `agentic-delegation.md`/`ops-cost-controls.md`
   pattern); `maxInstances` on `pushDispatch`; add it to the cost table in
   [`ops-cost-controls.md`](./ops-cost-controls.md) when built.
-- **User mute/revoke** per channel, surfaced in the wallet's connected-apps list.
+- **User revoke** per channel, **surfaced in the connected-apps list (shipped)** — `AgentsSheet` shows a
+  per-agent notifications toggle (on ⇒ register, off ⇒ a signed delete), and revoking an agent tears down
+  its channel. The opt-in record lives on the agent (`pushEnabled`), since `channelId` is opaque + reads
+  are denied. (Server-side *mute*-without-delete is a possible later add.)
+- **Signed, function-gated registration** — `pushChannelRegister` + a per-channelId TOFU `writePublicKey`
+  (S22): a leaked `channelId` can't overwrite/delete the channel without the master key's signature.
 - **Ciphertext-only payloads**; push carries an opaque pointer; rotate `channelId` on revoke.
 - **TTL + Firestore TTL policy** on `pushChannels`/relay docs.
 
 ## 9. Data model & rules sketch (for ②)
 
 ```
-pushChannels/{channelId}      // create by authed wallet; read/post mediated by a Function
+pushChannels/{channelId}      // function-only: registered via pushChannelRegister (signed), read by pushDispatch
 agentSessions/{sessionId}     // EXISTING — the encrypted return hop, reused verbatim
 ```
 
-`firestore.rules`: `pushChannels` is **deny-all to clients** except the wallet's own create; reads
-and posts go through the `pushDispatch` Function (Admin), exactly like `agentRequests`/`agentSessions`
-today. The posting capability (holder-of-key) — not Firebase auth — is what authorizes a dispatch, so
-the unauthenticated agent never touches the doc directly.
+`firestore.rules`: `pushChannels` is **deny-all to clients** (`read, write: if false`) — registration is
+a **signed write** through `pushChannelRegister` (Admin, TOFU `writePublicKey` per channelId) and posts
+go through `pushDispatch` (Admin), exactly like `agentRequests`/`vaultWrite` today. The posting
+capability (holder-of-key) — not Firebase auth — authorizes a dispatch; the unauthenticated agent never
+touches the doc directly.
 
 ## 10. When NOT to use the push relay
 

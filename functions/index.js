@@ -11,6 +11,7 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 import { randomInt } from 'node:crypto';
 import webpush from 'web-push';
 import { verifyPostProof } from './pushProof.js';
+import { verifySignedWrite } from './signedWrite.js';
 
 initializeApp();
 const db = getFirestore();
@@ -418,6 +419,7 @@ export const pushDispatch = onRequest(
     const snap = await db.collection('pushChannels').doc(channelId).get();
     if (!snap.exists) return res.status(404).json({ error: 'not_found' });
     const ch = snap.data();
+    if (ch.revoked || !ch.pushSub) return res.status(404).json({ error: 'not_found' }); // a revoked tombstone [S27]
     if (Date.now() > ch.expiresAt) return res.status(410).json({ error: 'expired' });
     if (!verifyPostProof(proof, ch.postKeyJwk, channelId, requestId))
       return res.status(401).json({ error: 'bad_proof' });
@@ -434,6 +436,63 @@ export const pushDispatch = onRequest(
         return res.status(410).json({ error: 'subscription_gone' });
       }
       return res.status(502).json({ error: 'push_failed' });
+    }
+    return res.json({ status: 'ok' });
+  },
+);
+
+// Push-channel registration (push-relay.md §8 / S22). Like vaultWrite, this gates pushChannels behind a
+// SIGNED write: the wallet signs the request with its master-key-derived vault-write key, and the channel
+// TOFU-binds that `writePublicKey` per channelId — so knowing the (secret, opaque) channelId is NOT enough
+// to overwrite/delete it without the master key's signature. The channel stays opaque (no vaultId linkage);
+// pushDispatch reads it via Admin (unchanged — it uses `postKeyJwk`, not `writePublicKey`).
+export const pushChannelRegister = onRequest(
+  { cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 10 },
+  async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+    const { channelId, op, pushSub, postKeyJwk, publicKey, signedToken, timestamp } = req.body || {};
+    // 1. shape
+    if (!HEX64_SESSION.test(channelId || '') || (op !== 'set' && op !== 'delete') || !publicKey || !signedToken || typeof timestamp !== 'number')
+      return res.status(400).json({ error: 'bad_request' });
+    if (Math.abs(Date.now() - timestamp) > 120_000) return res.status(400).json({ error: 'stale' });
+    if (op === 'set') {
+      if (!pushSub || typeof pushSub !== 'object' || Array.isArray(pushSub) || typeof pushSub.endpoint !== 'string')
+        return res.status(400).json({ error: 'bad_subscription' });
+      if (!postKeyJwk || postKeyJwk.kty !== 'OKP' || postKeyJwk.crv !== 'Ed25519' || typeof postKeyJwk.x !== 'string')
+        return res.status(400).json({ error: 'bad_post_key' });
+    }
+    // 2. signature over the canonical request (excludes signedToken). Same contract + key as vaultWrite.
+    const payload = { channelId, op, publicKey, timestamp };
+    if (op === 'set') {
+      payload.postKeyJwk = postKeyJwk;
+      payload.pushSub = pushSub;
+    }
+    if (!verifySignedWrite(payload, signedToken, publicKey)) return res.status(401).json({ error: 'bad_signature' });
+    if (await rateLimited(req.ip, 20, 60 * 1000, 'pushreg')) return res.status(429).json({ error: 'rate_limited' });
+
+    // 3. TOFU-bound write via Admin — first registration binds writePublicKey; later set/delete must match.
+    const ref = db.collection('pushChannels').doc(channelId);
+    const CHANNEL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+    try {
+      await db.runTransaction(async (tx) => {
+        const existing = await tx.get(ref);
+        const registered = existing.exists ? existing.data().writePublicKey : null;
+        if (registered && registered !== publicKey) throw new Error('not_authorized');
+        const expiresAt = Date.now() + CHANNEL_TTL_MS;
+        const ttl = Timestamp.fromMillis(expiresAt + 5 * 60 * 1000);
+        if (op === 'delete') {
+          // Tombstone (not a hard delete): keep the writePublicKey binding sticky so a revoked channelId
+          // can't be squatted by a different key — only the original (user's) key re-registers. Drops
+          // pushSub/postKeyJwk so pushDispatch treats it as gone. Self-cleans via the TTL. [S27]
+          tx.set(ref, { writePublicKey: publicKey, revoked: true, expiresAt, ttl });
+          return;
+        }
+        tx.set(ref, { pushSub, postKeyJwk, writePublicKey: publicKey, expiresAt, ttl });
+      });
+    } catch (e) {
+      if (e?.message === 'not_authorized') return res.status(403).json({ error: 'not_authorized' });
+      return res.status(500).json({ error: 'write_failed' });
     }
     return res.json({ status: 'ok' });
   },

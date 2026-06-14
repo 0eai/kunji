@@ -93,6 +93,10 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   particular needs its own project (it mints Auth users / writes `users/{sub}`); don't deploy it here.
   `kunji-mcp` is a local **MCP bridge** (stdio server) that lets an AI runtime act for a user via a
   user-authorized, holder-of-key **capability** — never the keys (agentic delegation — shipped, v0.12.0).
+  Tools: `kunji_authorize`/`kunji_await_capability`/`kunji_set_capability`/`kunji_login`/`kunji_status` +
+  `kunji_stepup` (403 insufficient_scope → broader scope / a `vc:` credential the user presents) +
+  `kunji_request_via_push` (Transport ② for a channel-less agent) — thin wrappers over the same relay/
+  push infra the agent-demo uses.
 - `src/lib/capability.js` — agentic-delegation capability tokens (EdDSA-JWT, holder-of-key); see
   `docs/agentic-delegation.md`. RP verifier mirrored in `examples/kunji-login-demo/functions/capability.js`.
 - **Step-up authorization** (push-relay.md Transport ①): a same-device deep link
@@ -104,11 +108,15 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - **Push relay** (push-relay.md Transport ②, **opt-in**): for a channel-less requester. `deriveChannelId`
   (HKDF, `src/lib/crypto`) → an opaque per-app mailbox; the wallet (opt-in toggle in `AuthorizeAgentSheet`)
   subscribes to Web Push (`public/sw.js` + `public/sw-init.js`) and registers `pushChannels/{channelId}`
-  ({pushSub, postKeyJwk}) via `src/services/push.js`. The `pushDispatch` Function (`functions/index.js`,
-  holder-of-key via `functions/pushProof.js`, per-IP+per-channel rate-limit, `web-push`+VAPID secret) sends
-  an **opaque pointer** (`{requestId}`); the wallet receives it (`?push=`/SW `postMessage` → `Dashboard` →
-  the Transport-① re-consent) and returns over `agentSessions`. Requester: `requestViaPush`
-  (`kunji-agent-demo`). VAPID setup in `docs/ops-cost-controls.md`.
+  ({pushSub, postKeyJwk, writePublicKey}) via `src/services/push.js` — a **signed write** through the
+  `pushChannelRegister` Function (vault-write key + per-channelId TOFU via `functions/signedWrite.js`;
+  `firestore.rules` denies direct client writes — **S22 fixed**). The `pushDispatch` Function
+  (`functions/index.js`, holder-of-key via `functions/pushProof.js`, per-IP+per-channel rate-limit,
+  `web-push`+VAPID secret) sends an **opaque pointer** (`{requestId}`); the wallet receives it
+  (`?push=`/SW `postMessage` → `Dashboard` → the Transport-① re-consent) and returns over `agentSessions`.
+  **Management:** the agent record carries `pushEnabled`; `AgentsSheet` shows a per-agent notifications
+  toggle (enable/revoke via `src/services/push.js`). Requester: `requestViaPush` (`kunji-agent-demo`).
+  VAPID setup in `docs/ops-cost-controls.md`.
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
@@ -117,8 +125,8 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   `docs/push-relay.md` **both transports** (① step-up via deep link, no new infra; ② the opt-in Web Push
   relay — `pushDispatch` + `pushChannels` + a service worker), and `docs/oid4vc.md` (**OpenID4VCI/VP
   interop** + verifier auth/DCQL, **incl. `vc+bbs` present**). Proposed (not implemented):
-  `docs/verified-credentials.md` §7/§14 **v3 holder binding** (blind-BBS / per-verifier pseudonym —
-  the one remaining v3 slice; the lib has the code but doesn't export it).
+  `docs/verified-credentials.md` §7/§14 **BBS blind issuance** (so the issuer can't see the holder secret
+  / impersonate) + per-verifier pseudonyms — optional future hardening (v3 is otherwise complete).
 - `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
   user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
   `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). **Unlinkability v2:** a
@@ -141,7 +149,10 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   `isBbsPresentation` in `vcBbs.js`); `oid4vc.js` `verifyVpToken` dispatches by format (the SD-JWT core is
   untouched) and gained `BBS_VC_FORMAT`/`buildBbsVpToken`; all three demo RPs (`kunji-{login,node}-demo`)
   verify both formats; wallet `presentViaOid4vp`/`presentBbsForLogin`. Proofs `npm run bbs` (OID4VP) +
-  `wallet-sim --bbs` (login). **Still NOT holder-bound (a leaked blob is transferable)** — the remaining v3 slice.
+  `wallet-sim --bbs` (login). **Holder-bound (non-transferable):** the issuer signs a `deriveBbsHolderSecret`
+  (master-key-derived, per-issuer) as an always-undisclosed message (the `holderBound` blob flag) — never
+  stored, re-derived to present; a stolen blob without the master key can't present. Residual: the issuer
+  sees the secret at issuance (blind issuance is the future hardening). `verifyBbsPresentation` is unchanged.
 - `src/lib/oid4vc.js` — **OpenID4VCI/VP interop** envelope over `vc.js` (offer/proof/token for issuance;
   presentation_definition/vp_token/direct_post for presentation); pure, no new crypto. Byte-identical Node
   port in `kunji-{node,issuer}-demo/oid4vc.js` (parity-guarded). Demos: issuer OpenID4VCI endpoints

@@ -191,7 +191,11 @@ describe('OpenID4VP signed request objects', () => {
 
   it('rejects forged signature / wrong key / client_id mismatch / expired', async () => {
     const jwt = buildSignedAuthorizationRequest(verifier.secretKey, { kid: VKID, params: params() });
-    const forged = jwt.slice(0, -1) + (jwt.endsWith('A') ? 'B' : 'A');
+    // Corrupt the FIRST char of the signature segment (always data bits) — flipping the LAST base64url
+    // char can hit padding bits and decode unchanged (a no-op), which made this probe flaky.
+    const dot = jwt.lastIndexOf('.');
+    const sig = jwt.slice(dot + 1);
+    const forged = jwt.slice(0, dot + 1) + (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1);
     expect(await verifyRequestObject({ requestJwt: forged, getVerifierKeys: verifierKeys, clientId: VCID })).toMatchObject({ ok: false, error: 'bad_request_signature' });
     const attacker = generateEd25519KeyPair();
     const wrongKeys = async () => [{ ...okpJwk(attacker.publicKey), kid: VKID }];

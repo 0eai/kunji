@@ -162,15 +162,6 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
       });
       setResult(r);
       setPhase('issued');
-      // Record the capability metadata so it shows in "Authorized agents" (and can be revoked).
-      // Best-effort — never block the issuance flow on it.
-      recordAgent(masterKey, {
-        jti: r.jti,
-        audience: req.audience,
-        scope,
-        exp: r.exp,
-        agentPub: req.agentPub,
-      }).catch((e) => console.warn('recordAgent failed:', e));
       // v2: deliver the capability to the agent over the encrypted relay (no manual copy).
       // Best-effort — on any failure the user still has the QR + copy fallback below.
       if (req.sessionId && req.transportPub) {
@@ -193,14 +184,26 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
       }
       // Opt-in Web Push (Transport ②): register a channel so this agent can ping the wallet for future
       // step-ups. Best-effort + AFTER the capability — a permission denial never blocks authorization.
+      let pushEnabled = false;
       if (notify && pushSupported()) {
         try {
           const { channelId } = await enablePushForAudience(masterKey, req.audience, req.agentPub);
           setPushChannelId(channelId);
+          pushEnabled = true;
         } catch (e) {
           showToast('Authorized, but enabling notifications failed: ' + (e.message || e), 'error');
         }
       }
+      // Record the capability metadata so it shows in "Authorized agents" (revoke + a notifications
+      // toggle). After the push step, so `pushEnabled` is recorded in one write. Best-effort.
+      recordAgent(masterKey, {
+        jti: r.jti,
+        audience: req.audience,
+        scope,
+        exp: r.exp,
+        agentPub: req.agentPub,
+        pushEnabled,
+      }).catch((e) => console.warn('recordAgent failed:', e));
     } catch (e) {
       showToast('Could not authorize: ' + (e.message || e), 'error');
     } finally {

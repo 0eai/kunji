@@ -167,13 +167,19 @@ const agentVaultWrite = async (cryptoKey, op, jti, docPayload) => {
   }
 };
 
-/** Persist a just-minted capability's metadata (NOT the capability) so the user can see + revoke it. */
-export const recordAgent = async (cryptoKey, { jti, audience, scope, exp, agentPub }) => {
-  const payload = await encryptData(
-    { audience, scope, exp, agentPub, issuedAt: Math.floor(Date.now() / 1000) },
-    cryptoKey,
-  );
+/** Persist a just-minted capability's metadata (NOT the capability) so the user can see + revoke it.
+ *  `pushEnabled` records whether the user turned on notifications for this agent — so the connected-apps
+ *  list can show + toggle the per-app push channel (it's re-derivable from `audience`). */
+export const recordAgent = async (cryptoKey, { jti, audience, scope, exp, agentPub, pushEnabled }) => {
+  const record = { audience, scope, exp, agentPub, issuedAt: Math.floor(Date.now() / 1000) };
+  if (pushEnabled) record.pushEnabled = true;
+  const payload = await encryptData(record, cryptoKey);
   await agentVaultWrite(cryptoKey, 'set', jti, payload);
+};
+
+/** Flip an agent's notification (push) status, re-recording its metadata. Used by the connected-apps UI. */
+export const setAgentPushEnabled = async (cryptoKey, agent, enabled) => {
+  await recordAgent(cryptoKey, { ...agent, pushEnabled: enabled });
 };
 
 /** The active (non-expired) authorized agents, decrypted, newest first. Shared across devices. */
