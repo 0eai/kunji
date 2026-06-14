@@ -44,7 +44,21 @@ scoped, and time-boxed. Revoke it from the wallet (Security → Authorized agent
 | `kunji_await_capability` | `{ sessionId? }` → poll the relay, decrypt + store the approved capability (no paste) |
 | `kunji_set_capability` | `{ capability }` → manual fallback: store a pasted wallet-issued capability (validated) |
 | `kunji_login` | `{ baseUrl }` → sign in at the RP as the authorized agent → `{ sub, scope, status }` |
+| `kunji_stepup` | `{ scope, audience? }` → after a 403 insufficient_scope, ask the user for a broader scope (a delta-aware re-consent). Prints a same-device deep link + code + QR; then `kunji_await_capability` → `kunji_login` → retry |
+| `kunji_request_via_push` | `{ channelId, scope?, audience? }` → ping the user's wallet via the opt-in Web Push relay (channel-less agents); then `kunji_await_capability` |
 | `kunji_status` | the agent's public key + the loaded capability (audience/scope/expiry) |
+
+### Step-up (asking for more access mid-task)
+
+If the app returns **`403 insufficient_scope`**, call **`kunji_stepup`** with the broader scope (e.g.
+`["login","read:profile"]`) — the user approves the *delta* in their wallet, then `kunji_await_capability`
+→ `kunji_login` → retry. The agent **can't present your verified credentials itself** (it holds a
+capability, not your keys); to prove one, step up with a **`vc:` scope** (e.g.
+`["login","vc:age#age_over_18"]`) and *you* present it at the wallet re-consent.
+
+For a **channel-less** agent (no way for the app to reach you), enable notifications for it when you
+authorize (the wallet shows a channel id); the agent then uses **`kunji_request_via_push`** with that
+channel id to nudge your wallet — the push carries only an opaque pointer.
 
 ## Setup
 

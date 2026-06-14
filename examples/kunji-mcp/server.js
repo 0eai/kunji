@@ -2,8 +2,10 @@
 // kunji MCP bridge — lets an AI runtime (Claude Code / Claude Desktop) act for a user at
 // an app via a user-authorized, scoped, expiring CAPABILITY — never the user's keys.
 //
-// Flow: kunji_authorize → (user approves in the wallet) → kunji_set_capability → kunji_login.
-// See ../../docs/agentic-delegation.md.
+// Flow: kunji_authorize → (user approves in the wallet) → kunji_await_capability → kunji_login.
+// Mid-task, an app may return 403 insufficient_scope → kunji_stepup asks the user for more access
+// (incl. having them present a verified credential via a vc: scope). A channel-less agent the user
+// enabled notifications for can nudge the wallet with kunji_request_via_push. See ../../docs/agentic-delegation.md.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -15,6 +17,8 @@ import {
   currentCapability,
   login,
   awaitCapability,
+  stepUp,
+  requestViaPush,
 } from './capability-client.js';
 
 const server = new McpServer({ name: 'kunji', version: '0.1.0' });
@@ -81,6 +85,75 @@ server.registerTool(
       return text(
         `Capability received and stored. audience=${cap.audience}, scope=${JSON.stringify(cap.scope)}, ` +
           `expires=${new Date(cap.exp * 1000).toISOString()}. You can now kunji_login.`,
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  'kunji_stepup',
+  {
+    title: 'Request additional scope (step-up)',
+    description:
+      'When an app returns 403 insufficient_scope mid-task, request a BROADER scope on the app you are ' +
+      'already connected to — including a `vc:` scope to have the USER present a verified credential ' +
+      "(e.g. 'vc:age#age_over_18'; the agent can't present the user's credentials itself). The user " +
+      'approves a delta-aware re-consent in their wallet; then call kunji_await_capability, kunji_login ' +
+      'again, and retry the request. Defaults the audience to your current capability.',
+    inputSchema: {
+      scope: z.array(z.string()).describe("The full desired scope, e.g. ['login','read:profile'] or ['login','vc:age#age_over_18']."),
+      audience: z.string().optional().describe("The app domain. Defaults to your current capability's audience."),
+    },
+  },
+  async ({ scope, audience }) => {
+    try {
+      const aud = audience || currentCapability().cap?.audience;
+      if (!aud) throw new Error('No audience — pass one, or authorize first so I can default to it.');
+      const { sessionId, code, qr, deepLink } = await stepUp(aud, scope);
+      const lines = [
+        `Ask the user to approve broader access to ${aud} (scope ${JSON.stringify(scope)}) in their kunji wallet.`,
+        `On approval, call kunji_await_capability — then kunji_login again and retry the request.`,
+        ``,
+        `Same device — open this link:`,
+        ``,
+        `        ${deepLink}`,
+        ``,
+      ];
+      if (code) lines.push(`…or have them type this 6-digit code (expires ~3 min):`, ``, `        ${code}`, ``);
+      if (qr) lines.push(`…or scan this QR with the wallet:`, ``, qr);
+      lines.push(`(session ${sessionId})`);
+      return text(lines.join('\n'));
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.registerTool(
+  'kunji_request_via_push',
+  {
+    title: 'Ping the wallet via push (Transport ②)',
+    description:
+      'For a channel-less agent: if the user enabled notifications for you and gave you a channel id, ' +
+      'ping their wallet via the opt-in Web Push relay to prompt a (re-)authorization — no QR/code to ' +
+      'relay out of band. The push carries only an opaque pointer; the request rides the encrypted ' +
+      'relay. On approval, call kunji_await_capability. Defaults the audience to your current capability.',
+    inputSchema: {
+      channelId: z.string().describe('The channel id the wallet showed the user when they enabled notifications for this agent.'),
+      scope: z.array(z.string()).optional().describe("Requested scope. Defaults to ['login']."),
+      audience: z.string().optional().describe("The app domain. Defaults to your current capability's audience."),
+    },
+  },
+  async ({ channelId, scope, audience }) => {
+    try {
+      const aud = audience || currentCapability().cap?.audience;
+      if (!aud) throw new Error('No audience — pass one, or authorize first so I can default to it.');
+      const { sessionId } = await requestViaPush(channelId, aud, scope);
+      return text(
+        `Push sent to the user's wallet (session ${sessionId}). When they approve the notification, ` +
+          `call kunji_await_capability to receive the capability.`,
       );
     } catch (e) {
       return fail(e);

@@ -184,6 +184,46 @@ export const awaitCapability = async (sessionId, { tries = 15, intervalMs = 2000
   throw new Error('Timed out waiting for approval. Approve it in the wallet, then call kunji_await_capability again.');
 };
 
+/** The same-device deep link (Transport ①): opens the wallet straight to a delta-aware re-consent. */
+export const authorizeDeepLink = (req) =>
+  `${KUNJI_APP_URL}/?authorize=${Buffer.from(JSON.stringify(req)).toString('base64url')}`;
+
+/**
+ * Step-up: ask the user for a BROADER scope on an app this agent is already connected to (after an
+ * `insufficient_scope` 403, or to have the user present a `vc:` credential). Builds a fresh request
+ * (new transport key + sessionId), registers it for an OTP code, and returns the code + QR + a
+ * same-device deep link. Await the new, broader capability with `awaitCapability(sessionId)`.
+ */
+export const stepUp = async (audience, scope) => {
+  const req = await agentRequest(audience, scope);
+  const [code, qr] = await Promise.all([postAgentRequest(req), requestQr(req)]);
+  return { sessionId: req.sessionId, code, qr, deepLink: authorizeDeepLink(req) };
+};
+
+/**
+ * Transport ②: ping the user's wallet via the opt-in Web Push relay for a channel-less agent. `channelId`
+ * is what the wallet showed the user when they enabled notifications for this agent. Deposits the request
+ * to the relay, proves holder-of-key over (channelId, requestId), and POSTs the opaque pointer to
+ * `/push/dispatch` (the push carries only `{requestId}`; the request itself rides the encrypted relay).
+ * Await the capability with `awaitCapability(sessionId)`.
+ */
+export const requestViaPush = async (channelId, audience, scope) => {
+  const req = await agentRequest(audience, scope);
+  const requestId = await postAgentRequest(req); // the relay code doubles as the opaque push pointer
+  if (!requestId) throw new Error('Could not deposit the request to the kunji relay.');
+  const proof = buildAgentProof(agentKey().secretKey, { audience: channelId, challenge: requestId, capJti: channelId });
+  const resp = await fetch(`${KUNJI_APP_URL}/push/dispatch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channelId, requestId, proof }),
+  });
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}));
+    throw new Error('Push dispatch failed: ' + (e.error || resp.status));
+  }
+  return { sessionId: req.sessionId, requestId };
+};
+
 /** Ingest + validate a capability the user pasted from the wallet, binding it to our key. */
 export const setCapability = (capability) => {
   const parts = String(capability).trim().split('.');

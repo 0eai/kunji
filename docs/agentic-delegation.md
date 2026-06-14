@@ -78,6 +78,12 @@ A kunji **MCP server / local signing agent** exposes tools to an AI runtime (e.g
   (validated holder-of-key + expiry);
 - `kunji_login(baseUrl)` → signs the RP challenge with the agent key **only within the granted
   capability** and submits it;
+- `kunji_stepup(scope, audience?)` → after a `403 insufficient_scope`, requests a **broader scope** on a
+  connected app (incl. a `vc:` scope to have the user present a verified credential — the agent can't
+  present the user's holder-bound credentials itself). Returns a same-device deep link (Transport ①) +
+  code + QR; the wallet shows a delta-aware re-consent; then `kunji_await_capability` → `kunji_login` → retry;
+- `kunji_request_via_push(channelId, scope?, audience?)` → for a **channel-less** agent the user enabled
+  notifications for: pings the wallet over the opt-in Web Push relay (Transport ②, opaque pointer only);
 - `kunji_status` → the agent's public key + the loaded capability.
 
 ### Request hand-off — QR + OTP (no JSON pasting)
@@ -140,8 +146,9 @@ Implemented across the wallet, the protocol core, the RP verifiers, and the MCP 
   narrow-not-widen). Design: [`scope.md`](./scope.md).
 
 ### Still open / deferred
-- **Step-up / incremental authorization** — a connected agent requesting more scope or a verified
-  credential later, with the wallet notifying the user to approve. Design:
+- **Step-up / incremental authorization** — **shipped** (wallet re-consent via Transport ① deep link +
+  Transport ② push) and now **exposed in the MCP bridge** (`kunji_stepup`, `kunji_request_via_push`). A
+  connected agent requesting more scope (or a `vc:` credential the user presents) later. See
   [`push-relay.md`](./push-relay.md), [`verified-credentials.md`](./verified-credentials.md).
 - **Token format** — compact JWT-like (today) vs macaroon/biscuit, which would allow offline
   *attenuation* (an agent narrows but never widens a capability).
