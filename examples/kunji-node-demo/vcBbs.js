@@ -54,24 +54,30 @@ export const decodeBbsPresentation = (s) => {
  * per-credential handle; the v2 §7/S23 lesson). Claim names are sorted to a stable signed order so the
  * holder's disclose-by-name maps to the right message indexes. Returns a serializable credential blob.
  */
-export const mintBbsCredential = async (issuerSecretKey, issuerPublicKey, { iss, vct, claims, ttlSeconds, now = Date.now() }) => {
+export const mintBbsCredential = async (issuerSecretKey, issuerPublicKey, { iss, vct, claims, holderSecret, ttlSeconds, now = Date.now() }) => {
   const iat = Math.floor(now / 1000 / DAY) * DAY;
   const exp = iat + Math.max(DAY, Math.floor((ttlSeconds || 0) / DAY) * DAY);
   const names = Object.keys(claims || {}).sort();
   const values = names.map((n) => claims[n]);
   const header = bbsBytes(canon({ iss, vct, exp }));
   const messages = names.map((n) => claimMessage(n, claims[n]));
+  // Holder binding (v3 non-transferability): sign a holder secret as the LAST, always-undisclosed
+  // message. The holder re-derives it from the master key to present (BBS needs every message value),
+  // so a leaked blob without the master key can't be presented. The secret is never stored in the blob.
+  if (holderSecret) messages.push(holderSecret);
   const signature = await bbsSign({ secretKey: issuerSecretKey, publicKey: issuerPublicKey, header, messages });
-  return {
+  const credential = {
     format: 'bbs',
     iss,
     vct,
     exp,
-    names, // claim names in signed order
+    names, // claim names in signed order (the holder secret, if any, is the implicit index names.length)
     values, // claim values the holder holds (selectively disclosed at presentation)
     header: bytesToB64u(header),
     signature: bytesToB64u(signature),
   };
+  if (holderSecret) credential.holderBound = true;
+  return credential;
 };
 
 /** Claim names a BBS credential can disclose (for the wallet list UI). */
@@ -82,9 +88,15 @@ export const bbsClaimNames = (credential) => (credential?.names || []).slice();
  * `issuerPublicKey` is the issuer's BBS public key (resolved from its `.well-known`). The returned proof
  * is fresh + randomized — unlinkable across presentations. Returns a serializable presentation blob.
  */
-export const buildBbsPresentation = async ({ credential, disclose, audience, nonce, issuerPublicKey }) => {
+export const buildBbsPresentation = async ({ credential, disclose, audience, nonce, issuerPublicKey, holderSecret }) => {
   const header = b64uToBytes(credential.header);
   const messages = credential.names.map((n, i) => claimMessage(n, credential.values[i]));
+  // A holder-bound credential signed the holder secret as the last message — append it (always
+  // undisclosed). Without the right secret the proof won't verify (non-transferability).
+  if (credential.holderBound) {
+    if (!holderSecret) throw new Error('holder secret required to present a holder-bound credential');
+    messages.push(holderSecret);
+  }
   const want = new Set(disclose || []);
   const disclosedMessageIndexes = credential.names.map((n, i) => (want.has(n) ? i : -1)).filter((i) => i >= 0);
   const presentationHeader = bbsBytes(canon({ aud: audience, nonce }));

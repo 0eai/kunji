@@ -72,7 +72,7 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     // Unlinkable ask (v3, BBS): one credential, fresh ZK proof per presentation — no holder key needed.
     if (body?.format === 'bbs') {
-      const { credential } = await issueBbs({ dob: body.dob, vct: body.vct, claims: body.claims });
+      const { credential } = await issueBbs({ dob: body.dob, vct: body.vct, claims: body.claims, holderBinding: body.holderBinding });
       return json(res, 200, { credential, issuer: issuerOrigin() });
     }
     // Batch ask (unlinkability v2): one one-time copy per holder key, each its own signature + status idx.

@@ -91,3 +91,57 @@ describe('BBS presentation wire codec (tagged string)', () => {
     expect(isBbsPresentation(undefined)).toBe(false);
   });
 });
+
+describe('BBS holder binding (non-transferability, v3)', () => {
+  const SECRET = new Uint8Array(32).fill(7); // a stand-in master-key-derived holder secret
+  const setupBound = async (secret = SECRET) => {
+    const { secretKey, publicKey } = await bbsKeyGen();
+    const credential = await mintBbsCredential(secretKey, publicKey, {
+      iss: ISS,
+      vct: VCT,
+      claims: { age_over_18: true },
+      holderSecret: secret,
+      ttlSeconds: 365 * 86400,
+    });
+    return { publicKey, credential, getIssuerBbsKey: async () => publicKey };
+  };
+  const presentBound = (credential, publicKey, secret, audience = 'https://a.example', nonce = 'n1') =>
+    buildBbsPresentation({ credential, disclose: ['age_over_18'], audience, nonce, issuerPublicKey: publicKey, holderSecret: secret });
+
+  it('marks the credential holderBound and presents + verifies with the right secret', async () => {
+    const { publicKey, credential, getIssuerBbsKey } = await setupBound();
+    expect(credential.holderBound).toBe(true);
+    const p = await presentBound(credential, publicKey, SECRET);
+    const v = await verifyBbsPresentation({ presentation: p, getIssuerBbsKey, audience: 'https://a.example', nonce: 'n1' });
+    expect(v.ok).toBe(true);
+    expect(v.claims).toEqual({ age_over_18: true });
+  });
+
+  it('rejects a presentation built with the WRONG holder secret (a stolen blob)', async () => {
+    const { publicKey, credential, getIssuerBbsKey } = await setupBound();
+    const p = await presentBound(credential, publicKey, new Uint8Array(32).fill(9)); // thief's wrong secret
+    const v = await verifyBbsPresentation({ presentation: p, getIssuerBbsKey, audience: 'https://a.example', nonce: 'n1' });
+    expect(v.ok).toBe(false);
+  });
+
+  it('throws if a holder-bound credential is presented without the secret', async () => {
+    const { publicKey, credential } = await setupBound();
+    await expect(
+      buildBbsPresentation({ credential, disclose: ['age_over_18'], audience: 'https://a.example', nonce: 'n1', issuerPublicKey: publicKey }),
+    ).rejects.toThrow();
+  });
+
+  it('two bound presentations stay unlinkable (proofs differ; the secret is never revealed)', async () => {
+    const { publicKey, credential } = await setupBound();
+    const p1 = await presentBound(credential, publicKey, SECRET, 'https://a.example', 'nA');
+    const p2 = await presentBound(credential, publicKey, SECRET, 'https://b.example', 'nB');
+    expect(p1.proof).not.toBe(p2.proof);
+  });
+
+  it('an unbound credential still presents (back-compat with pre-binding blobs)', async () => {
+    const { publicKey, credential, getIssuerBbsKey } = await setup(); // minted without holderSecret
+    expect(credential.holderBound).toBeUndefined();
+    const p = await present(credential, publicKey, ['age_over_18'], 'https://a.example', 'n1'); // no secret
+    expect((await verifyBbsPresentation({ presentation: p, getIssuerBbsKey, audience: 'https://a.example', nonce: 'n1' })).ok).toBe(true);
+  });
+});

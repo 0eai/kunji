@@ -178,15 +178,24 @@ credential only when it asks `vc+bbs`, and login prefers SD-JWT when both format
 (generic-RP compatibility — login-protocol format negotiation is a follow-on). All three demo RPs
 (`kunji-{login,node}-demo`) verify both formats.
 
-**Deferred (next slice):** **holder binding** — the BBS foundation is replay-protected (the proof binds
-aud+nonce) but **not yet holder-bound**, so a leaked credential blob is transferable (a committed holder
-secret / per-verifier pseudonym, blind-BBS, comes next; the `@digitalbazaar/bbs-signatures` lib has the
-code but does not export it yet).
+**Holder binding (shipped).** A BBS credential is **non-transferable**: the issuer signs a high-entropy
+holder secret as an extra, **always-undisclosed** message; the secret is **derived from the master key**
+(`deriveBbsHolderSecret(masterKey, issuer)`) and **never stored in the blob** — the holder re-derives it
+to present. BBS proof generation needs *every* message value, so a leaked credential blob without the
+master key can't produce a verifying proof (a stolen-blob "thief" presentation is rejected). The verifier
+is **unchanged** — the secret is just one more undisclosed message the proof already commits to (never
+revealed), so unlinkability is preserved. Opt-in per credential (a `holderBound` flag); pre-binding blobs
+still present unbound. **Residual (documented):** the issuer *sees* the secret at issuance (it signs it
+via the public `sign`), so a malicious issuer could impersonate the holder — bounded (issuer trust is
+already assumed; cross-presentation unlinkability is unaffected; it protects against third-party blob
+theft). Closing the issuer-impersonation gap needs **blind issuance** (the issuer signs a commitment it
+can't see — `@digitalbazaar/bbs-signatures`' unexported `lib/bbs/blind`), a future hardening.
 
 **Recommendation:** **v1 + v2 shipped, v3 foundation shipped** (the wallet still warns at consent that a
-verified credential is more identifiable than the default per-app `sub`, a §9.2-style caveat). v3 is
-presentable over OID4VP + login; the one remaining v3 slice is **holder binding** (blind-BBS / per-verifier
-pseudonym) for non-transferability.
+verified credential is more identifiable than the default per-app `sub`, a §9.2-style caveat). **v3 is
+complete** — unlinkable, presentable over OID4VP + login, and **holder-bound (non-transferable)**. The
+only remaining BBS work is optional future hardening: **blind issuance** (so the issuer can't see the
+holder secret / impersonate) + per-verifier pseudonyms.
 
 ## 8. Issuance
 
@@ -291,7 +300,10 @@ byte-stable (the holder key is additive); the wallet stays anonymous.
    `@digitalbazaar/bbs-signatures`, the issuer-demo `issueBbs` + BBS `.well-known` key, the wallet
    receive/list/**present** (`format:'bbs'` record; present over OpenID4VP `vc+bbs` + the login assertion
    via a `bbs~` tagged-string), all three demo RPs verifying both formats, and `npm run bbs` /
-   `wallet-sim --bbs`. **Deferred next:** holder binding (blind-BBS / per-verifier pseudonym). See §7.
+   `wallet-sim --bbs`. **Holder binding (done):** non-transferable via an undisclosed,
+   master-key-derived holder secret (`deriveBbsHolderSecret`, signed but never stored; re-derived to
+   present) — a stolen blob without the master key can't present. **Deferred (future hardening):** blind
+   issuance (issuer can't see the secret → can't impersonate) + per-verifier pseudonyms. See §7.
 
 ## 15. Open decisions
 

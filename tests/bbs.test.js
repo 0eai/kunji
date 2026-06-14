@@ -11,6 +11,20 @@ import {
   bytesToB64u,
   b64uToBytes,
 } from '../src/lib/bbs.js';
+import { generateMasterKey, deriveBbsHolderSecret } from '../src/lib/crypto/index.js';
+
+describe('deriveBbsHolderSecret (holder binding)', () => {
+  it('is 32 bytes, deterministic per (master, issuer), per-issuer, per-master', async () => {
+    const master = await generateMasterKey();
+    const a = await deriveBbsHolderSecret(master, 'https://issuer.example');
+    expect(a).toBeInstanceOf(Uint8Array);
+    expect(a.length).toBe(32);
+    expect(Array.from(await deriveBbsHolderSecret(master, 'https://issuer.example'))).toEqual(Array.from(a)); // deterministic
+    expect(Array.from(await deriveBbsHolderSecret(master, 'https://other.example'))).not.toEqual(Array.from(a)); // per-issuer
+    const other = await generateMasterKey();
+    expect(Array.from(await deriveBbsHolderSecret(other, 'https://issuer.example'))).not.toEqual(Array.from(a)); // per-master
+  });
+});
 
 // The BBS primitive wrapper (verified-credentials.md §7 v3) over @digitalbazaar/bbs-signatures.
 

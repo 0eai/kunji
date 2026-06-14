@@ -19,7 +19,7 @@ import { buildPresentation, holderJwkFor, parseVcScope } from './vc.js';
 // use window.kunji.handle(sub) from rp.js (see public/index.html).
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
 import { buildBbsVpToken } from './oid4vc.js';
-import { b64uToBytes } from './bbs.js';
+import { b64uToBytes, bytesToB64u } from './bbs.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
 const wantClaims = process.argv.includes('--claims');
@@ -119,11 +119,14 @@ const main = async () => {
   // proof bound to this session, carried as a tagged string in vc_presentations (the RP dispatches on it).
   if (wantBbs) {
     if (!ISSUER) throw new Error('Set ISSUER=<issuer origin>, e.g. ISSUER=http://localhost:4000');
+    // The real wallet derives the holder secret from its master key (deriveBbsHolderSecret); the sim
+    // uses a random value, sent at issuance + reused to present (non-transferability).
+    const holderSecret = crypto.getRandomValues(new Uint8Array(32));
     const issued = await (
       await fetch(`${ISSUER}/issue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format: 'bbs' }),
+        body: JSON.stringify({ format: 'bbs', holderBinding: bytesToB64u(holderSecret) }),
       })
     ).json();
     if (issued.credential?.format !== 'bbs') throw new Error('issuer BBS /issue failed: ' + JSON.stringify(issued));
@@ -136,6 +139,7 @@ const main = async () => {
       clientId: session.audience,
       nonce: session.challenge,
       issuerPublicKey: b64uToBytes(bbsKey.pub),
+      holderSecret,
     });
     signedPayload.vc_presentations = [token];
     console.log('presenting an UNLINKABLE (BBS) age credential disclosing [age_over_18] from', issued.issuer);

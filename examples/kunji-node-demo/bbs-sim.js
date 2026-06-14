@@ -10,7 +10,11 @@
 //     node bbs-sim.js                                         # the holder
 // Override hosts: ISSUER=http://… BASE=http://… node bbs-sim.js
 import { buildBbsVpToken, parseAuthorizationRequest, requestQuery, buildVpResponse } from './oid4vc.js';
-import { b64uToBytes } from './bbs.js';
+import { b64uToBytes, bytesToB64u } from './bbs.js';
+
+// The holder secret (non-transferability): the real wallet derives this from its master key
+// (deriveBbsHolderSecret); the sim uses a random 32-byte value, sent at issuance + reused to present.
+const holderSecret = crypto.getRandomValues(new Uint8Array(32));
 
 const ISSUER = (process.env.ISSUER || 'http://localhost:4000').replace(/\/$/, '');
 const BASE = (process.env.BASE || 'http://localhost:3000').replace(/\/$/, '');
@@ -30,11 +34,11 @@ console.log('Unlinkability v3 sim (BBS over OID4VP) — issuer:', ISSUER, '· ve
 const issued = await getJson(`${ISSUER}/issue`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ format: 'bbs' }),
+  body: JSON.stringify({ format: 'bbs', holderBinding: bytesToB64u(holderSecret) }),
 });
 if (issued.status !== 200 || issued.body.credential?.format !== 'bbs') fail('BBS issuance failed', issued);
 const credential = issued.body.credential;
-console.log(`① received ONE BBS credential   vct = ${credential.vct} · claims:`, credential.names.join(', '));
+console.log(`① received ONE BBS credential   vct = ${credential.vct} · holder-bound: ${!!credential.holderBound} · claims:`, credential.names.join(', '));
 
 // The holder derives proofs against the issuer's published BBS key (kunji not in the path).
 const wk = await getJson(`${ISSUER}/.well-known/kunji-issuer.json`);
@@ -43,7 +47,7 @@ if (!bbsKey) fail('issuer published no BBS key', wk);
 const issuerPublicKey = b64uToBytes(bbsKey.pub);
 
 // ── ② Answer TWO `vc+bbs` OpenID4VP requests with the SAME credential ──────────────────────────────
-const presentOnce = async () => {
+const presentOnce = async (secret = holderSecret) => {
   const reqr = await getJson(`${BASE}/oid4vp/request?format=bbs`);
   if (reqr.status !== 200) fail('oid4vp/request failed', reqr);
   const ar = parseAuthorizationRequest(reqr.body.requestUri);
@@ -55,6 +59,7 @@ const presentOnce = async () => {
     clientId: ar.clientId,
     nonce: ar.nonce,
     issuerPublicKey,
+    holderSecret: secret,
   });
   const resp = await getJson(ar.responseUri, {
     method: 'POST',
@@ -75,6 +80,14 @@ console.log('   presented #2 → /oid4vp/response   ✓ approved · claims =', J
 console.log('\n③ Unlinkability check (ONE credential, two OID4VP presentations)');
 console.log('   vp_token bytes shared?   ', a.token === b.token ? 'YES ✗' : 'no  ✓');
 if (a.token === b.token) fail('the two proofs are identical — not unlinkable');
-console.log('\n✓ One BBS credential, two unlinkable zero-knowledge proofs over standard OpenID4VP —');
-console.log('  no signature, no holder key, nothing a colluding verifier can correlate. (v2 needed N copies.)');
+
+// ── ④ Holder binding: a THIEF with the credential blob but the WRONG holder secret is rejected ─────
+console.log('\n④ Holder binding (thief probe)');
+const thief = await presentOnce(crypto.getRandomValues(new Uint8Array(32))); // a wrong secret
+const rejected = thief.resp.status !== 200 || thief.resp.body.status !== 'approved';
+console.log('   wrong-secret presentation rejected?', rejected ? 'yes ✓' : 'NO ✗', `(${thief.resp.body.error || thief.resp.body.status})`);
+if (!rejected) fail('a wrong-secret (stolen-blob) presentation was approved — holder binding broken');
+
+console.log('\n✓ One BBS credential, two unlinkable zero-knowledge proofs over standard OpenID4VP, and a');
+console.log('  stolen blob without the master-key-derived holder secret is unusable. (v2 needed N copies.)');
 process.exit(0);

@@ -125,11 +125,14 @@ export const issueBatch = ({ holderJwks, dob, vct, claims }) =>
  * holder key — ONE credential derives a fresh randomized proof per presentation. Same predicate
  * pre-baking; the header carries a coarse (day) exp. Returns `{ credential }` (a BBS credential blob).
  */
-export const issueBbs = async ({ dob, vct, claims }) => ({
+export const issueBbs = async ({ dob, vct, claims, holderBinding }) => ({
   credential: await mintBbsCredential(issuerBbs.secretKey, issuerBbs.publicKey, {
     iss: issuerOrigin(),
     vct: vct || 'age',
     claims: claims || ageClaims(dob || DEFAULT_DOB),
+    // Holder binding (non-transferability): sign the holder's secret as an undisclosed message. The
+    // wallet derives it from its master key + re-derives to present; we sign it but don't store it.
+    holderSecret: holderBinding ? b64uToBytes(holderBinding) : undefined,
     ttlSeconds: 365 * DAY,
   }),
 });

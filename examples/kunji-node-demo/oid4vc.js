@@ -262,8 +262,8 @@ export const buildVpToken = ({ sdjwt, disclose, clientId, nonce, holderSecretKey
  * verifier (aud=clientId, the request nonce), serialized as a tagged string. `issuerPublicKey` is the
  * issuer's BBS key. No holder secret — the proof is derived from the credential itself.
  */
-export const buildBbsVpToken = async ({ credential, disclose, clientId, nonce, issuerPublicKey }) =>
-  encodeBbsPresentation(await buildBbsPresentation({ credential, disclose, audience: clientId, nonce, issuerPublicKey }));
+export const buildBbsVpToken = async ({ credential, disclose, clientId, nonce, issuerPublicKey, holderSecret }) =>
+  encodeBbsPresentation(await buildBbsPresentation({ credential, disclose, audience: clientId, nonce, issuerPublicKey, holderSecret }));
 
 export const verifyVpToken = async ({
   vpToken,

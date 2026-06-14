@@ -101,6 +101,29 @@ export const deriveChannelId = async (masterKey, audience) => {
     .join('');
 };
 
+// Deterministically derive a per-ISSUER BBS holder secret (32 bytes) from the master key. A
+// holder-bound BBS credential (verified-credentials.md §7 v3) signs this as an always-undisclosed
+// message; the holder re-derives it to present (BBS proof generation needs every message value), so a
+// leaked credential blob without the master key can't be presented — non-transferability. Never stored
+// in the blob. Per-issuer + domain-separated from the app/vault/cred-holder/channel derivations. Additive.
+export const deriveBbsHolderSecret = async (masterKey, issuer) => {
+  // Raw issuer origin (matches deriveCredentialHolderKey) — `iss` is a full origin the wallet passes
+  // canonically at both receive and present, so no normalization is needed (or correct on a URL).
+  const raw = await window.crypto.subtle.exportKey('raw', masterKey);
+  const ikm = await window.crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits']);
+  const bits = await window.crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode('kunji-bbs-holder-v1'),
+      info: new TextEncoder().encode(`kunji-bbs-holder:${String(issuer)}`),
+    },
+    ikm,
+    256,
+  );
+  return new Uint8Array(bits);
+};
+
 export const exportEd25519SecretKey = (secretKey) => bufferToBase64(secretKey.buffer ?? secretKey);
 
 export const exportEd25519PublicKey = (publicKey) => bufferToBase64(publicKey.buffer ?? publicKey);

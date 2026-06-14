@@ -13,6 +13,7 @@ import {
   encryptData,
   decryptData,
   deriveCredentialHolderKey,
+  deriveBbsHolderSecret,
   generateEd25519KeyPair,
   exportEd25519SecretKey,
   importEd25519SecretKey,
@@ -22,7 +23,7 @@ import {
   deriveECDHSharedSecret,
 } from '../lib/crypto';
 import { holderJwkFor, parseSdJwt, matchCredentialsByScope } from '../lib/vc';
-import { b64uToBytes } from '../lib/bbs';
+import { b64uToBytes, bytesToB64u } from '../lib/bbs';
 import {
   parseCredentialOffer,
   buildProofJwt,
@@ -325,12 +326,15 @@ export const receiveBbsFromIssuer = async (cryptoKey, issuerOrigin) => {
     .trim()
     .replace(/\/$/, '');
   if (!/^https?:\/\//.test(origin)) throw new Error('Enter the issuer URL (https://…).');
+  // Holder binding (non-transferability): a master-key-derived secret the issuer signs as an undisclosed
+  // message. Sent at issuance, NEVER stored in the blob — re-derived to present. [§7 v3]
+  const holderBinding = bytesToB64u(await deriveBbsHolderSecret(cryptoKey, origin));
   let resp;
   try {
     resp = await fetch(`${origin}/issue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ format: 'bbs' }),
+      body: JSON.stringify({ format: 'bbs', holderBinding }),
     });
   } catch {
     throw new Error('Could not reach the issuer.');
@@ -350,7 +354,8 @@ export const receiveBbsFromIssuer = async (cryptoKey, issuerOrigin) => {
  */
 export const presentBbsForLogin = async (cryptoKey, { cred, disclose, audience, nonce }) => {
   const issuerPublicKey = await getIssuerBbsKey(cred.iss);
-  return buildBbsVpToken({ credential: cred.bbs, disclose, clientId: audience, nonce, issuerPublicKey });
+  const holderSecret = cred.bbs?.holderBound ? await deriveBbsHolderSecret(cryptoKey, cred.iss) : undefined;
+  return buildBbsVpToken({ credential: cred.bbs, disclose, clientId: audience, nonce, issuerPublicKey, holderSecret });
 };
 
 // ── OpenID4VC interop (wallet side) ──────────────────────────────────────────
@@ -472,7 +477,8 @@ export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) =
   let vpToken;
   if (cred.format === 'bbs') {
     const issuerPublicKey = await getIssuerBbsKey(cred.iss);
-    vpToken = await buildBbsVpToken({ credential: cred.bbs, disclose, clientId: request.clientId, nonce: request.nonce, issuerPublicKey });
+    const holderSecret = cred.bbs?.holderBound ? await deriveBbsHolderSecret(cryptoKey, cred.iss) : undefined;
+    vpToken = await buildBbsVpToken({ credential: cred.bbs, disclose, clientId: request.clientId, nonce: request.nonce, issuerPublicKey, holderSecret });
   } else {
     const holderSecretKey = await holderKeyFor(cryptoKey, cred);
     vpToken = await buildVpToken({ sdjwt: cred.sdjwt, disclose, clientId: request.clientId, nonce: request.nonce, holderSecretKey });
