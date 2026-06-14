@@ -13,12 +13,15 @@ import {
   encryptData,
   decryptData,
   deriveCredentialHolderKey,
+  generateEd25519KeyPair,
+  exportEd25519SecretKey,
+  importEd25519SecretKey,
   generateECDHKeyPair,
   exportECDHPublicKey,
   importECDHPublicKey,
   deriveECDHSharedSecret,
 } from '../lib/crypto';
-import { holderJwkFor, parseSdJwt } from '../lib/vc';
+import { holderJwkFor, parseSdJwt, matchCredentialsByScope } from '../lib/vc';
 import {
   parseCredentialOffer,
   buildProofJwt,
@@ -27,6 +30,13 @@ import {
 } from '../lib/oid4vc';
 
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
+
+// Unlinkability v2 (verified-credentials.md §7): ask the issuer for a small batch of one-time-use
+// copies, each bound to a DISTINCT random holder key, so the wallet can spend a fresh copy per
+// presentation — no two presentations share an issuer signature or a holder key (`cnf.jwk`). Tunable:
+// trades issuer-side issuance volume for presentations-before-refill. Issuers that don't support batch
+// degrade gracefully to a single reusable (v1) credential.
+const BATCH_SIZE = 5;
 
 const VAULT_WRITE_URL = import.meta.env.VITE_VAULT_WRITE_URL || '/vault/write';
 const CREDENTIAL_POLL_URL = import.meta.env.VITE_CREDENTIAL_POLL_URL || '/credential/poll';
@@ -85,15 +95,105 @@ const credentialVaultWrite = async (cryptoKey, op, credId, docPayload) => {
   }
 };
 
-/** Store a received SD-JWT credential (+ metadata) encrypted in the vault. */
-export const storeCredential = async (cryptoKey, { vct, iss, sdjwt }) => {
+/**
+ * Store a received SD-JWT credential (+ metadata) encrypted in the vault. A v2 one-time-use copy also
+ * carries `holderSk` (the per-copy random holder secret key, base64), a `poolId` grouping its batch,
+ * and `oneTime:true` (spent on presentation). A v1 credential omits these (its holder key is re-derived
+ * from the issuer; reusable). Back-compat: legacy records simply have none of the three fields.
+ */
+export const storeCredential = async (cryptoKey, { vct, iss, sdjwt, holderSk, poolId, oneTime }) => {
   const credId = randomCredId();
-  const payload = await encryptData(
-    { vct, iss, sdjwt, receivedAt: Math.floor(Date.now() / 1000) },
-    cryptoKey,
-  );
+  const record = { vct, iss, sdjwt, receivedAt: Math.floor(Date.now() / 1000) };
+  if (holderSk) record.holderSk = holderSk;
+  if (poolId) record.poolId = poolId;
+  if (oneTime) record.oneTime = true;
+  const payload = await encryptData(record, cryptoKey);
   await credentialVaultWrite(cryptoKey, 'set', credId, payload);
-  return { credId, vct, iss };
+  return { credId, vct, iss, poolId };
+};
+
+// Generate N random holder keypairs for a batch — each becomes one one-time copy's `cnf.jwk`.
+const makeHolderKeys = (n) =>
+  Array.from({ length: n }, () => {
+    const { secretKey, publicKey } = generateEd25519KeyPair();
+    return { secretKey, publicKey, jwk: holderJwkFor(publicKey), skB64: exportEd25519SecretKey(secretKey) };
+  });
+
+// Normalize an issuer's response into the SD-JWT strings it returned (string array, object array
+// `[{credential}]`, or a single `{credential}` from a non-batch issuer). Robust to draft shape diffs.
+const credentialsFrom = (data) => {
+  const toStr = (c) => (typeof c === 'string' ? c : c?.credential);
+  if (Array.isArray(data?.credentials)) return data.credentials.map(toStr).filter(Boolean);
+  return data?.credential ? [toStr(data.credential)].filter(Boolean) : [];
+};
+
+/**
+ * Validate + store a batch of issued SD-JWTs under one `poolId`. Each copy must (a) have `iss` == the
+ * origin we asked, and (b) be bound (`cnf.jwk`) to one of the holder keys we offered — matched by key,
+ * not order, and each key used once (so the issuer can't bind two copies to the same key, which would
+ * relink them). A batch of >1 is `oneTime` (spent per presentation); a single (non-batch issuer) is a
+ * reusable v1 credential. Returns `{ poolId, count, vct, iss }`.
+ */
+const storeBatch = async (cryptoKey, origin, sdjwts, holderKeys) => {
+  if (!sdjwts.length) throw new Error('The issuer returned no credential.');
+  const byX = new Map(holderKeys.map((h) => [h.jwk.x, h]));
+  const oneTime = sdjwts.length > 1;
+  const poolId = randomCredId();
+  let count = 0;
+  let vct;
+  for (const sdjwt of sdjwts) {
+    const { issuerClaims } = parseSdJwt(sdjwt);
+    if (issuerClaims.iss !== origin) throw new Error('Issuer identity mismatch — cannot bind credential.');
+    const h = byX.get(issuerClaims.cnf?.jwk?.x);
+    if (!h) throw new Error('Issuer bound a credential to a key we did not offer.');
+    byX.delete(issuerClaims.cnf.jwk.x); // each holder key is used at most once
+    await storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: origin, sdjwt, holderSk: h.skB64, poolId, oneTime });
+    vct = issuerClaims.vct;
+    count++;
+  }
+  return { poolId, count, vct, iss: origin };
+};
+
+/**
+ * Collapse a flat held list into one logical credential per pool (a v1 credential is its own pool of
+ * one), each with a `remaining` count and whether its copies are one-time. For the credentials list UI.
+ */
+export const groupByPool = (held) => {
+  const groups = new Map();
+  for (const c of held || []) {
+    const key = c.poolId || c.credId;
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, vct: c.vct, iss: c.iss, oneTime: false, copies: [] };
+      groups.set(key, g);
+    }
+    if (c.oneTime) g.oneTime = true;
+    g.copies.push(c);
+  }
+  return Array.from(groups.values())
+    .map((g) => ({
+      ...g,
+      remaining: g.copies.length,
+      sample: g.copies.slice().sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0],
+    }))
+    .sort((a, b) => (b.sample?.receivedAt || 0) - (a.sample?.receivedAt || 0));
+};
+
+/**
+ * One unused copy per logical credential that satisfies `scope` → `[{ cred, disclose }]`. Wraps
+ * `matchCredentialsByScope` (which returns every matching copy, flat) and collapses by pool, so a
+ * 5-copy pool presents ONE copy (the one then spent) — never five identical rows / five presentations.
+ */
+export const selectForPresentation = (held, scope) => {
+  const seen = new Set();
+  const out = [];
+  for (const m of matchCredentialsByScope(held, scope)) {
+    const key = m.cred.poolId || m.cred.credId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
 };
 
 /** The held credentials, decrypted, newest first. Shared across devices. */
@@ -114,33 +214,32 @@ export const deleteCredential = async (cryptoKey, credId) => {
 };
 
 /**
- * Receive a credential from an issuer (synchronous): derive the per-issuer holder key, ask the issuer
- * to mint a credential bound to it (`POST {origin}/issue { holderJwk }`), and store the SD-JWT.
- * The issuer's `iss` MUST equal the origin we derived against (so presentation re-derives the same
- * holder key) — well-behaved issuers set `iss` to their own origin.
+ * Receive a credential from an issuer (synchronous): ask for a batch of one-time-use copies, each bound
+ * to a DISTINCT random holder key (`POST {origin}/issue { holderJwks:[…] }`), and store them under one
+ * pool (unlinkability v2 §7). An issuer that only understands the single `holderJwk` returns one
+ * `credential` → a reusable v1 credential (graceful fallback). The issuer's `iss` MUST equal the origin
+ * (so it can't bind a credential to a foreign issuer). Returns `{ poolId, count, vct, iss }`.
  */
 export const receiveFromIssuer = async (cryptoKey, issuerOrigin) => {
   const origin = String(issuerOrigin || '')
     .trim()
     .replace(/\/$/, '');
   if (!/^https?:\/\//.test(origin)) throw new Error('Enter the issuer URL (https://…).');
-  const { publicKey } = await deriveCredentialHolderKey(cryptoKey, origin);
+  const holderKeys = makeHolderKeys(BATCH_SIZE);
   let resp;
   try {
     resp = await fetch(`${origin}/issue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ holderJwk: holderJwkFor(publicKey) }),
+      // `holderJwks` is the batch ask; `holderJwk` keeps a pre-batch issuer working (one copy back).
+      body: JSON.stringify({ holderJwks: holderKeys.map((h) => h.jwk), holderJwk: holderKeys[0].jwk }),
     });
   } catch {
     throw new Error('Could not reach the issuer.');
   }
   if (!resp.ok) throw new Error('The issuer declined to issue a credential.');
-  const { credential } = await resp.json().catch(() => ({}));
-  if (!credential) throw new Error('The issuer returned no credential.');
-  const { issuerClaims } = parseSdJwt(credential);
-  if (issuerClaims.iss !== origin) throw new Error('Issuer identity mismatch — cannot bind credential.');
-  return storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: issuerClaims.iss, sdjwt: credential });
+  const sdjwts = credentialsFrom(await resp.json().catch(() => ({})));
+  return storeBatch(cryptoKey, origin, sdjwts, holderKeys);
 };
 
 // ── Async issuance via the kunji relay ───────────────────────────────────────
@@ -240,9 +339,11 @@ export const fetchVerifierKeys = async (clientId) => {
 
 /**
  * Receive a credential via an OpenID4VCI credential offer (pre-authorized_code grant): parse the offer,
- * exchange the pre-auth code for an access token + c_nonce, then request the credential with a holder
- * proof JWT (its `jwk` becomes the credential's `cnf.jwk`). Same holder-binding + issuer-origin guard as
- * `receiveFromIssuer`, so presentation re-derives the same per-issuer holder key.
+ * exchange the pre-auth code for an access token + c_nonce, then request a BATCH with N holder proof
+ * JWTs (`proofs.jwt:[…]`), each over a distinct random holder key (its `jwk` becomes that copy's
+ * `cnf.jwk`) — unlinkability v2 §7. An issuer that only reads the single `proof` returns one credential
+ * → a reusable v1 credential (graceful fallback). Same issuer-origin guard as `receiveFromIssuer`.
+ * Returns `{ poolId, count, vct, iss }`.
  */
 export const receiveViaOffer = async (cryptoKey, offerInput) => {
   let offer;
@@ -256,8 +357,6 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
     .replace(/\/$/, '');
   if (!httpsOrLoopback(issuer)) throw new Error('Credential offer issuer must be an https:// URL.'); // [S21]
   if (!offer.preAuthorizedCode) throw new Error('Unsupported offer (needs a pre-authorized code).');
-
-  const { secretKey, publicKey } = await deriveCredentialHolderKey(cryptoKey, issuer);
 
   let tokenResp;
   try {
@@ -273,23 +372,28 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
   const { access_token, c_nonce } = await tokenResp.json().catch(() => ({}));
   if (!access_token) throw new Error('The issuer returned no access token.');
 
-  const proofJwt = buildProofJwt({ holderSecretKey: secretKey, holderPublicKey: publicKey, audience: issuer, cNonce: c_nonce });
+  const holderKeys = makeHolderKeys(BATCH_SIZE);
+  const proofs = holderKeys.map((h) =>
+    buildProofJwt({ holderSecretKey: h.secretKey, holderPublicKey: h.publicKey, audience: issuer, cNonce: c_nonce }),
+  );
   let credResp;
   try {
     credResp = await fetch(`${issuer}/credential`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
-      body: JSON.stringify({ format: 'vc+sd-jwt', proof: { proof_type: 'jwt', jwt: proofJwt } }),
+      // `proofs` is the batch ask; `proof` keeps a pre-batch issuer working (one copy back).
+      body: JSON.stringify({
+        format: 'vc+sd-jwt',
+        proofs: { jwt: proofs },
+        proof: { proof_type: 'jwt', jwt: proofs[0] },
+      }),
     });
   } catch {
     throw new Error('Could not reach the issuer.');
   }
   if (!credResp.ok) throw new Error('The issuer declined to issue a credential.');
-  const { credential } = await credResp.json().catch(() => ({}));
-  if (!credential) throw new Error('The issuer returned no credential.');
-  const { issuerClaims } = parseSdJwt(credential);
-  if (issuerClaims.iss !== issuer) throw new Error('Issuer identity mismatch — cannot bind credential.');
-  return storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: issuerClaims.iss, sdjwt: credential });
+  const sdjwts = credentialsFrom(await credResp.json().catch(() => ({})));
+  return storeBatch(cryptoKey, issuer, sdjwts, holderKeys);
 };
 
 /**
@@ -302,13 +406,13 @@ export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) =
   // Bind the response destination to the shown verifier identity (anti response-redirection). [S20]
   if (!responseTargetTrusted(request.clientId, request.responseUri))
     throw new Error('Untrusted verifier: the response endpoint does not match its identity.');
-  const { secretKey } = await deriveCredentialHolderKey(cryptoKey, cred.iss);
+  const holderSecretKey = await holderKeyFor(cryptoKey, cred);
   const vpToken = await buildVpToken({
     sdjwt: cred.sdjwt,
     disclose,
     clientId: request.clientId,
     nonce: request.nonce,
-    holderSecretKey: secretKey,
+    holderSecretKey,
   });
   // The direct_post body differs by query form (DCQL → vp_token keyed by id; PD → vp_token + submission).
   const responseBody = buildVpResponse({ request, presentation: vpToken });
@@ -324,5 +428,23 @@ export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) =
   }
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(body.error || 'The verifier rejected the presentation.');
+  await spendIfOneTime(cryptoKey, cred); // a one-time copy is consumed on a successful presentation
   return body;
+};
+
+/**
+ * The holder secret key to present `cred` with: a v2 one-time copy carries its own random `holderSk`
+ * (use it); a v1 / legacy credential re-derives the per-issuer key. Lets old and new credentials coexist.
+ */
+export const holderKeyFor = async (cryptoKey, cred) =>
+  cred.holderSk ? importEd25519SecretKey(cred.holderSk) : (await deriveCredentialHolderKey(cryptoKey, cred.iss)).secretKey;
+
+/** Delete a one-time copy after it's been presented (best-effort; v1 credentials are left in place). */
+export const spendIfOneTime = async (cryptoKey, cred) => {
+  if (!cred?.oneTime || !cred.credId) return;
+  try {
+    await deleteCredential(cryptoKey, cred.credId);
+  } catch {
+    /* best-effort: a failed delete just means a copy may be reused — no security impact */
+  }
 };

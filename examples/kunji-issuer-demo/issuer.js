@@ -58,6 +58,17 @@ const ageClaims = (dob) => {
   return Object.fromEntries(AGE_THRESHOLDS.map((n) => [`age_over_${n}`, age >= n]));
 };
 
+const DAY = 24 * 3600;
+
+// Coarsen issuance to the UTC-day boundary so iat/exp don't fingerprint WHEN a credential was issued,
+// and so every credential the issuer mints in a day shares one iat/exp (a large anonymity set). Critical
+// for batch unlinkability: otherwise a holder's one-time copies all carry the SAME per-second timestamp,
+// which a colluding verifier can use to relink them. Issuers SHOULD coarsen. [S23]
+const coarseNowMs = () => Math.floor(Date.now() / 1000 / DAY) * DAY * 1000;
+
+// Cap batch issuance so a caller can't demand an unbounded number of copies (resource exhaustion). [S24]
+export const MAX_BATCH = 10;
+
 let nextIdx = 1;
 /**
  * Mint an age credential bound to `holderJwk`. Bakes `age_over_13/16/18/21` from `dob` (defaults to
@@ -72,7 +83,17 @@ export const issue = ({ holderJwk, dob, vct, claims }) => {
     claims: claims || ageClaims(dob || DEFAULT_DOB),
     holderJwk,
     status: { uri: statusUri(), idx },
-    ttlSeconds: 365 * 24 * 3600,
+    ttlSeconds: 365 * DAY,
+    now: coarseNowMs(), // day-coarse iat/exp — no per-second handle across a batch [S23]
   });
   return { credential, idx };
 };
+
+/**
+ * Batch issuance for unlinkability v2 (verified-credentials.md §7): one one-time-use credential per
+ * holder key, each with its own random salts (⇒ distinct issuer signature) and its own StatusList idx
+ * (⇒ per-copy revocation, and the idx doesn't link the copies). The wallet spends one copy per
+ * presentation, so no two presentations share a correlation handle. Returns `[{ credential, idx }, …]`.
+ */
+export const issueBatch = ({ holderJwks, dob, vct, claims }) =>
+  (holderJwks || []).map((holderJwk) => issue({ holderJwk, dob, vct, claims }));

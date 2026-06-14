@@ -23,7 +23,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { wellKnown, issue, isValid, revoke, issuerOrigin } from './issuer.js';
+import { wellKnown, issue, issueBatch, isValid, revoke, issuerOrigin, MAX_BATCH } from './issuer.js';
 import { depositToRelay } from './relay.js';
 import {
   credentialIssuerMetadata,
@@ -70,6 +70,12 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'POST' && path === '/issue') {
     const body = await readBody(req);
+    // Batch ask (unlinkability v2): one one-time copy per holder key, each its own signature + status idx.
+    if (Array.isArray(body?.holderJwks) && body.holderJwks.length) {
+      if (body.holderJwks.length > MAX_BATCH) return json(res, 400, { error: 'batch_too_large', max: MAX_BATCH }); // [S24]
+      const minted = issueBatch({ holderJwks: body.holderJwks, dob: body.dob, vct: body.vct, claims: body.claims });
+      return json(res, 200, { credentials: minted.map((m) => m.credential), issuer: issuerOrigin() });
+    }
     if (!body?.holderJwk) return json(res, 400, { error: 'holderJwk_required' });
     const { credential, idx } = issue({ holderJwk: body.holderJwk, dob: body.dob, vct: body.vct, claims: body.claims });
     // Async path: ECDH-encrypt + deposit to the kunji relay for the wallet to poll (out-of-band issuance).

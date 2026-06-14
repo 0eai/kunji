@@ -113,14 +113,21 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
   Implemented: `docs/scope.md` (Phase 1 scope engine), `docs/verified-credentials.md` (Phases 2–3
-  verified credentials), `docs/push-relay.md` **both transports** (① step-up via deep link, no new infra;
-  ② the opt-in Web Push relay — `pushDispatch` + `pushChannels` + a service worker), and `docs/oid4vc.md`
-  (**OpenID4VCI/VP interop** + verifier auth/DCQL). Proposed (not implemented): `docs/verified-credentials.md`
-  §14.4 (VC unlinkability — batch/BBS+).
+  verified credentials **+ §7 unlinkability v2 — batch/one-time-use**), `docs/push-relay.md` **both
+  transports** (① step-up via deep link, no new infra; ② the opt-in Web Push relay — `pushDispatch` +
+  `pushChannels` + a service worker), and `docs/oid4vc.md` (**OpenID4VCI/VP interop** + verifier
+  auth/DCQL). Proposed (not implemented): `docs/verified-credentials.md` §7/§14 **v3** (VC unlinkability
+  via BBS+ — single-credential unlinkable proofs).
 - `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
   user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
-  `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). RP verifier `vc.js` is a
-  byte-identical Node port across `kunji-{node,issuer,login}-demo` (parity-guarded).
+  `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). **Unlinkability v2:** a
+  receive pulls a **batch** of one-time copies, each bound to a distinct random holder key — the record
+  carries `{ holderSk, poolId, oneTime }` (absent ⇒ a reusable v1 / legacy credential); `groupByPool`
+  collapses copies for the list, `selectForPresentation` picks one copy per pool, `spendIfOneTime`
+  deletes a copy after it presents (`holderKeyFor` uses the stored key, else re-derives). Issuer demo
+  mints batches via `issueBatch`; runnable proof `kunji-node-demo/unlinkable-sim.js` (`npm run
+  unlinkable`). RP verifier `vc.js` is a byte-identical Node port across `kunji-{node,issuer,login}-demo`
+  (parity-guarded) — **unchanged by v2 (it's pure orchestration over the existing core).**
 - `src/lib/oid4vc.js` — **OpenID4VCI/VP interop** envelope over `vc.js` (offer/proof/token for issuance;
   presentation_definition/vp_token/direct_post for presentation); pure, no new crypto. Byte-identical Node
   port in `kunji-{node,issuer}-demo/oid4vc.js` (parity-guarded). Demos: issuer OpenID4VCI endpoints

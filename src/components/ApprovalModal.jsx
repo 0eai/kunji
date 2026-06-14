@@ -223,8 +223,9 @@ const ApprovalModal = ({ session, profile, onApprove, onDeny, onClose }) => {
             })}
           </div>
           <p className="text-[12px] text-faint leading-relaxed mt-2">
-            A verified credential is more identifiable than your random per-app identity — an app can
-            correlate you across services if you reuse the same one. Only what you turn on is shared.
+            {credMatches.some((m) => m.cred.oneTime)
+              ? 'These present a fresh single-use copy each time, so apps can’t link your visits by signature or key. Identical facts (like “over 18”) still look the same. Only what you turn on is shared.'
+              : 'A verified credential is more identifiable than your random per-app identity — an app can correlate you across services if you reuse the same one. Only what you turn on is shared.'}
           </p>
         </div>
       )}

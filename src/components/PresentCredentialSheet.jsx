@@ -111,8 +111,9 @@ const PresentCredentialSheet = ({ request, query, matches, verified, masterKey, 
                 })}
               </div>
               <p className="text-[12px] text-faint leading-relaxed mb-6">
-                A verified credential is more identifiable than your random per-app identity — a verifier can
-                correlate you across services if you reuse the same one. Only what you choose is shared.
+                {matches.some((m) => m.cred.oneTime)
+                  ? 'This credential presents a fresh single-use copy each time, so verifiers can’t link your visits by signature or key. Identical facts (like “over 18”) still look the same. Only what you choose is shared.'
+                  : 'A verified credential is more identifiable than your random per-app identity — a verifier can correlate you across services if you reuse the same one. Only what you choose is shared.'}
               </p>
             </>
           )}

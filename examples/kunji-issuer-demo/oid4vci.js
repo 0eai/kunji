@@ -10,7 +10,7 @@
 // The proof JWT's `jwk` becomes the credential's `cnf.jwk`, so the holder key the wallet re-derives on
 // presentation matches — holder-of-key, same as the kunji-native /issue. No new crypto. See docs/oid4vc.md.
 import { randomBytes } from 'node:crypto';
-import { issue, issuerOrigin } from './issuer.js';
+import { issue, issueBatch, issuerOrigin, MAX_BATCH } from './issuer.js';
 import { verifyProofJwt, SD_JWT_VC_FORMAT } from './oid4vc.js';
 
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
@@ -81,6 +81,22 @@ export const handleCredential = ({ authorization, body }) => {
   if (!t) return { status: 401, json: { error: 'invalid_token' } };
   const fmt = body?.format || (body?.credential_configuration_id ? SD_JWT_VC_FORMAT : undefined);
   if (fmt && fmt !== SD_JWT_VC_FORMAT) return { status: 400, json: { error: 'unsupported_credential_format' } };
+
+  // Batch issuance (unlinkability v2): `proofs.jwt:[…]` — each proof is over a distinct holder key
+  // (same c_nonce). Verify all before issuing, then mint one one-time copy per key. [OpenID4VCI batch]
+  const batch = body?.proofs?.jwt;
+  if (Array.isArray(batch) && batch.length) {
+    if (batch.length > MAX_BATCH) return { status: 400, json: { error: 'batch_too_large', max: MAX_BATCH } }; // [S24]
+    const holderJwks = [];
+    for (const jwt of batch) {
+      const v = verifyProofJwt({ proofJwt: jwt, audience: issuerOrigin(), cNonce: t.cNonce });
+      if (!v.ok) return { status: 400, json: { error: 'invalid_proof', detail: v.error } };
+      holderJwks.push(v.holderJwk);
+    }
+    tokens.delete(bearer); // single-use
+    return { status: 200, json: { credentials: issueBatch({ holderJwks }).map((m) => m.credential) } };
+  }
+
   const proofJwt = body?.proof?.jwt;
   if (body?.proof?.proof_type !== 'jwt' || !proofJwt) return { status: 400, json: { error: 'invalid_proof' } };
   const v = verifyProofJwt({ proofJwt, audience: issuerOrigin(), cNonce: t.cNonce });

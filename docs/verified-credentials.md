@@ -132,15 +132,33 @@ A reused credential is inherently a correlation handle (the issuer signature + c
 identical across presentations). This is in tension with kunji's per-app unlinkability, so make it a
 **conscious, tiered** choice:
 
-| Tier | Mechanism | Unlinkability | Cost |
-|---|---|---|---|
-| **v1** | SD-JWT + per-issuer holder key + **predicate pre-baking** + audience-bound KB-JWT | Linkable across **colluding** RPs (same issuer sig); minimal PII | none beyond Ed25519 (reuses today's crypto) |
-| **v2** | **Batch / one-time-use** credentials (issuer mints N single-use SD-JWTs) | Presentations don't share a signature | issuer-side issuance volume |
-| **v3** | **BBS+** signatures (derive an unlinkable proof per presentation + predicate proofs) | True unlinkable selective disclosure | new dep: BLS12-381 pairings (`@noble/curves` has it) — a real lift |
+| Tier | Mechanism | Unlinkability | Cost | Status |
+|---|---|---|---|---|
+| **v1** | SD-JWT + per-issuer holder key + **predicate pre-baking** + audience-bound KB-JWT | Linkable across **colluding** RPs (same issuer sig); minimal PII | none beyond Ed25519 (reuses today's crypto) | shipped |
+| **v2** | **Batch / one-time-use** credentials (issuer mints N single-use SD-JWTs) | Presentations share no correlation handle | issuer-side issuance volume | **shipped** |
+| **v3** | **BBS+** signatures (derive an unlinkable proof per presentation + predicate proofs) | True unlinkable selective disclosure from ONE credential | new dep: BLS12-381 pairings (`@noble/curves` has it) — a real lift | proposed |
 
-**Recommendation:** ship **v1**; the wallet **explicitly warns** at consent that a verified
-credential is more linkable than the default per-app `sub` (a §9.2-style caveat). Move to v2/v3 only
-if the privacy bar demands it.
+**v2 — how it works (shipped).** A correlation handle is more than the issuer signature: the holder key
+`cnf.jwk` lives in the issuer-signed payload and is revealed at **every** presentation, so distinct
+signatures alone don't unlink — **each one-time copy must also bind a distinct holder key**. So on
+receive the wallet generates **N random holder keys**, asks the issuer for **N copies** (one per key:
+native `/issue { holderJwks:[…] }` or OpenID4VCI `proofs:{jwt:[…]}`), and stores each copy with its own
+random holder secret (`holderSk`) under one `poolId`. Each presentation **spends** a fresh copy
+(present-then-delete), so no two presentations share an issuer signature, a holder key, or a StatusList
+index. The issuer must also **coarsen `iat`/`exp`** (the demo rounds to the UTC-day boundary): the
+issuer payload is revealed at every presentation, so a per-second timestamp shared across a batch would
+itself be a correlation handle — coarsening collapses every same-day issuance into one large anonymity
+set. Batch is **opt-in by graceful fallback**: an issuer that returns a single credential yields a
+reusable v1 credential, and pre-v2 stored credentials still present (the holder key is re-derived when
+no `holderSk` is stored). Residual, surfaced at consent: identical **claim values** still match across
+presentations — predicate pre-baking (`age_over_18:true`) keeps that non-identifying. Reference
+implementation: `src/services/credentials.js` (`receiveFromIssuer`/`receiveViaOffer`/`groupByPool`/
+`selectForPresentation`/`spendIfOneTime`), the issuer demo `issueBatch`, and the runnable proof
+`examples/kunji-node-demo/unlinkable-sim.js` (`npm run unlinkable`).
+
+**Recommendation:** **v1 + v2 are shipped** (the wallet still warns at consent that a verified credential
+is more identifiable than the default per-app `sub`, a §9.2-style caveat). Move to **v3 (BBS+)** only if
+the privacy bar demands single-credential unlinkable proofs (no per-presentation issuance cost).
 
 ## 8. Issuance
 
@@ -234,7 +252,11 @@ byte-stable (the holder key is additive); the wallet stays anonymous.
    the SD-JWT VC core — `src/lib/oid4vc.js` (+ Node port), the issuer-demo OpenID4VCI endpoints, the
    node-demo OpenID4VP verifier, a headless holder sim, and tests. Wallet-UI wiring is the follow-on.
    See [`oid4vc.md`](./oid4vc.md).
-4. **Unlinkability.** Batch/one-time credentials → BBS+ if warranted.
+4. **Unlinkability — v2 (done).** Batch / one-time-use credentials: the issuer mints N single-use
+   SD-JWTs, each bound to a distinct random holder key; the wallet spends one per presentation, so
+   presentations share no correlation handle (signature, holder key, or status idx). Graceful fallback
+   to a reusable v1 credential for non-batch issuers; pre-v2 credentials still present. See §7 + the
+   `npm run unlinkable` sim. **Proposed next:** v3 (BBS+) — single-credential unlinkable proofs.
 
 ## 15. Open decisions
 

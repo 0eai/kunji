@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BadgeCheck, Trash2, DownloadCloud, ScanLine } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Field, Monogram } from './ui/primitives';
-import { listCredentials, deleteCredential, receiveFromIssuer, receiveViaOffer } from '../services/credentials';
+import {
+  listCredentials,
+  deleteCredential,
+  receiveFromIssuer,
+  receiveViaOffer,
+  groupByPool,
+} from '../services/credentials';
 import { parseSdJwt } from '../lib/vc';
 import { useToast } from '../contexts/ToastContext';
 
@@ -43,11 +49,13 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
   }, [masterKey]);
   useEffect(() => refresh(), [refresh]);
 
+  // A v2 issuer returns a batch of one-time copies; show how many. A v1 issuer returns one.
+  const received = (r) => (r?.count > 1 ? `Received ${r.count} single-use copies.` : 'Credential received.');
+
   const receive = async () => {
     setBusy(true);
     try {
-      await receiveFromIssuer(masterKey, issuerUrl);
-      showToast('Credential received.');
+      showToast(received(await receiveFromIssuer(masterKey, issuerUrl)));
       setIssuerUrl('');
       refresh();
     } catch (e) {
@@ -57,15 +65,14 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
     }
   };
 
-  // OpenID4VCI: redeem a credential offer (pasted or scanned) — token + credential, then store.
+  // OpenID4VCI: redeem a credential offer (pasted or scanned) — token + a batch of copies, then store.
   const acceptOffer = async (input) => {
     const value = (input ?? offer).trim();
     if (!value) return;
     setShowScanner(false);
     setBusy(true);
     try {
-      await receiveViaOffer(masterKey, value);
-      showToast('Credential received.');
+      showToast(received(await receiveViaOffer(masterKey, value)));
       setOffer('');
       refresh();
     } catch (e) {
@@ -75,12 +82,27 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
     }
   };
 
-  const remove = async (c) => {
-    setDeleting(c.credId);
+  // Top up a depleted one-time pool from the same issuer (its origin is the credential's `iss`).
+  const receiveMore = async (group) => {
+    setBusy(true);
     try {
-      await deleteCredential(masterKey, c.credId);
+      showToast(received(await receiveFromIssuer(masterKey, group.iss)));
+      refresh();
+    } catch (e) {
+      showToast(e.message || 'Could not receive more from this issuer.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Remove a whole logical credential (every one-time copy in its pool).
+  const remove = async (group) => {
+    setDeleting(group.key);
+    try {
+      for (const c of group.copies) await deleteCredential(masterKey, c.credId);
       showToast('Credential removed.');
-      setCreds((list) => (list || []).filter((x) => x.credId !== c.credId));
+      const gone = new Set(group.copies.map((c) => c.credId));
+      setCreds((list) => (list || []).filter((x) => !gone.has(x.credId)));
       return true;
     } catch (e) {
       showToast('Could not remove: ' + (e.message || e), 'error');
@@ -89,6 +111,8 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
       setDeleting('');
     }
   };
+
+  const pools = creds === null ? null : groupByPool(creds);
 
   return (
     <Sheet onClose={onClose} z={60} labelledBy="creds-title">
@@ -100,26 +124,53 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
       </div>
       <p className="text-[14px] text-muted leading-relaxed mb-5">
         Credentials issued to you by trusted issuers. When an app asks you to prove something (like
-        being over 18), you present one — revealing only what's asked, never your date of birth.
+        being over 18), you present one — revealing only what's asked, never your date of birth. Each
+        proof spends a fresh single-use copy, so verifiers can't link your visits to each other.
       </p>
 
-      {creds === null ? (
+      {pools === null ? (
         <p className="text-[13px] text-faint mb-5">Loading…</p>
-      ) : creds.length === 0 ? (
+      ) : pools.length === 0 ? (
         <p className="text-[13px] text-faint mb-5">No credentials yet.</p>
       ) : (
         <div className="divide-y divide-line border-y border-line mb-5">
-          {creds.map((c) => (
-            <div key={c.credId} className="flex items-center gap-3 py-3">
-              <Monogram name={issuerLabel(c.iss)} seed={c.iss} size="sm" />
+          {pools.map((g) => (
+            <div key={g.key} className="flex items-center gap-3 py-3">
+              <Monogram name={issuerLabel(g.iss)} seed={g.iss} size="sm" />
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] text-ink truncate">{c.vct}</p>
+                <p className="text-[14px] text-ink truncate">{g.vct}</p>
                 <p className="text-[11px] text-faint truncate">
-                  {claimNames(c.sdjwt).join(', ')} · from {issuerLabel(c.iss)}
+                  {claimNames(g.sample?.sdjwt).join(', ')} · from {issuerLabel(g.iss)}
                 </p>
+                {g.oneTime && (
+                  <p className="text-[11px] text-faint mt-0.5">
+                    {g.remaining > 0 ? (
+                      <>
+                        single-use · {g.remaining} {g.remaining === 1 ? 'copy' : 'copies'} left
+                        {g.remaining <= 1 && (
+                          <button
+                            onClick={() => receiveMore(g)}
+                            disabled={busy}
+                            className="ml-1.5 font-medium text-accent hover:opacity-80 transition-opacity disabled:opacity-50"
+                          >
+                            Receive more
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => receiveMore(g)}
+                        disabled={busy}
+                        className="font-medium text-accent hover:opacity-80 transition-opacity disabled:opacity-50"
+                      >
+                        None left — receive more
+                      </button>
+                    )}
+                  </p>
+                )}
               </div>
               <button
-                onClick={() => setConfirm(c)}
+                onClick={() => setConfirm(g)}
                 className="shrink-0 inline-flex items-center gap-1 text-[13px] font-medium text-danger hover:opacity-80 transition-opacity"
                 title="Remove"
               >

@@ -15,11 +15,18 @@ import {
   requestsCredentials,
 } from '../services/identity';
 import { loadProfile } from '../services/profile';
-import { listCredentials, responseTargetTrusted, fetchVerifierKeys } from '../services/credentials';
-import { matchCredentialsByScope, buildPresentation } from '../lib/vc';
+import {
+  listCredentials,
+  responseTargetTrusted,
+  fetchVerifierKeys,
+  selectForPresentation,
+  holderKeyFor,
+  spendIfOneTime,
+} from '../services/credentials';
+import { buildPresentation } from '../lib/vc';
 import { parseAuthorizationRequest, requestQuery, verifyRequestObject } from '../lib/oid4vc';
 import { recordThisDevice } from '../services/devices';
-import { deriveVaultId, deriveCredentialHolderKey } from '../lib/crypto';
+import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
@@ -209,7 +216,8 @@ const Dashboard = ({
         const q = requestQuery(request); // unified DCQL / presentation_definition view
         const scopeId =
           'vc:' + q.vct + (q.iss ? '@' + q.iss : '') + (q.disclose?.length ? '#' + q.disclose.join(',') : '');
-        const matches = matchCredentialsByScope(await listCredentials(cryptoKey), [scopeId]);
+        // One copy per logical credential (a v2 pool collapses to a single presentable/spendable copy).
+        const matches = selectForPresentation(await listCredentials(cryptoKey), [scopeId]);
         setPendingPresentation({ request, query: q, matches, verified });
       } catch {
         showToast('Invalid presentation request.', 'error');
@@ -245,7 +253,8 @@ const Dashboard = ({
         let credentialMatches = [];
         if (requestsCredentials(qr)) {
           try {
-            credentialMatches = matchCredentialsByScope(await listCredentials(cryptoKey), qr.scope);
+            // One copy per logical credential (a v2 pool presents — and spends — a single copy).
+            credentialMatches = selectForPresentation(await listCredentials(cryptoKey), qr.scope);
           } catch {
             credentialMatches = [];
           }
@@ -295,24 +304,26 @@ const Dashboard = ({
           ? { name: profile.displayName, picture: profile.avatar }
           : undefined;
       // Build a presentation for each verified credential the user chose: selective disclosure +
-      // a holder-of-key proof bound to THIS session's challenge (the per-issuer holder key).
+      // a holder-of-key proof bound to THIS session's challenge. A v2 one-time copy presents with its
+      // own stored holder key; a v1 credential re-derives the per-issuer key (holderKeyFor handles both).
       let vcPresentations;
       if (credentials.length) {
         vcPresentations = [];
         for (const { cred, disclose } of credentials) {
-          const { secretKey } = await deriveCredentialHolderKey(cryptoKey, cred.iss);
           vcPresentations.push(
             await buildPresentation({
               sdjwt: cred.sdjwt,
               disclose,
               audience: pendingSession.audience,
               nonce: pendingSession.challenge,
-              holderSecretKey: secretKey,
+              holderSecretKey: await holderKeyFor(cryptoKey, cred),
             }),
           );
         }
       }
       await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims, vcPresentations);
+      // A one-time copy is spent once the assertion is in (best-effort; v1 credentials stay put).
+      for (const { cred } of credentials) await spendIfOneTime(cryptoKey, cred);
       showToast(`Signed in to ${audience}`);
       // The toast above is the confirmation for cross-device (QR) / device-code sign-ins.
       // Only the same-device deep link shows the "Return to …" sheet (it returns to the
