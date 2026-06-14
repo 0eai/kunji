@@ -6,7 +6,8 @@
   "description": "Framework-free, Firebase-free 'Sign in with kunji' relying party (Node http + @noble/curves).",
   "scripts": {
     "start": "node server.js",
-    "wallet": "node wallet-sim.js"
+    "wallet": "node wallet-sim.js",
+    "oid4vc": "node oid4vc-sim.js"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1"

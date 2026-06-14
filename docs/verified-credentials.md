@@ -152,8 +152,10 @@ Two interoperating paths:
   the issuer ECDH-encrypts the SD-JWT and deposits it via `credentialOfferRelay`; the wallet polls
   `credentialPoll` (`credentialSessions/{id}`, the same shape as `agentSessions`/`agentCapabilityPoll`)
   and decrypts. See `src/services/credentials.js` `receiveFromIssuer`/`receiveViaRelay`.
-- **OpenID4VCI** for real-world issuers (credential offer → token → credential endpoint). Recommended
-  for production issuers; the native relay is the zero-infra demo path.
+- **OpenID4VCI** for real-world issuers (credential offer → token → credential endpoint, with a holder
+  proof JWT). Implemented headless (issuer-demo endpoints + the envelope lib + sim — see
+  [`oid4vc.md`](./oid4vc.md)); recommended for production issuers, with the native relay as the zero-infra
+  demo path. Presentation has the matching **OpenID4VP** envelope (direct_post + presentation_definition).
 
 **Storage:** encrypted in the vault via a new `vaultWrite` `kind: 'credential'` (joining
 `profile|activity|agent|device` in `functions/index.js`) → `vaults/{vaultId}/credentials/{credId}`,
@@ -228,7 +230,10 @@ byte-stable (the holder key is additive); the wallet stays anonymous.
    toggles + linkability warning, presentation wiring in `submitDiscoverableAssertion`
    (`src/services/credentials.js`), and the RP verifier mirrored into the Firebase demo
    (`kunji-login-demo` `kunjiCallback`). A user holds + presents a credential in the app.
-3. **Interop.** OpenID4VCI/VP issuance & presentation.
+3. **Interop (done, headless).** OpenID4VCI issuance + OpenID4VP presentation as a thin envelope over
+   the SD-JWT VC core — `src/lib/oid4vc.js` (+ Node port), the issuer-demo OpenID4VCI endpoints, the
+   node-demo OpenID4VP verifier, a headless holder sim, and tests. Wallet-UI wiring is the follow-on.
+   See [`oid4vc.md`](./oid4vc.md).
 4. **Unlinkability.** Batch/one-time credentials → BBS+ if warranted.
 
 ## 15. Open decisions

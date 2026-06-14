@@ -11,6 +11,11 @@
  *   GET  /kunji/status?sessionId= → { status, sub, claims }
  *   GET  /*             → the static frontend (public/index.html)
  *
+ * OpenID4VP interop (a standalone verifier flow, same SD-JWT VC — docs/oid4vc.md):
+ *   GET  /oid4vp/request   → an authorization request (presentation_definition) + state
+ *   POST /oid4vp/response  ← direct_post { vp_token, presentation_submission, state }; verified locally
+ *   GET  /oid4vp/result?state= → { approved, claims }
+ *
  * Swapping the Map for Postgres/Redis and `http` for Express is a 1:1 mapping.
  */
 import { createServer as httpServer } from 'node:http';
@@ -21,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { verifyAssertion } from './verify.js';
 import { verifyCredentialPresentation, parseVcScope } from './vc.js';
+import { buildPresentationDefinition, verifyVpToken } from './oid4vc.js';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL_MS = 2 * 60 * 1000;
@@ -34,10 +40,16 @@ const token = (n) => randomBytes(n).toString('base64url');
 
 // In-memory store. A real RP uses its own DB; the shape is the same.
 const sessions = new Map(); // sessionId → { challenge, audience, callbackUrl, status, sub, claims, expiresAt }
+const vpRequests = new Map(); // state → { nonce, clientId, presentationDefinition, approved, claims, expiresAt } (OpenID4VP)
 const sweep = () => {
   const now = Date.now();
   for (const [id, s] of sessions) if (now > s.expiresAt + 5 * 60_000) sessions.delete(id);
+  for (const [id, r] of vpRequests) if (now > r.expiresAt + 5 * 60_000) vpRequests.delete(id);
 };
+
+// The single credential this verifier asks for over OpenID4VP (an age proof). Reuses the same
+// SD-JWT VC + KB-JWT as the login path — only the request/response envelope differs.
+const VP_QUERY = { vct: 'age', disclose: ['age_over_18'] };
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -194,6 +206,66 @@ const handler = async (req, res) => {
     return json(res, 200, { status: s.status, sub: s.sub, claims: s.claims, verified: s.verified });
   }
 
+  // ── OpenID4VP (presentation) — a STANDALONE verifier flow (distinct from the kunji login above).
+  // Verified locally with the SAME verifyCredentialPresentation; the wallet talks to us directly, no
+  // kunji server. See docs/oid4vc.md. ──────────────────────────────────────────────────────────────
+  //
+  // 3a. Build an authorization request (direct_post): a presentation_definition for an age VC.
+  if (req.method === 'GET' && path === '/oid4vp/request') {
+    sweep();
+    const { audience, callbackUrl } = originOf(req);
+    const base = callbackUrl.replace(/\/kunji\/callback$/, '');
+    const state = token(16);
+    const nonce = token(24);
+    const clientId = audience; // the KB-JWT `aud` the holder must bind to
+    const presentationDefinition = buildPresentationDefinition(VP_QUERY);
+    vpRequests.set(state, {
+      nonce,
+      clientId,
+      presentationDefinition,
+      approved: null,
+      claims: null,
+      expiresAt: Date.now() + SESSION_TTL_MS,
+    });
+    const params = new URLSearchParams({
+      response_type: 'vp_token',
+      client_id: clientId,
+      response_mode: 'direct_post',
+      response_uri: `${base}/oid4vp/response`,
+      nonce,
+      state,
+      presentation_definition: JSON.stringify(presentationDefinition),
+    });
+    return json(res, 200, { state, requestUri: `openid4vp://?${params.toString()}` });
+  }
+
+  // 3b. direct_post: the wallet posts { vp_token, presentation_submission, state }. Verify locally.
+  if (req.method === 'POST' && path === '/oid4vp/response') {
+    const body = await readBody(req);
+    const r = body?.state && vpRequests.get(body.state);
+    if (!r) return json(res, 400, { error: 'unknown_state' });
+    if (Date.now() > r.expiresAt) return json(res, 400, { error: 'expired' });
+    const vr = await verifyVpToken({
+      vpToken: body.vp_token,
+      presentationDefinition: r.presentationDefinition,
+      getIssuerKeys: fetchIssuerKeys,
+      checkStatus: fetchStatus,
+      clientId: r.clientId,
+      nonce: r.nonce,
+    });
+    r.approved = vr.ok;
+    r.claims = vr.ok ? vr.claims : null;
+    if (!vr.ok) return json(res, 400, { error: 'vp_' + vr.error });
+    return json(res, 200, { status: 'approved', iss: vr.iss, vct: vr.vct, claims: vr.claims });
+  }
+
+  // 3c. Poll the outcome by state (so a browser/sim that issued the request can read the result).
+  if (req.method === 'GET' && path === '/oid4vp/result') {
+    const r = vpRequests.get(url.searchParams.get('state') || '');
+    if (!r) return json(res, 404, { error: 'unknown_state' });
+    return json(res, 200, { approved: r.approved, claims: r.claims });
+  }
+
   // 4. Static frontend + its externalized script.
   if (req.method === 'GET' && path === '/app.js') {
     try {
@@ -253,4 +325,5 @@ server.listen(PORT, HOST, () => {
   console.log(`  local:  ${scheme}://localhost:${PORT}`);
   console.log(`  LAN:    ${scheme}://<your-ip>:${PORT}  (open from another device on your network)`);
   console.log(`Full flow without a phone:  npm run wallet  (add  BASE=${scheme}://<your-ip>:${PORT})`);
+  console.log(`OpenID4VC interop demo:     npm run oid4vc  (needs the issuer demo running)`);
 });

@@ -129,14 +129,36 @@ npm run wallet -- --claims   # also share a (fake) self-asserted profile
 You'll see the session approved, the `sub`, the derived default identity (e.g. _"Wandering Fox 42"_),
 and the shared `claims` when present.
 
+## OpenID4VC interop (issuance + presentation)
+
+The same SD-JWT VC also speaks the **standard rails** — no new crypto, just the envelope (see
+[`../../docs/oid4vc.md`](../../docs/oid4vc.md)). This RP exposes a standalone **OpenID4VP** verifier
+(`GET /oid4vp/request`, `POST /oid4vp/response` direct_post, `GET /oid4vp/result`), and the
+[`../kunji-issuer-demo`](../kunji-issuer-demo) exposes **OpenID4VCI** issuance. `oid4vc-sim.js` is a
+headless holder that runs both halves end-to-end:
+
+```bash
+# terminal 1 — the issuer (OpenID4VCI)
+cd examples/kunji-issuer-demo && npm install && PORT=4000 npm start
+# terminal 2 — this RP/verifier (OpenID4VP), then the holder sim
+cd examples/kunji-node-demo && npm install && npm start &
+ISSUER=http://localhost:4000 npm run oid4vc            # offer→token→credential, then request→vp_token→verify
+ISSUER=http://localhost:4000 npm run oid4vc -- --revoke  # → presentation REJECTED (revoked)
+```
+
+It proves a credential **issued over OpenID4VCI** then **presented over OpenID4VP** is the same SD-JWT
+VC bytes the kunji-native paths use.
+
 ## What's where
 
 | File              | Role                                                                       |
 | ----------------- | -------------------------------------------------------------------------- |
 | `server.js`       | Node `http` server: `/api/session`, `/kunji/callback`, `/kunji/status`     |
 | `verify.js`       | The spec §6 verifier — pure, no I/O, no Firebase (`node:crypto` + `@noble`) |
+| `vc.js` / `oid4vc.js` | SD-JWT VC verifier + the OpenID4VCI/VP envelope (byte-identical Node ports) |
 | `public/index.html` | Frontend using the `rp.js` widget + `kunji.handle(sub)` for the identity |
 | `wallet-sim.js`   | A simulated wallet so you can run the full flow without a device           |
+| `oid4vc-sim.js`   | A headless holder: OpenID4VCI issuance → OpenID4VP presentation, end-to-end |
 
 ## Showing the user
 

@@ -19,6 +19,16 @@ PORT=4000 npm start        # → http://localhost:4000
 | POST | `/issue` | `{ holderJwk, vct?, claims? }` | `{ credential, idx, issuer }` |
 | GET | `/status/1` | `?idx=N` | `{ valid }` |
 | POST | `/status/revoke` | `{ idx }` | `{ ok, revoked }` (demo control) |
+| GET | `/.well-known/openid-credential-issuer` | — | OpenID4VCI issuer metadata |
+| GET | `/.well-known/oauth-authorization-server` | — | token endpoint metadata |
+| GET | `/credential-offer` | — | `{ offer, offerUri }` (pre-authorized_code) |
+| POST | `/token` | `{ grant_type, pre-authorized_code }` | `{ access_token, c_nonce, … }` |
+| POST | `/credential` | `Bearer` + `{ proof:{ proof_type:'jwt', jwt } }` | `{ credential }` |
+
+The last five are the **OpenID4VCI** envelope around the same SD-JWT VC (`/issue` stays the
+kunji-native shortcut). The proof JWT's `jwk` becomes the credential's `cnf.jwk`, so holder-of-key is
+identical. See [`../../docs/oid4vc.md`](../../docs/oid4vc.md). The matching OpenID4VP presentation +
+the end-to-end sim live in [`../kunji-node-demo`](../kunji-node-demo) (`npm run oid4vc`).
 
 - **Predicate pre-baking:** by default it issues `age_over_18: true` (never a DOB), so disclosing
   the predicate leaks the answer, not the birthday.

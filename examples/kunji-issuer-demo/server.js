@@ -7,10 +7,17 @@
  *
  * Endpoints:
  *   GET  /.well-known/kunji-issuer.json  → { issuer, name, keys:[{kid,kty,crv,x}] }
- *   POST /issue        ← { holderJwk, vct?, claims? } → { credential, idx, issuer }
+ *   POST /issue        ← { holderJwk, vct?, claims? } → { credential, idx, issuer }   (kunji-native)
  *   GET  /status/1?idx= → { valid }   (the RP's checkStatus polls this)
  *   POST /status/revoke ← { idx }     (demo control: revoke a credential)
  *   GET  /*            → a minimal info page
+ *
+ * OpenID4VCI interop (same SD-JWT VC, standard envelope — docs/oid4vc.md):
+ *   GET  /.well-known/openid-credential-issuer    → issuer metadata
+ *   GET  /.well-known/oauth-authorization-server  → token endpoint metadata
+ *   GET  /credential-offer  → mint a pre-authorized_code → { offer, offerUri }
+ *   POST /token             ← pre-authorized_code grant → { access_token, c_nonce, … }
+ *   POST /credential        ← Bearer token + holder proof JWT → { credential }
  */
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -18,6 +25,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { wellKnown, issue, isValid, revoke, issuerOrigin } from './issuer.js';
 import { depositToRelay } from './relay.js';
+import {
+  credentialIssuerMetadata,
+  authServerMetadata,
+  createOffer,
+  handleToken,
+  handleCredential,
+} from './oid4vci.js';
 
 const PORT = process.env.PORT || 4000;
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -70,6 +84,21 @@ const server = createServer(async (req, res) => {
     return json(res, 200, { credential, idx, issuer: issuerOrigin() });
   }
 
+  // ── OpenID4VCI interop (same SD-JWT VC, standard envelope) ──────────────────────────────
+  if (req.method === 'GET' && path === '/.well-known/openid-credential-issuer')
+    return json(res, 200, credentialIssuerMetadata());
+  if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server')
+    return json(res, 200, authServerMetadata());
+  if (req.method === 'GET' && path === '/credential-offer') return json(res, 200, createOffer());
+  if (req.method === 'POST' && path === '/token') {
+    const r = handleToken(await readBody(req));
+    return json(res, r.status, r.json);
+  }
+  if (req.method === 'POST' && path === '/credential') {
+    const r = handleCredential({ authorization: req.headers.authorization, body: await readBody(req) });
+    return json(res, r.status, r.json);
+  }
+
   if (req.method === 'GET' && path === '/status/1') {
     return json(res, 200, { valid: isValid(url.searchParams.get('idx')) });
   }
@@ -96,6 +125,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 server.listen(PORT, HOST, () => {
   console.log(`kunji issuer demo on ${issuerOrigin()}`);
   console.log(`  keys:   ${issuerOrigin()}/.well-known/kunji-issuer.json`);
-  console.log(`  issue:  POST ${issuerOrigin()}/issue   { holderJwk, claims? }`);
+  console.log(`  issue:  POST ${issuerOrigin()}/issue   { holderJwk, claims? }   (kunji-native)`);
   console.log(`  status: GET  ${issuerOrigin()}/status/1?idx=N`);
+  console.log(`  oid4vci: GET ${issuerOrigin()}/.well-known/openid-credential-issuer · GET /credential-offer`);
 });
