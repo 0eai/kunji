@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BadgeCheck, Trash2, DownloadCloud } from 'lucide-react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { BadgeCheck, Trash2, DownloadCloud, ScanLine } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Field, Monogram } from './ui/primitives';
-import { listCredentials, deleteCredential, receiveFromIssuer } from '../services/credentials';
+import { listCredentials, deleteCredential, receiveFromIssuer, receiveViaOffer } from '../services/credentials';
 import { parseSdJwt } from '../lib/vc';
 import { useToast } from '../contexts/ToastContext';
+
+const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
 const claimNames = (sdjwt) => {
   try {
@@ -28,7 +30,9 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
   const { showToast } = useToast();
   const [creds, setCreds] = useState(null); // null = loading
   const [issuerUrl, setIssuerUrl] = useState('');
+  const [offer, setOffer] = useState(''); // an OpenID4VCI credential offer (openid-credential-offer://…)
   const [busy, setBusy] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [deleting, setDeleting] = useState('');
 
@@ -48,6 +52,24 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
       refresh();
     } catch (e) {
       showToast(e.message || 'Could not receive a credential.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // OpenID4VCI: redeem a credential offer (pasted or scanned) — token + credential, then store.
+  const acceptOffer = async (input) => {
+    const value = (input ?? offer).trim();
+    if (!value) return;
+    setShowScanner(false);
+    setBusy(true);
+    try {
+      await receiveViaOffer(masterKey, value);
+      showToast('Credential received.');
+      setOffer('');
+      refresh();
+    } catch (e) {
+      showToast(e.message || 'Could not accept the offer.', 'error');
     } finally {
       setBusy(false);
     }
@@ -109,11 +131,30 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
         </div>
       )}
 
-      <div className="text-[12px] uppercase tracking-wide text-faint mb-2">Receive from an issuer</div>
+      <div className="text-[12px] uppercase tracking-wide text-faint mb-2">Accept a credential offer</div>
+      <p className="text-[12px] text-faint leading-relaxed mb-2">
+        Scan or paste an issuer's offer (<span className="font-mono">openid-credential-offer://…</span>) —
+        the OpenID4VCI standard flow.
+      </p>
+      <Btn variant="quiet" onClick={() => setShowScanner(true)} className="w-full mb-2" disabled={busy}>
+        <ScanLine size={16} /> Scan offer
+      </Btn>
+      <Field label="…or paste the offer" value={offer} onChange={(e) => setOffer(e.target.value)} />
+      <Btn variant="primary" onClick={() => acceptOffer()} disabled={busy || !offer.trim()} className="w-full mt-3">
+        <DownloadCloud size={16} /> {busy ? 'Accepting…' : 'Accept offer'}
+      </Btn>
+
+      <div className="text-[12px] uppercase tracking-wide text-faint mb-2 mt-6">Receive from an issuer</div>
       <Field label="Issuer URL (https://…)" value={issuerUrl} onChange={(e) => setIssuerUrl(e.target.value)} />
       <Btn variant="primary" onClick={receive} disabled={busy || !issuerUrl.trim()} className="w-full mt-3">
         <DownloadCloud size={16} /> {busy ? 'Receiving…' : 'Receive credential'}
       </Btn>
+
+      {showScanner && (
+        <Suspense fallback={<div className="fixed inset-0 z-[200] bg-black" />}>
+          <QRScannerOverlay onScan={(raw) => acceptOffer(raw)} onClose={() => setShowScanner(false)} />
+        </Suspense>
+      )}
 
       {confirm && (
         <Sheet onClose={() => !deleting && setConfirm(null)} z={70} labelledBy="del-cred-title">

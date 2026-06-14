@@ -19,6 +19,14 @@ import {
   deriveECDHSharedSecret,
 } from '../lib/crypto';
 import { holderJwkFor, parseSdJwt } from '../lib/vc';
+import {
+  parseCredentialOffer,
+  buildProofJwt,
+  buildVpToken,
+  buildPresentationSubmission,
+} from '../lib/oid4vc';
+
+const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
 
 const VAULT_WRITE_URL = import.meta.env.VITE_VAULT_WRITE_URL || '/vault/write';
 const CREDENTIAL_POLL_URL = import.meta.env.VITE_CREDENTIAL_POLL_URL || '/credential/poll';
@@ -183,4 +191,92 @@ export const receiveViaRelay = async (cryptoKey, issuerOrigin, { tries = 60, int
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error('Timed out waiting for the issuer to deliver the credential.');
+};
+
+// ── OpenID4VC interop (wallet side) ──────────────────────────────────────────
+// The standard rails over the SAME SD-JWT VC + per-issuer holder key. See docs/oid4vc.md.
+
+/**
+ * Receive a credential via an OpenID4VCI credential offer (pre-authorized_code grant): parse the offer,
+ * exchange the pre-auth code for an access token + c_nonce, then request the credential with a holder
+ * proof JWT (its `jwk` becomes the credential's `cnf.jwk`). Same holder-binding + issuer-origin guard as
+ * `receiveFromIssuer`, so presentation re-derives the same per-issuer holder key.
+ */
+export const receiveViaOffer = async (cryptoKey, offerInput) => {
+  let offer;
+  try {
+    offer = parseCredentialOffer(offerInput);
+  } catch {
+    throw new Error('Not a valid credential offer.');
+  }
+  const issuer = String(offer.credentialIssuer || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (!/^https?:\/\//.test(issuer)) throw new Error('Credential offer has no valid issuer.');
+  if (!offer.preAuthorizedCode) throw new Error('Unsupported offer (needs a pre-authorized code).');
+
+  const { secretKey, publicKey } = await deriveCredentialHolderKey(cryptoKey, issuer);
+
+  let tokenResp;
+  try {
+    tokenResp = await fetch(`${issuer}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grant_type: PRE_AUTH_GRANT, 'pre-authorized_code': offer.preAuthorizedCode }),
+    });
+  } catch {
+    throw new Error('Could not reach the issuer.');
+  }
+  if (!tokenResp.ok) throw new Error('The issuer declined the offer.');
+  const { access_token, c_nonce } = await tokenResp.json().catch(() => ({}));
+  if (!access_token) throw new Error('The issuer returned no access token.');
+
+  const proofJwt = buildProofJwt({ holderSecretKey: secretKey, holderPublicKey: publicKey, audience: issuer, cNonce: c_nonce });
+  let credResp;
+  try {
+    credResp = await fetch(`${issuer}/credential`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
+      body: JSON.stringify({ format: 'vc+sd-jwt', proof: { proof_type: 'jwt', jwt: proofJwt } }),
+    });
+  } catch {
+    throw new Error('Could not reach the issuer.');
+  }
+  if (!credResp.ok) throw new Error('The issuer declined to issue a credential.');
+  const { credential } = await credResp.json().catch(() => ({}));
+  if (!credential) throw new Error('The issuer returned no credential.');
+  const { issuerClaims } = parseSdJwt(credential);
+  if (issuerClaims.iss !== issuer) throw new Error('Issuer identity mismatch — cannot bind credential.');
+  return storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: issuerClaims.iss, sdjwt: credential });
+};
+
+/**
+ * Present a held credential to an OpenID4VP verifier (direct_post): build a vp_token (KB-JWT bound to
+ * the verifier's `client_id` + the request `nonce`, signed by the per-issuer holder key) + a
+ * presentation_submission, and POST them to the request's `response_uri`. Returns the verifier's result.
+ */
+export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) => {
+  if (!request?.responseUri) throw new Error('Invalid request (no response endpoint).');
+  const { secretKey } = await deriveCredentialHolderKey(cryptoKey, cred.iss);
+  const vpToken = await buildVpToken({
+    sdjwt: cred.sdjwt,
+    disclose,
+    clientId: request.clientId,
+    nonce: request.nonce,
+    holderSecretKey: secretKey,
+  });
+  const presentationSubmission = buildPresentationSubmission(request.presentationDefinition);
+  let resp;
+  try {
+    resp = await fetch(request.responseUri, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vp_token: vpToken, presentation_submission: presentationSubmission, state: request.state }),
+    });
+  } catch {
+    throw new Error('Could not reach the verifier.');
+  }
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(body.error || 'The verifier rejected the presentation.');
+  return body;
 };

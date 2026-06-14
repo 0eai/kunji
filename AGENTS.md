@@ -95,15 +95,32 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   user-authorized, holder-of-key **capability** — never the keys (agentic delegation — shipped, v0.12.0).
 - `src/lib/capability.js` — agentic-delegation capability tokens (EdDSA-JWT, holder-of-key); see
   `docs/agentic-delegation.md`. RP verifier mirrored in `examples/kunji-login-demo/functions/capability.js`.
+- **Step-up authorization** (push-relay.md Transport ①): a same-device deep link
+  `app.kunji.cc/?authorize=<base64url(JSON agent request)>` (`src/App.jsx` `readIncomingLinks`) opens
+  `AuthorizeAgentSheet` straight to a **delta-aware** review (`initialRequest` prop: "already connected"
+  banner, new-vs-granted per item, revoke-prior). The RP loop (`403 insufficient_scope` → re-request →
+  retry) is shown in `examples/kunji-agent-demo` (`agent-sim.js` + the `/agent/stepup` browser demo).
+  No new Function/rule — it reuses `agentRequestRelay`/`agentCapabilityPoll`.
 - `tests/` — Vitest (crypto round-trips, identity validators, wallet↔RP verifier cross-check,
   capability mint/verify + wallet↔RP parity).
 - `docs/discoverable-login.md` — the full login protocol spec; `docs/agentic-delegation.md` — agents.
   Implemented: `docs/scope.md` (Phase 1 scope engine), `docs/verified-credentials.md` (Phases 2–3
-  verified credentials). Proposed (not implemented): `docs/push-relay.md`.
+  verified credentials), `docs/push-relay.md` **Transport ①** (step-up authorization — re-consent
+  via deep link, no new infra), and `docs/oid4vc.md` (**OpenID4VCI/VP interop**, headless — envelope
+  lib + demo endpoints + sim; wallet UI is the follow-on). Proposed (not implemented):
+  `docs/push-relay.md` **Transport ②** (the opt-in Web Push relay).
 - `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
   user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
   `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). RP verifier `vc.js` is a
   byte-identical Node port across `kunji-{node,issuer,login}-demo` (parity-guarded).
+- `src/lib/oid4vc.js` — **OpenID4VCI/VP interop** envelope over `vc.js` (offer/proof/token for issuance;
+  presentation_definition/vp_token/direct_post for presentation); pure, no new crypto. Byte-identical Node
+  port in `kunji-{node,issuer}-demo/oid4vc.js` (parity-guarded). Demos: issuer OpenID4VCI endpoints
+  (`kunji-issuer-demo/oid4vci.js` + routes), the OID4VP verifier routes in `kunji-node-demo/server.js`,
+  and the headless holder `kunji-node-demo/oid4vc-sim.js` (`npm run oid4vc`). **Wallet UI**:
+  `src/services/credentials.js` `receiveViaOffer`/`presentViaOid4vp`, an offer entry in
+  `CredentialsSheet.jsx`, and `PresentCredentialSheet.jsx` (opened from `Dashboard.handleQRScan` on an
+  `openid4vp://` scan or the `?vp=` deep link in `src/App.jsx`). See `docs/oid4vc.md`.
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 

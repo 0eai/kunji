@@ -8,24 +8,37 @@ import Dashboard from './components/Dashboard';
 // Default auto-lock timeout in minutes (20 hours) when the user hasn't set one.
 const AUTO_LOCK_DEFAULT_MIN = 1200;
 
-// Same-device deep link: an RP opens app.kunji.cc/?approve=<base64url(JSON payload)>.
-// Decode it once at startup so the Dashboard can show the approval without scanning.
-function readIncomingApproval() {
+// Decode one base64url(JSON) query param into its JSON string (validated), or null.
+function decodeB64urlParam(name) {
   try {
-    const raw = new URLSearchParams(window.location.search).get('approve');
+    const raw = new URLSearchParams(window.location.search).get(name);
     if (!raw) return null;
     const json = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
     JSON.parse(json); // validate it's JSON
-    history.replaceState(null, '', window.location.pathname); // clear the query
     return json;
   } catch {
     return null;
   }
 }
 
+// Same-device deep links an RP/agent/verifier can open:
+//   app.kunji.cc/?approve=<base64url(JSON login QR)>        → the login approval modal
+//   app.kunji.cc/?authorize=<base64url(JSON agent request)> → the agent re-consent sheet (step-up)
+//   app.kunji.cc/?vp=<url-encoded openid4vp:// request>     → the OpenID4VP present sheet
+// Decode once at startup; clear the query so a refresh doesn't replay it.
+function readIncomingLinks() {
+  const approve = decodeB64urlParam('approve');
+  const authorize = decodeB64urlParam('authorize');
+  // The OpenID4VP request is a URI (not JSON); URLSearchParams decodes the single `vp` value for us.
+  const vpRaw = new URLSearchParams(window.location.search).get('vp');
+  const vp = vpRaw && vpRaw.startsWith('openid4vp://') ? vpRaw : null;
+  if (approve || authorize || vp) history.replaceState(null, '', window.location.pathname);
+  return { approve, authorize, vp };
+}
+
 export default function App() {
   const { user, cryptoKey, loading, lockReason, setAuthUser, unlockVault, lockVault } = useVault();
-  const [incomingApproval] = useState(readIncomingApproval);
+  const [incoming] = useState(readIncomingLinks);
   const [authError, setAuthError] = useState(false);
 
   // Sign in anonymously on first load, persist session
@@ -150,7 +163,9 @@ export default function App() {
     <Dashboard
       user={user}
       cryptoKey={cryptoKey}
-      incomingApproval={incomingApproval}
+      incomingApproval={incoming.approve}
+      incomingAuthorize={incoming.authorize}
+      incomingPresentation={incoming.vp}
       onLock={() => {
         logActivity(user.uid, 'Vault Locked', 'info', 'Lock', cryptoKey);
         lockVault();

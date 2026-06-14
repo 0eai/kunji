@@ -17,6 +17,7 @@ import {
 import { loadProfile } from '../services/profile';
 import { listCredentials } from '../services/credentials';
 import { matchCredentialsByScope, buildPresentation } from '../lib/vc';
+import { parseAuthorizationRequest, pdToVcQuery } from '../lib/oid4vc';
 import { recordThisDevice } from '../services/devices';
 import { deriveVaultId, deriveCredentialHolderKey } from '../lib/crypto';
 import AppRow from './AppRow';
@@ -24,6 +25,8 @@ import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import SecurityPanel from './SecurityPanel';
 import AgentsSheet from './AgentsSheet';
+import AuthorizeAgentSheet from './AuthorizeAgentSheet';
+import PresentCredentialSheet from './PresentCredentialSheet';
 import CodeEntryModal from './CodeEntryModal';
 import CodePickerSheet from './CodePickerSheet';
 import Sheet from './ui/Sheet';
@@ -34,7 +37,7 @@ import { useToast } from '../contexts/ToastContext';
 // Lazy: the camera scanner (jsqr) loads only when opened.
 const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
-const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
+const Dashboard = ({ user, cryptoKey, onLock, incomingApproval, incomingAuthorize, incomingPresentation }) => {
   const { showToast } = useToast();
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,12 +49,16 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
   const [showAgents, setShowAgents] = useState(false);
   const [agentCount, setAgentCount] = useState(0); // active (non-expired) authorized agents
   const [pendingSession, setPendingSession] = useState(null);
+  const [pendingAuthorize, setPendingAuthorize] = useState(null); // raw agent request from ?authorize= deep link
+  const [pendingPresentation, setPendingPresentation] = useState(null); // { request, query, matches } — OpenID4VP
   const [selectedApp, setSelectedApp] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
   const [showCodePicker, setShowCodePicker] = useState(false); // top-level "enter a code": pick which app first
   const [returnInfo, setReturnInfo] = useState(null); // { audience, returnUrl } — same-device (deep-link) approval only
   const incomingHandled = useRef(false);
+  const authorizeHandled = useRef(false);
+  const presentationHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
   useEffect(() => {
@@ -108,7 +115,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, user.uid]);
 
-  // Same-device deep-link: process an incoming approval payload once the vault is ready.
+  // Same-device deep-link: process an incoming login-approval payload once the vault is ready.
   useEffect(() => {
     if (!vaultId || !incomingApproval || incomingHandled.current) return;
     incomingHandled.current = true;
@@ -116,11 +123,50 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, incomingApproval]);
 
+  // Same-device deep-link: an app/agent asking for (more) scope opens the agent re-consent sheet
+  // directly (push-relay.md Transport ① step-up). The sheet validates + ingests the request itself.
+  useEffect(() => {
+    if (!vaultId || !incomingAuthorize || authorizeHandled.current) return;
+    authorizeHandled.current = true;
+    setPendingAuthorize(incomingAuthorize);
+  }, [vaultId, incomingAuthorize]);
+
+  // Same-device deep-link: an OpenID4VP request (?vp=) opens the present sheet once the vault is ready.
+  useEffect(() => {
+    if (!vaultId || !incomingPresentation || presentationHandled.current) return;
+    presentationHandled.current = true;
+    handlePresentationRequest(incomingPresentation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultId, incomingPresentation]);
+
+  // OpenID4VP: a verifier asked the wallet to present a credential (a distinct flow from the kunji
+  // login QR — docs/oid4vc.md). Match held credentials to the request and open the present sheet.
+  const handlePresentationRequest = useCallback(
+    async (raw) => {
+      setShowScanner(false);
+      try {
+        const request = parseAuthorizationRequest(raw);
+        const q = pdToVcQuery(request.presentationDefinition);
+        const scopeId =
+          'vc:' + q.vct + (q.iss ? '@' + q.iss : '') + (q.disclose?.length ? '#' + q.disclose.join(',') : '');
+        const matches = matchCredentialsByScope(await listCredentials(cryptoKey), [scopeId]);
+        setPendingPresentation({ request, query: q, matches });
+      } catch {
+        showToast('Invalid presentation request.', 'error');
+      }
+    },
+    [cryptoKey, showToast],
+  );
+
   // useCallback so QRScannerOverlay's [onScan] effect doesn't tear down the camera
   // on every parent re-render.
   const handleQRScan = useCallback(
     async (rawValue, origin = 'qr') => {
       setShowScanner(false);
+
+      // An OpenID4VP request (scanned or via the ?vp= deep link) routes to the present sheet, not login.
+      const raw = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+      if (typeof raw === 'string' && raw.startsWith('openid4vp://')) return handlePresentationRequest(raw);
 
       try {
         const qr = parseQRPayload(rawValue);
@@ -169,7 +215,7 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
         showToast(msg, 'error');
       }
     },
-    [vaultId, cryptoKey, showToast],
+    [vaultId, cryptoKey, showToast, handlePresentationRequest],
   );
 
   const handleApprove = async ({ shareProfile, credentials = [] } = {}) => {
@@ -437,6 +483,28 @@ const Dashboard = ({ user, cryptoKey, onLock, incomingApproval }) => {
             setShowAgents(false);
             refreshAgents();
           }}
+        />
+      )}
+
+      {pendingAuthorize && (
+        <AuthorizeAgentSheet
+          userId={user.uid}
+          masterKey={cryptoKey}
+          initialRequest={pendingAuthorize}
+          onClose={() => {
+            setPendingAuthorize(null);
+            refreshAgents();
+          }}
+        />
+      )}
+
+      {pendingPresentation && (
+        <PresentCredentialSheet
+          request={pendingPresentation.request}
+          query={pendingPresentation.query}
+          matches={pendingPresentation.matches}
+          masterKey={cryptoKey}
+          onClose={() => setPendingPresentation(null)}
         />
       )}
 
