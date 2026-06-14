@@ -29,6 +29,7 @@ import { verifyAssertion } from './verify.js';
 import { verifyCredentialPresentation, parseVcScope } from './vc.js';
 import { verifyBbsPresentation, isBbsPresentation, decodeBbsPresentation } from './vcBbs.js';
 import { b64uToBytes } from './bbs.js';
+import { generateJweKeyPair, decryptJwe } from './jwe.js';
 import {
   buildPresentationDefinition,
   buildDcqlQuery,
@@ -50,6 +51,7 @@ const token = (n) => randomBytes(n).toString('base64url');
 // In-memory store. A real RP uses its own DB; the shape is the same.
 const sessions = new Map(); // sessionId → { challenge, audience, callbackUrl, status, sub, claims, expiresAt }
 const vpRequests = new Map(); // state → { nonce, clientId, presentationDefinition, approved, claims, expiresAt } (OpenID4VP)
+const requestObjects = new Map(); // id → { jwt, expiresAt } — by-reference request objects (request_uri)
 const sweep = () => {
   const now = Date.now();
   for (const [id, s] of sessions) if (now > s.expiresAt + 5 * 60_000) sessions.delete(id);
@@ -75,10 +77,25 @@ const loadVerifierKey = () => {
   }
   return { secretKey: sk, publicKey: ed25519.getPublicKey(sk) };
 };
+// The verifier's P-256 ENCRYPTION key (for direct_post.jwt encrypted responses — docs/oid4vc.md §5).
+// Persisted to .verifier-enc-key (git-ignored); the public JWK is published + carried in the signed
+// request's client_metadata. Loaded once at startup (top-level await).
+const VENCFILE = new URL('./.verifier-enc-key', import.meta.url);
+const loadVerifierEncKey = async () => {
+  if (existsSync(VENCFILE)) return JSON.parse(readFileSync(VENCFILE, 'utf8'));
+  const kp = await generateJweKeyPair();
+  writeFileSync(VENCFILE, JSON.stringify(kp));
+  return kp;
+};
+const verifierEnc = await loadVerifierEncKey();
+
 const verifierWellKnown = (clientId) => ({
   client_id: clientId,
   name: 'kunji node demo (verifier)',
-  keys: [{ kid: VERIFIER_KID, kty: 'OKP', crv: 'Ed25519', x: Buffer.from(loadVerifierKey().publicKey).toString('base64url') }],
+  keys: [
+    { kid: VERIFIER_KID, kty: 'OKP', crv: 'Ed25519', x: Buffer.from(loadVerifierKey().publicKey).toString('base64url') },
+    { kid: 'verifier-enc-1', ...verifierEnc.publicJwk }, // the P-256 encryption key (direct_post.jwt)
+  ],
 });
 
 const json = (res, code, body) => {
@@ -272,14 +289,26 @@ const handler = async (req, res) => {
     const base = callbackUrl.replace(/\/kunji\/callback$/, '');
     const state = token(16);
     const nonce = token(24);
-    const clientId = base; // the verifier's origin (HTTPS-anchored client_id) — also the KB-JWT `aud`
-    const wantBbs = url.searchParams.get('format') === 'bbs'; // request an unlinkable (v3) credential
+    // client_id scheme: default = HTTPS-anchored origin; `?scheme=did:jwk` exercises the did client_id
+    // scheme E2E (the key is embedded in the DID — no fetch). x509_san_dns / did:web are unit-test-proven
+    // (tests/oid4vc.{x509,did}.test.js drive the real verifyRequestObject + x509.js/did.js). [client_id schemes]
+    const wantScheme = url.searchParams.get('scheme');
+    const clientId =
+      wantScheme === 'did:jwk'
+        ? `did:jwk:${Buffer.from(JSON.stringify({ kty: 'OKP', crv: 'Ed25519', x: Buffer.from(loadVerifierKey().publicKey).toString('base64url') })).toString('base64url')}`
+        : base; // the verifier's origin (HTTPS-anchored client_id) — also the KB-JWT `aud`
+    const fmtParam = url.searchParams.get('format');
+    const wantBbs = fmtParam === 'bbs'; // request an unlinkable (v3) credential
+    const wantDcSdJwt = fmtParam === 'dc-sd-jwt'; // ask for the renamed `dc+sd-jwt` format [dc+sd-jwt]
     const usePd = !wantBbs && url.searchParams.get('query') === 'pd'; // BBS uses DCQL
     const signed = url.searchParams.get('signed') !== '0';
+    const wantRef = url.searchParams.get('ref') === '1'; // deliver the request by-reference (request_uri)
+    const wantEnc = url.searchParams.get('enc') === '1'; // ask for an encrypted response (direct_post.jwt)
     const presentationDefinition = usePd ? buildPresentationDefinition(VP_QUERY) : undefined;
+    const reqFormat = wantBbs ? BBS_VC_FORMAT : wantDcSdJwt ? 'dc+sd-jwt' : undefined;
     const dcqlQuery = usePd
       ? undefined
-      : buildDcqlQuery({ id: 'age_cred', ...VP_QUERY, ...(wantBbs ? { format: BBS_VC_FORMAT } : {}) });
+      : buildDcqlQuery({ id: 'age_cred', ...VP_QUERY, ...(reqFormat ? { format: reqFormat } : {}) });
     vpRequests.set(state, {
       nonce,
       clientId,
@@ -292,29 +321,59 @@ const handler = async (req, res) => {
     const params = {
       response_type: 'vp_token',
       client_id: clientId,
-      response_mode: 'direct_post',
+      response_mode: wantEnc ? 'direct_post.jwt' : 'direct_post',
       response_uri: `${base}/oid4vp/response`,
       nonce,
       state,
       ...(usePd ? { presentation_definition: presentationDefinition } : { dcql_query: dcqlQuery }),
+      // For an encrypted response, publish the verifier's enc key in client_metadata (signature-protected) —
+      // same kid as the .well-known copy so a wallet can correlate the two sources.
+      ...(wantEnc ? { client_metadata: { jwks: { keys: [{ kid: 'verifier-enc-1', ...verifierEnc.publicJwk }] } } } : {}),
     };
     let requestUri;
     if (signed) {
       const requestJwt = buildSignedAuthorizationRequest(loadVerifierKey().secretKey, { kid: VERIFIER_KID, params });
-      requestUri = `openid4vp://?${new URLSearchParams({ client_id: clientId, request: requestJwt }).toString()}`;
+      if (wantRef) {
+        // By-reference: serve the signed request at a URL; the QR carries only client_id + request_uri.
+        const id = token(16);
+        requestObjects.set(id, { jwt: requestJwt, expiresAt: Date.now() + SESSION_TTL_MS });
+        const ru = `${base}/oid4vp/request-object/${id}`;
+        requestUri = `openid4vp://?${new URLSearchParams({ client_id: clientId, request_uri: ru }).toString()}`;
+      } else {
+        requestUri = `openid4vp://?${new URLSearchParams({ client_id: clientId, request: requestJwt }).toString()}`;
+      }
     } else {
       const q = { ...params };
       if (q.presentation_definition) q.presentation_definition = JSON.stringify(q.presentation_definition);
       if (q.dcql_query) q.dcql_query = JSON.stringify(q.dcql_query);
+      if (q.client_metadata) q.client_metadata = JSON.stringify(q.client_metadata);
       requestUri = `openid4vp://?${new URLSearchParams(q).toString()}`;
     }
     return json(res, 200, { state, requestUri });
   }
 
+  // 3a-ref. Serve a by-reference request object (request_uri). The JWS is self-protecting (signed), so
+  // this endpoint is unauthenticated; it expires with the session TTL.
+  if (req.method === 'GET' && path.startsWith('/oid4vp/request-object/')) {
+    const obj = requestObjects.get(path.slice('/oid4vp/request-object/'.length));
+    if (!obj || Date.now() > obj.expiresAt) return json(res, 404, { error: 'not_found' });
+    res.writeHead(200, { 'Content-Type': 'application/oauth-authz-req+jwt', 'Cache-Control': 'no-store' });
+    return res.end(obj.jwt);
+  }
+
   // 3b. direct_post: the wallet posts { vp_token, presentation_submission?, state }. The vp_token is a
   // bare SD-JWT string (presentation_definition) or an object keyed by the DCQL credential id. Verify locally.
   if (req.method === 'POST' && path === '/oid4vp/response') {
-    const body = await readBody(req);
+    let body = await readBody(req);
+    // Encrypted response (direct_post.jwt): the wallet sent { response: <JWE> } — decrypt to the inner
+    // { vp_token, state } with the verifier's enc private key, then verify as usual.
+    if (body?.response) {
+      try {
+        body = await decryptJwe(body.response, verifierEnc.privateJwk);
+      } catch {
+        return json(res, 400, { error: 'bad_jwe' });
+      }
+    }
     const r = body?.state && vpRequests.get(body.state);
     if (!r) return json(res, 400, { error: 'unknown_state' });
     if (Date.now() > r.expiresAt) return json(res, 400, { error: 'expired' });

@@ -66,7 +66,13 @@ const PresentCredentialSheet = ({ request, query, matches, verified, masterKey, 
             <span className="font-mono text-ink">{request.clientId || 'A verifier'}</span> wants you to prove{' '}
             <span className="font-mono text-ink">{(query.disclose || []).join(', ') || query.vct}</span>.
           </p>
-          {verified ? (
+          {verified && String(request.clientId || '').startsWith('did:jwk:') ? (
+            // did:jwk is SELF-ASSERTED — the signature only proves control of the key it names itself, NOT
+            // any domain/origin. Don't overstate it as a "verified verifier". [S29]
+            <p className="text-[12px] text-faint leading-relaxed mb-4">
+              Signature valid, but this is a self-asserted key (no domain proof) — only present to requesters you trust.
+            </p>
+          ) : verified ? (
             <p className="text-[12px] text-success leading-relaxed mb-4 flex items-center gap-1">
               <CheckCircle2 size={13} className="shrink-0" /> Verified verifier — it proved control of this domain.
             </p>

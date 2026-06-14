@@ -38,9 +38,11 @@ const pubFromOkpJwk = (jwk) => {
   return b64u.toBytes(jwk.x);
 };
 
-export const SD_JWT_VC_FORMAT = 'vc+sd-jwt'; // kunji's `typ`; the ecosystem is renaming this to `dc+sd-jwt`
+export const SD_JWT_VC_FORMAT = 'vc+sd-jwt'; // EMIT default; the ecosystem renamed this to `dc+sd-jwt`
+export const SD_JWT_VC_FORMATS = ['vc+sd-jwt', 'dc+sd-jwt']; // ACCEPT both (back-compat rename) [dc+sd-jwt]
 export const BBS_VC_FORMAT = 'vc+bbs'; // the unlinkable (v3) credential format — verified-credentials.md §7
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
+const AUTH_CODE_GRANT = 'authorization_code';
 
 const queryOf = (s) => new URLSearchParams(String(s).includes('?') ? String(s).split('?').slice(1).join('?') : '');
 
@@ -59,11 +61,16 @@ export const parseCredentialOffer = (input) => {
     offer = typeof offer.credential_offer === 'string' ? JSON.parse(offer.credential_offer) : offer.credential_offer;
   }
   const grant = offer?.grants?.[PRE_AUTH_GRANT] || {};
+  const authGrant = offer?.grants?.[AUTH_CODE_GRANT];
   return {
     credentialIssuer: offer?.credential_issuer,
     configurationIds: offer?.credential_configuration_ids || [],
     preAuthorizedCode: grant['pre-authorized_code'],
     txCode: grant.tx_code,
+    // The authorization_code grant (omitted when absent → existing pre-auth callers untouched).
+    authorizationCode: authGrant
+      ? { issuerState: authGrant.issuer_state, authorizationServer: authGrant.authorization_server }
+      : undefined,
   };
 };
 
@@ -98,6 +105,146 @@ export const verifyProofJwt = ({ proofJwt, audience, cNonce, now = Date.now() })
   if (p.nonce !== cNonce) return { ok: false, error: 'proof_nonce_mismatch' };
   if (typeof p.iat !== 'number' || Math.abs(now - p.iat * 1000) > 300_000) return { ok: false, error: 'stale_proof' };
   return { ok: true, holderJwk: jwk };
+};
+
+// ── DPoP (RFC 9449) — sender-constrained access token on the token + credential leg ──
+// kunji pins EdDSA everywhere (capability / KB-JWT / proof), so the DPoP proof key is Ed25519 too — a
+// deliberate deviation from the RFC's usual ES256 (one curve, one verify path). Freshness is the same
+// ±300s iat window as verifyProofJwt; replay (`jti`) detection is the SERVER's job, like the other verifiers.
+const dpopSha256 = async (str) => new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', enc(str)));
+const normalizeHtu = (u) => {
+  try {
+    const x = new URL(u);
+    return `${x.origin}${x.pathname}`; // RFC 9449: compare htu without query/fragment
+  } catch {
+    return String(u || '');
+  }
+};
+const randomDpopJti = () => {
+  const b = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(b);
+  return b64u.fromBytes(b);
+};
+
+/** RFC 7638 JWK thumbprint of an OKP Ed25519 JWK → base64url(SHA-256(canonical {crv,kty,x})). */
+export const jwkThumbprint = async (jwk) =>
+  b64u.fromBytes(await dpopSha256(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x })));
+
+/**
+ * Build a DPoP proof JWS (`typ:'dpop+jwt'`, embedded `jwk`). Claims: `htu` (URL, no query/fragment),
+ * `htm` (method), `iat`, random `jti`, plus `ath` (base64url-SHA-256 of the access token) when bound and
+ * `nonce` when the server issued a DPoP-Nonce.
+ */
+export const buildDpopProof = async ({ htu, htm, accessToken, nonce, holderSecretKey, holderPublicKey, now = Date.now() }) => {
+  const header = { alg: 'EdDSA', typ: 'dpop+jwt', jwk: okpJwk(holderPublicKey) };
+  const claims = {
+    htu: normalizeHtu(htu),
+    htm: String(htm || '').toUpperCase(),
+    iat: Math.floor(now / 1000),
+    jti: randomDpopJti(),
+    ...(accessToken ? { ath: b64u.fromBytes(await dpopSha256(accessToken)) } : {}),
+    ...(nonce ? { nonce } : {}),
+  };
+  return signJWS(header, claims, holderSecretKey);
+};
+
+/**
+ * Verify a DPoP proof: typ/alg, the embedded-jwk signature, `htu`/`htm` match, `iat` freshness, and `ath`
+ * == SHA-256(access token) when an `accessToken` is given. Returns the key thumbprint `jkt` (to bind/compare
+ * `cnf.jkt`) and `jti` (for the server's replay cache).
+ * @returns {Promise<{ ok:true, jkt, jti } | { ok:false, error }>}
+ */
+export const verifyDpopProof = async ({ dpop, htu, htm, accessToken, now = Date.now() }) => {
+  let decoded;
+  try {
+    decoded = decodeJWS(dpop);
+  } catch {
+    return { ok: false, error: 'malformed_dpop' };
+  }
+  if (decoded.header?.typ !== 'dpop+jwt' || decoded.header?.alg !== 'EdDSA') return { ok: false, error: 'bad_dpop_header' };
+  let pub;
+  try {
+    pub = pubFromOkpJwk(decoded.header.jwk);
+  } catch {
+    return { ok: false, error: 'bad_dpop_jwk' };
+  }
+  if (!verifyJWS(dpop, pub)) return { ok: false, error: 'bad_dpop_signature' };
+  const p = decoded.claims;
+  if (p.htu !== normalizeHtu(htu)) return { ok: false, error: 'dpop_htu_mismatch' };
+  if (p.htm !== String(htm || '').toUpperCase()) return { ok: false, error: 'dpop_htm_mismatch' };
+  if (typeof p.iat !== 'number' || Math.abs(now - p.iat * 1000) > 300_000) return { ok: false, error: 'stale_dpop' };
+  if (accessToken && p.ath !== b64u.fromBytes(await dpopSha256(accessToken))) return { ok: false, error: 'dpop_ath_mismatch' };
+  return { ok: true, jkt: await jwkThumbprint(decoded.header.jwk), jti: p.jti };
+};
+
+// ── OpenID4VCI — authorization_code grant + PKCE (S256) ──────────────────────
+// A second issuance path alongside pre-authorized_code (the default). PKCE uses S256 only. The lib +
+// demos + headless sim prove the flow end-to-end; the wallet UI is deferred (kunji is a QR/no-redirect
+// wallet — there's no authorization-server redirect/custom-scheme return).
+
+/** A PKCE code_verifier (RFC 7636): 43 chars of base64url(32 random bytes). */
+export const generateCodeVerifier = () => {
+  const b = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(b);
+  return b64u.fromBytes(b);
+};
+/** code_challenge = base64url(SHA-256(ascii(code_verifier))) for `code_challenge_method=S256`. */
+export const computeCodeChallenge = async (codeVerifier) => b64u.fromBytes(await dpopSha256(codeVerifier));
+/** Generate a PKCE pair (S256). */
+export const generatePkce = async () => {
+  const codeVerifier = generateCodeVerifier();
+  return { codeVerifier, codeChallenge: await computeCodeChallenge(codeVerifier), codeChallengeMethod: 'S256' };
+};
+/** Issuer side: a code_verifier matches a stored code_challenge (S256). */
+export const verifyPkce = async ({ codeVerifier, codeChallenge }) =>
+  typeof codeVerifier === 'string' && (await computeCodeChallenge(codeVerifier)) === codeChallenge;
+
+/**
+ * Build the holder's authorization request to the issuer's authorization endpoint. Returns `{ url, params }`
+ * (no browser needed — the sim drives it). `authorization_details` is the OID4VCI-preferred way to ask for
+ * a configuration; `code_challenge`/S256 carry PKCE; `state` is the holder's CSRF check on the redirect.
+ */
+export const buildAuthorizationRequest = ({
+  authorizationEndpoint,
+  clientId,
+  redirectUri,
+  codeChallenge,
+  state,
+  issuerState,
+  credentialIssuer,
+  configurationId,
+  scope,
+}) => {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    state,
+    authorization_details: JSON.stringify([
+      { type: 'openid_credential', credential_configuration_id: configurationId, ...(credentialIssuer ? { locations: [credentialIssuer] } : {}) },
+    ]),
+    ...(scope ? { scope } : {}),
+    ...(issuerState ? { issuer_state: issuerState } : {}),
+  });
+  return { url: `${authorizationEndpoint}?${params.toString()}`, params };
+};
+
+/**
+ * Resolve the issuer's authorization endpoint: read the issuer metadata → its authorization server →
+ * that server's `/.well-known/oauth-authorization-server`. `fetchImpl` is injectable for tests.
+ */
+export const resolveAuthorizationEndpoint = async (credentialIssuer, { fetchImpl = fetch } = {}) => {
+  const issuer = String(credentialIssuer).replace(/\/$/, '');
+  const meta = await (await fetchImpl(`${issuer}/.well-known/openid-credential-issuer`)).json();
+  const authServer = String((meta.authorization_servers && meta.authorization_servers[0]) || issuer).replace(/\/$/, '');
+  const as = await (await fetchImpl(`${authServer}/.well-known/oauth-authorization-server`)).json();
+  return {
+    authorizationServer: authServer,
+    authorizationEndpoint: as.authorization_endpoint || `${authServer}/authorize`,
+    tokenEndpoint: as.token_endpoint || `${issuer}/token`,
+  };
 };
 
 // ── OpenID4VP — presentation_definition ↔ kunji vc query ─────────────────────
@@ -198,6 +345,7 @@ export const parseAuthorizationRequest = (input) => {
       responseUri: c.response_uri,
       presentationDefinition: asObj(c.presentation_definition),
       dcqlQuery: asObj(c.dcql_query),
+      clientMetadata: asObj(c.client_metadata), // carries the verifier's enc key for direct_post.jwt
     };
   }
   return {
@@ -210,7 +358,37 @@ export const parseAuthorizationRequest = (input) => {
     responseUri: get('response_uri'),
     presentationDefinition: asObj(get('presentation_definition')),
     dcqlQuery: asObj(get('dcql_query')),
+    clientMetadata: asObj(get('client_metadata')),
   };
+};
+
+// Hosts where http:// is allowed (local dev) — same posture as the wallet's callback/issuer guards.
+const isLoopbackHost = (h) => h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
+
+/**
+ * Resolve an OpenID4VP request that may be by-REFERENCE: if the input carries `request_uri` (and no inline
+ * `request`), fetch the signed request object from it (HTTPS-only except loopback) and parse that. The
+ * fetch host is UNTRUSTED — `verifyRequestObject` still checks the signature, so a forged `request_uri`
+ * body can't impersonate a verifier. Otherwise (inline/unsigned) just `parseAuthorizationRequest`.
+ * `fetchImpl` is injectable for tests. [request_uri by-reference]
+ */
+export const resolveAuthorizationRequest = async (input, { fetchImpl = fetch } = {}) => {
+  const get = typeof input === 'string' ? (k) => queryOf(input).get(k) : (k) => input?.[k];
+  const requestUri = get('request_uri');
+  if (requestUri && !get('request')) {
+    let u;
+    try {
+      u = new URL(requestUri);
+    } catch {
+      throw new Error('bad_request_uri');
+    }
+    if (u.protocol !== 'https:' && !isLoopbackHost(u.hostname)) throw new Error('request_uri_not_https');
+    const resp = await fetchImpl(requestUri);
+    if (!resp.ok) throw new Error('request_uri_unreachable');
+    const requestJwt = (await resp.text()).trim();
+    return parseAuthorizationRequest({ client_id: get('client_id'), request: requestJwt });
+  }
+  return parseAuthorizationRequest(input);
 };
 
 export const buildSignedAuthorizationRequest = (verifierSecretKey, { kid, params, ttlSeconds = 300, now = Date.now() }) => {
@@ -219,39 +397,78 @@ export const buildSignedAuthorizationRequest = (verifierSecretKey, { kid, params
   return signJWS({ alg: 'EdDSA', typ: 'oauth-authz-req+jwt', kid }, claims, verifierSecretKey);
 };
 
-export const verifyRequestObject = async ({ requestJwt, getVerifierKeys, clientId, now = Date.now() }) => {
+/**
+ * Classify an OpenID4VP `client_id` by scheme: `did:*` (key from the DID), `x509_san_dns:<dns>` (key from
+ * an x5c cert whose SAN matches), or the default HTTPS-anchored origin (key from its `.well-known`). A bare
+ * origin stays the back-compat default.
+ */
+export const parseClientIdScheme = (clientId) => {
+  const s = String(clientId || '');
+  if (s.startsWith('did:')) return { scheme: 'did', value: s };
+  if (s.startsWith('x509_san_dns:')) return { scheme: 'x509_san_dns', value: s.slice('x509_san_dns:'.length) };
+  return { scheme: 'https', value: s };
+};
+
+export const verifyRequestObject = async ({ requestJwt, getVerifierKeys, resolveDidKey, verifyX509, trustAnchors, clientId, now = Date.now() }) => {
   let decoded;
   try {
     decoded = decodeJWS(requestJwt);
   } catch {
     return { ok: false, error: 'malformed_request' };
   }
-  if (decoded.header?.typ !== 'oauth-authz-req+jwt' || decoded.header?.alg !== 'EdDSA') {
-    return { ok: false, error: 'bad_request_header' };
-  }
+  if (decoded.header?.typ !== 'oauth-authz-req+jwt') return { ok: false, error: 'bad_request_header' };
   const cid = clientId || decoded.claims?.client_id;
   if (!cid) return { ok: false, error: 'no_client_id' };
   if (clientId && decoded.claims?.client_id && decoded.claims.client_id !== clientId) {
     return { ok: false, error: 'client_id_mismatch' };
   }
-  let keys;
-  try {
-    keys = await getVerifierKeys(cid);
-  } catch {
-    return { ok: false, error: 'verifier_unresolved' };
+  // Dispatch by client_id scheme. Default (bare/https origin) is the existing HTTPS-anchored `.well-known`
+  // scheme (EdDSA). did:* resolves an OKP key (EdDSA). x509_san_dns verifies an ES256 JWS against an x5c
+  // chain (delegated to the injected verifyX509 — keeps this module EdDSA-pure + free of the DER parser).
+  const scheme = parseClientIdScheme(cid);
+  if (scheme.scheme === 'x509_san_dns') {
+    if (decoded.header?.alg !== 'ES256') return { ok: false, error: 'bad_request_header' };
+    if (!verifyX509) return { ok: false, error: 'unsupported_client_id_scheme' };
+    const x5c = decoded.header?.x5c;
+    if (!Array.isArray(x5c) || !x5c.length) return { ok: false, error: 'no_x5c' };
+    const xr = await verifyX509({ requestJwt, x5c, dnsName: scheme.value, trustAnchors, now });
+    if (!xr.ok) return xr;
+  } else {
+    if (decoded.header?.alg !== 'EdDSA') return { ok: false, error: 'bad_request_header' };
+    let pub;
+    if (scheme.scheme === 'did') {
+      if (!resolveDidKey) return { ok: false, error: 'unsupported_client_id_scheme' };
+      let jwk;
+      try {
+        jwk = await resolveDidKey(cid, { kid: decoded.header?.kid });
+      } catch (e) {
+        return { ok: false, error: e?.message || 'did_unresolved' };
+      }
+      try {
+        pub = pubFromOkpJwk(jwk);
+      } catch {
+        return { ok: false, error: 'bad_verifier_key' };
+      }
+    } else {
+      let keys;
+      try {
+        keys = await getVerifierKeys(cid);
+      } catch {
+        return { ok: false, error: 'verifier_unresolved' };
+      }
+      const jwk = (keys || []).find((k) => k.kid === decoded.header.kid) || (keys || [])[0];
+      try {
+        pub = pubFromOkpJwk(jwk);
+      } catch {
+        return { ok: false, error: 'bad_verifier_key' };
+      }
+    }
+    if (!verifyJWS(requestJwt, pub)) return { ok: false, error: 'bad_request_signature' };
   }
-  const jwk = (keys || []).find((k) => k.kid === decoded.header.kid) || (keys || [])[0];
-  let pub;
-  try {
-    pub = pubFromOkpJwk(jwk);
-  } catch {
-    return { ok: false, error: 'bad_verifier_key' };
-  }
-  if (!verifyJWS(requestJwt, pub)) return { ok: false, error: 'bad_request_signature' };
   const p = decoded.claims || {};
   if (typeof p.exp === 'number' && now > p.exp * 1000) return { ok: false, error: 'request_expired' };
   if (typeof p.iat === 'number' && now < p.iat * 1000 - 120_000) return { ok: false, error: 'request_not_yet_valid' };
-  return { ok: true, clientId: cid };
+  return { ok: true, clientId: cid, scheme: scheme.scheme };
 };
 
 export const buildVpToken = ({ sdjwt, disclose, clientId, nonce, holderSecretKey, now = Date.now() }) =>
@@ -284,6 +501,11 @@ export const verifyVpToken = async ({
   // Enforce the requested format (default SD-JWT): a request must not silently accept the other format —
   // e.g. an SD-JWT request (expecting holder binding) accepting a non-holder-bound BBS proof. [S25]
   const isBbs = isBbsPresentation(presentation);
+  // Reject a genuinely-unknown requested format up front; a missing format still routes to SD-JWT
+  // (today's behavior), and `dc+sd-jwt` is accepted alongside `vc+sd-jwt`. [dc+sd-jwt]
+  if (q.format && q.format !== BBS_VC_FORMAT && !SD_JWT_VC_FORMATS.includes(q.format)) {
+    return { ok: false, error: 'unsupported_format' };
+  }
   if ((q.format === BBS_VC_FORMAT) !== isBbs) return { ok: false, error: 'format_mismatch' };
   // Dispatch by format: a `bbs~`-tagged token is an unlinkable BBS presentation (v3); otherwise SD-JWT.
   const r = isBbs

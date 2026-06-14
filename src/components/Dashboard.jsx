@@ -19,13 +19,16 @@ import {
   listCredentials,
   responseTargetTrusted,
   fetchVerifierKeys,
+  resolveVerifierDidKey,
+  verifyVerifierX509,
+  WALLET_TRUST_ANCHORS,
   selectForPresentation,
   holderKeyFor,
   spendIfOneTime,
   presentBbsForLogin,
 } from '../services/credentials';
 import { buildPresentation } from '../lib/vc';
-import { parseAuthorizationRequest, requestQuery, verifyRequestObject } from '../lib/oid4vc';
+import { resolveAuthorizationRequest, requestQuery, verifyRequestObject } from '../lib/oid4vc';
 import { recordThisDevice } from '../services/devices';
 import { deriveVaultId } from '../lib/crypto';
 import AppRow from './AppRow';
@@ -193,7 +196,9 @@ const Dashboard = ({
     async (raw) => {
       setShowScanner(false);
       try {
-        const request = parseAuthorizationRequest(raw);
+        // Resolve a by-reference request (request_uri) by fetching the signed request object; an inline
+        // request is parsed directly. The signature check below is the trust anchor either way.
+        const request = await resolveAuthorizationRequest(raw);
         // Verifier authentication: a SIGNED request must verify against the verifier's published key
         // (the HTTPS-anchored client_id scheme) — proves who's asking. [oid4vc hardening]
         let verified = false;
@@ -201,6 +206,9 @@ const Dashboard = ({
           const vr = await verifyRequestObject({
             requestJwt: request.requestJwt,
             getVerifierKeys: fetchVerifierKeys,
+            resolveDidKey: resolveVerifierDidKey, // did:jwk / did:web
+            verifyX509: verifyVerifierX509, // x509_san_dns (fails closed without pinned anchors)
+            trustAnchors: WALLET_TRUST_ANCHORS,
             clientId: request.clientId,
           });
           if (!vr.ok) {
@@ -209,8 +217,12 @@ const Dashboard = ({
           }
           verified = true;
         }
-        // Refuse a request whose response endpoint isn't bound to the verifier identity it shows. [S20]
-        if (!responseTargetTrusted(request.clientId, request.responseUri)) {
+        // Refuse a request whose response endpoint isn't bound to the verifier identity it shows. A did:jwk
+        // verifier has no host to bind to, so it's only allowed with an encrypted response. [S20]
+        const targetOk =
+          responseTargetTrusted(request.clientId, request.responseUri) ||
+          (request.clientId?.startsWith('did:jwk:') && request.responseMode === 'direct_post.jwt');
+        if (!targetOk) {
           showToast('Untrusted presentation request.', 'error');
           return;
         }

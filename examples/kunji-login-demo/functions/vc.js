@@ -52,10 +52,16 @@ const randomSalt = () => b64u.fromBytes(randomBytes(16));
 /** Build the holder JWK to hand the issuer at request time (binds the credential to the holder key). */
 export const holderJwkFor = (holderPublicKey) => okpJwk(holderPublicKey);
 
+// The SD-JWT VC `typ`. The ecosystem (OpenID4VC drafts + EU ARF) renamed `vc+sd-jwt` → `dc+sd-jwt`.
+// We EMIT the legacy name by default (so existing credentials + mint bytes are byte-stable) but ACCEPT
+// both on verify forever — the rename is back-compat, never a re-issue.
+const SD_JWT_VC_TYP = 'vc+sd-jwt';
+export const SD_JWT_VC_TYPS = ['vc+sd-jwt', 'dc+sd-jwt'];
+
 // --- Issuer: mint an SD-JWT VC -----------------------------------------------
 export const mintCredential = (
   issuerSecretKey,
-  { kid, iss, vct, claims, holderJwk, status, ttlSeconds, now = Date.now() },
+  { kid, iss, vct, claims, holderJwk, status, ttlSeconds, now = Date.now(), typ = SD_JWT_VC_TYP },
 ) => {
   const iat = Math.floor(now / 1000);
   const exp = iat + Math.max(1, Math.floor(ttlSeconds || 0));
@@ -66,7 +72,7 @@ export const mintCredential = (
     disclosures.push(disc);
     _sd.push(disclosureHash(disc));
   }
-  const header = { alg: 'EdDSA', typ: 'vc+sd-jwt', kid };
+  const header = { alg: 'EdDSA', typ, kid };
   const payload = { iss, vct, iat, exp, cnf: { jwk: holderJwk }, _sd_alg: 'sha-256', _sd };
   if (status) payload.status = status;
   return [signJWS(header, payload, issuerSecretKey), ...disclosures, ''].join('~');
@@ -123,7 +129,7 @@ export const verifyCredentialPresentation = async ({
   } catch {
     return { ok: false, error: 'malformed_credential' };
   }
-  if (issuer.header?.typ !== 'vc+sd-jwt' || issuer.header?.alg !== 'EdDSA') {
+  if (!SD_JWT_VC_TYPS.includes(issuer.header?.typ) || issuer.header?.alg !== 'EdDSA') {
     return { ok: false, error: 'bad_credential_header' };
   }
   const c = issuer.claims;

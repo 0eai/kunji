@@ -33,6 +33,12 @@ const b64uToBytes = (s) => {
 const b64uToString = (s) => new TextDecoder().decode(b64uToBytes(s));
 const sha256 = async (bytes) => new Uint8Array(await window.crypto.subtle.digest('SHA-256', bytes));
 
+// The SD-JWT VC `typ`. The ecosystem (OpenID4VC drafts + EU ARF) renamed `vc+sd-jwt` → `dc+sd-jwt`.
+// We EMIT the legacy name by default (so existing credentials + mint bytes are byte-stable) but ACCEPT
+// both on verify forever — the rename is back-compat, never a re-issue.
+const SD_JWT_VC_TYP = 'vc+sd-jwt';
+export const SD_JWT_VC_TYPS = ['vc+sd-jwt', 'dc+sd-jwt'];
+
 /** base64url(SHA-256(ascii(disclosureString))) — the value placed in the SD-JWT `_sd` array. */
 export const disclosureHash = async (disclosureStr) =>
   b64uFromBytes(await sha256(new TextEncoder().encode(disclosureStr)));
@@ -46,7 +52,7 @@ const randomSalt = () => {
 // --- Issuer: mint an SD-JWT VC (canonical format; the demo issuer mirrors this) --------------
 export const mintCredential = async (
   issuerSecretKey,
-  { kid, iss, vct, claims, holderJwk, status, ttlSeconds, now = Date.now() },
+  { kid, iss, vct, claims, holderJwk, status, ttlSeconds, now = Date.now(), typ = SD_JWT_VC_TYP },
 ) => {
   const iat = Math.floor(now / 1000);
   const exp = iat + Math.max(1, Math.floor(ttlSeconds || 0));
@@ -57,7 +63,7 @@ export const mintCredential = async (
     disclosures.push(disc);
     _sd.push(await disclosureHash(disc));
   }
-  const header = { alg: 'EdDSA', typ: 'vc+sd-jwt', kid };
+  const header = { alg: 'EdDSA', typ, kid };
   const payload = { iss, vct, iat, exp, cnf: { jwk: holderJwk }, _sd_alg: 'sha-256', _sd };
   if (status) payload.status = status;
   const issuerJws = signJWS(header, payload, issuerSecretKey);
@@ -173,7 +179,7 @@ export const verifyCredentialPresentation = async ({
   } catch {
     return { ok: false, error: 'malformed_credential' };
   }
-  if (issuer.header?.typ !== 'vc+sd-jwt' || issuer.header?.alg !== 'EdDSA') {
+  if (!SD_JWT_VC_TYPS.includes(issuer.header?.typ) || issuer.header?.alg !== 'EdDSA') {
     return { ok: false, error: 'bad_credential_header' };
   }
   const c = issuer.claims;

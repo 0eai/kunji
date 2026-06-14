@@ -27,7 +27,7 @@ const NONCE = 'n'.repeat(64);
 const issuerKeysFor = (issuerPub) => async () => [{ ...okpJwk(issuerPub), kid: KID }];
 
 // Mint a credential bound to a freshly-derived holder key; return everything a test needs.
-const setup = async ({ claims = { age_over_18: true, name: 'Ada' }, status, ttlSeconds = 3600, now } = {}) => {
+const setup = async ({ claims = { age_over_18: true, name: 'Ada' }, status, ttlSeconds = 3600, now, typ } = {}) => {
   const issuer = generateEd25519KeyPair();
   const master = await generateMasterKey();
   const holder = await deriveCredentialHolderKey(master, ISS);
@@ -40,6 +40,7 @@ const setup = async ({ claims = { age_over_18: true, name: 'Ada' }, status, ttlS
     status,
     ttlSeconds,
     now,
+    ...(typ ? { typ } : {}),
   });
   return { issuer, master, holder, credential, getIssuerKeys: issuerKeysFor(issuer.publicKey) };
 };
@@ -103,6 +104,34 @@ describe('verified credential — happy path', () => {
     // an under-threshold predicate discloses as false — the RP's policy step is what rejects it
     const r18 = await verify(await present(credential, holder, { disclose: ['age_over_18'] }), getIssuerKeys);
     expect(r18).toMatchObject({ ok: true, claims: { age_over_18: false } });
+  });
+});
+
+// The SD-JWT VC `typ` is migrating `vc+sd-jwt` → `dc+sd-jwt` (OpenID4VC / EU ARF). Verify accepts BOTH
+// (back-compat, never a re-issue); the default mint stays `vc+sd-jwt`. [dc+sd-jwt]
+describe('verified credential — dc+sd-jwt format rename', () => {
+  it('default mint emits the legacy `vc+sd-jwt` typ', async () => {
+    const { credential } = await setup();
+    expect(parseSdJwt(credential).issuerHeader.typ).toBe('vc+sd-jwt');
+  });
+
+  it('verifies a `dc+sd-jwt` credential (the renamed format)', async () => {
+    const { credential, holder, getIssuerKeys } = await setup({ typ: 'dc+sd-jwt' });
+    expect(parseSdJwt(credential).issuerHeader.typ).toBe('dc+sd-jwt');
+    const r = await verify(await present(credential, holder), getIssuerKeys);
+    expect(r).toMatchObject({ ok: true, vct: VCT, claims: { age_over_18: true } });
+  });
+
+  it('still verifies a legacy `vc+sd-jwt` credential (forever)', async () => {
+    const { credential, holder, getIssuerKeys } = await setup({ typ: 'vc+sd-jwt' });
+    const r = await verify(await present(credential, holder), getIssuerKeys);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects an unknown credential typ', async () => {
+    const { credential, holder, getIssuerKeys } = await setup({ typ: 'jwt' });
+    const r = await verify(await present(credential, holder), getIssuerKeys);
+    expect(r).toMatchObject({ ok: false, error: 'bad_credential_header' });
   });
 });
 

@@ -96,7 +96,7 @@ let nextIdx = 1;
  * Mint an age credential bound to `holderJwk`. Bakes `age_over_13/16/18/21` from `dob` (defaults to
  * an adult) — booleans ONLY; the DOB is never put in the credential. `claims`/`vct` override (tests).
  */
-export const issue = ({ holderJwk, dob, vct, claims }) => {
+export const issue = ({ holderJwk, dob, vct, claims, typ }) => {
   const idx = nextIdx++;
   const credential = mintCredential(loadIssuerKey().secretKey, {
     kid: KID,
@@ -107,6 +107,7 @@ export const issue = ({ holderJwk, dob, vct, claims }) => {
     status: { uri: statusUri(), idx },
     ttlSeconds: 365 * DAY,
     now: coarseNowMs(), // day-coarse iat/exp — no per-second handle across a batch [S23]
+    ...(typ ? { typ } : {}), // emit the renamed `dc+sd-jwt` when the wallet asked for it [dc+sd-jwt]
   });
   return { credential, idx };
 };
@@ -117,8 +118,8 @@ export const issue = ({ holderJwk, dob, vct, claims }) => {
  * (⇒ per-copy revocation, and the idx doesn't link the copies). The wallet spends one copy per
  * presentation, so no two presentations share a correlation handle. Returns `[{ credential, idx }, …]`.
  */
-export const issueBatch = ({ holderJwks, dob, vct, claims }) =>
-  (holderJwks || []).map((holderJwk) => issue({ holderJwk, dob, vct, claims }));
+export const issueBatch = ({ holderJwks, dob, vct, claims, typ }) =>
+  (holderJwks || []).map((holderJwk) => issue({ holderJwk, dob, vct, claims, typ }));
 
 /**
  * Mint an UNLINKABLE (BBS, v3) age credential. No holderJwk: a BBS credential needs no per-issuance

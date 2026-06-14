@@ -29,6 +29,7 @@ import {
   credentialIssuerMetadata,
   authServerMetadata,
   createOffer,
+  handleAuthorize,
   handleToken,
   handleCredential,
 } from './oid4vci.js';
@@ -58,7 +59,7 @@ const readBody = (req) =>
 const server = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, DPoP');
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
@@ -100,13 +101,31 @@ const server = createServer(async (req, res) => {
     return json(res, 200, credentialIssuerMetadata());
   if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server')
     return json(res, 200, authServerMetadata());
-  if (req.method === 'GET' && path === '/credential-offer') return json(res, 200, createOffer());
+  if (req.method === 'GET' && path === '/credential-offer')
+    return json(res, 200, createOffer({ authCode: url.searchParams.get('grant') === 'authorization_code' }));
+  if (req.method === 'GET' && path === '/authorize') {
+    const r = handleAuthorize(Object.fromEntries(url.searchParams));
+    if (r.status === 302) {
+      res.writeHead(302, { Location: r.location });
+      return res.end();
+    }
+    return json(res, r.status, r.json);
+  }
+  if (req.method === 'GET' && path === '/callback') {
+    // A trivial holder-return endpoint for poking the demo by hand; the sim follows the 302 itself.
+    return json(res, 200, { code: url.searchParams.get('code'), state: url.searchParams.get('state') });
+  }
   if (req.method === 'POST' && path === '/token') {
-    const r = handleToken(await readBody(req));
+    const r = await handleToken(await readBody(req), { dpop: req.headers.dpop, htu: `${issuerOrigin()}/token` });
     return json(res, r.status, r.json);
   }
   if (req.method === 'POST' && path === '/credential') {
-    const r = handleCredential({ authorization: req.headers.authorization, body: await readBody(req) });
+    const r = await handleCredential({
+      authorization: req.headers.authorization,
+      dpop: req.headers.dpop,
+      htu: `${issuerOrigin()}/credential`,
+      body: await readBody(req),
+    });
     return json(res, r.status, r.json);
   }
 

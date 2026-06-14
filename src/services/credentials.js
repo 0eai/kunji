@@ -27,10 +27,15 @@ import { b64uToBytes, bytesToB64u } from '../lib/bbs';
 import {
   parseCredentialOffer,
   buildProofJwt,
+  buildDpopProof,
   buildVpToken,
   buildBbsVpToken,
   buildVpResponse,
+  parseClientIdScheme,
 } from '../lib/oid4vc';
+import { encryptJwe } from '../lib/jwe';
+import { resolveDidKey, didWebToUrl } from '../lib/did';
+import { verifyX5cChain, verifyEs256Jws } from '../lib/x509';
 
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
 
@@ -387,7 +392,40 @@ const httpsOrLoopback = (urlStr) => {
 export const responseTargetTrusted = (clientId, responseUri) => {
   const u = httpsOrLoopback(responseUri);
   if (!u || !clientId) return false;
+  const scheme = parseClientIdScheme(clientId);
+  // x509_san_dns binds to the SAN DNS name; did:web to the DID's host; did:jwk has NO host, so it can't be
+  // host-bound here — the caller must require an encrypted response (direct_post.jwt) instead. [S20]
+  if (scheme.scheme === 'x509_san_dns') return u.hostname === scheme.value;
+  if (scheme.scheme === 'did') {
+    if (clientId.startsWith('did:web:')) {
+      try {
+        return u.hostname === new URL(didWebToUrl(clientId)).hostname;
+      } catch {
+        return false;
+      }
+    }
+    return false; // did:jwk — no host binding
+  }
   return u.hostname === clientId || u.origin === clientId;
+};
+
+// Empty by default ⇒ x509_san_dns fails closed in the shipped wallet build (it can't run a CA program).
+// A deployment that trusts specific CAs would pin their DER certs here. did:web / did:jwk still work. [x509]
+export const WALLET_TRUST_ANCHORS = [];
+
+/** Resolve a verifier DID key (did:jwk embedded / did:web fetched) for verifyRequestObject. */
+export const resolveVerifierDidKey = (did, opts = {}) => resolveDidKey(did, { ...opts, fetchImpl: fetch });
+
+/**
+ * Verify an x509_san_dns request: the x5c chain (SAN == client_id, validity, ECDSA-P256-SHA256 to a pinned
+ * anchor — scoped, see docs/oid4vc.md) then the request's ES256 JWS with the leaf key. Injected into
+ * verifyRequestObject so the EdDSA-pure envelope never imports the DER parser. [x509]
+ */
+export const verifyVerifierX509 = async ({ requestJwt, x5c, dnsName, trustAnchors, now }) => {
+  const chain = verifyX5cChain({ x5c, dnsName, trustAnchors: trustAnchors || WALLET_TRUST_ANCHORS, now });
+  if (!chain.ok) return chain;
+  if (!verifyEs256Jws(requestJwt, chain.leafPublicKey)) return { ok: false, error: 'bad_request_signature' };
+  return { ok: true };
 };
 
 /**
@@ -422,31 +460,53 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
     .trim()
     .replace(/\/$/, '');
   if (!httpsOrLoopback(issuer)) throw new Error('Credential offer issuer must be an https:// URL.'); // [S21]
-  if (!offer.preAuthorizedCode) throw new Error('Unsupported offer (needs a pre-authorized code).');
+  if (!offer.preAuthorizedCode) {
+    // The authorization_code grant needs an authorization-server redirect, which a QR/no-redirect wallet
+    // doesn't drive — kunji supports pre-authorized offers. (lib + demos exercise authorization_code.)
+    if (offer.authorizationCode) throw new Error('This issuer requires sign-in (authorization_code); kunji accepts pre-authorized offers.');
+    throw new Error('Unsupported offer (needs a pre-authorized code).');
+  }
+
+  // A fresh ephemeral DPoP key per receive (issuer-facing only — no linkability concern). We always
+  // present a DPoP proof at /token; if the issuer echoes token_type:'DPoP' we sender-constrain the
+  // credential request too. A legacy issuer ignores the header and returns a bearer token → unchanged. [DPoP]
+  const dpopKey = generateEd25519KeyPair();
+  const dpopFor = (path, accessToken) =>
+    buildDpopProof({
+      htu: `${issuer}${path}`,
+      htm: 'POST',
+      accessToken,
+      holderSecretKey: dpopKey.secretKey,
+      holderPublicKey: dpopKey.publicKey,
+    });
 
   let tokenResp;
   try {
     tokenResp = await fetch(`${issuer}/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', DPoP: await dpopFor('/token') },
       body: JSON.stringify({ grant_type: PRE_AUTH_GRANT, 'pre-authorized_code': offer.preAuthorizedCode }),
     });
   } catch {
     throw new Error('Could not reach the issuer.');
   }
   if (!tokenResp.ok) throw new Error('The issuer declined the offer.');
-  const { access_token, c_nonce } = await tokenResp.json().catch(() => ({}));
+  const { access_token, c_nonce, token_type } = await tokenResp.json().catch(() => ({}));
   if (!access_token) throw new Error('The issuer returned no access token.');
+  const useDpop = String(token_type || '').toLowerCase() === 'dpop';
 
   const holderKeys = makeHolderKeys(BATCH_SIZE);
   const proofs = holderKeys.map((h) =>
     buildProofJwt({ holderSecretKey: h.secretKey, holderPublicKey: h.publicKey, audience: issuer, cNonce: c_nonce }),
   );
+  const credHeaders = useDpop
+    ? { 'Content-Type': 'application/json', Authorization: `DPoP ${access_token}`, DPoP: await dpopFor('/credential', access_token) }
+    : { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` };
   let credResp;
   try {
     credResp = await fetch(`${issuer}/credential`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
+      headers: credHeaders,
       // `proofs` is the batch ask; `proof` keeps a pre-batch issuer working (one copy back).
       body: JSON.stringify({
         format: 'vc+sd-jwt',
@@ -485,12 +545,21 @@ export const presentViaOid4vp = async (cryptoKey, request, { cred, disclose }) =
   }
   // The direct_post body differs by query form (DCQL → vp_token keyed by id; PD → vp_token + submission).
   const responseBody = buildVpResponse({ request, presentation: vpToken });
+  // Encrypted response (response_mode: direct_post.jwt): JWE-encrypt the vp_token to the verifier's
+  // published encryption key (from the verified request's client_metadata) so the presentation isn't
+  // readable on the wire. Else post it in cleartext (the default).
+  let postBody = responseBody;
+  if (request.responseMode === 'direct_post.jwt') {
+    const encJwk = (request.clientMetadata?.jwks?.keys || []).find((k) => k.crv === 'P-256');
+    if (!encJwk) throw new Error('Verifier asked for an encrypted response but published no encryption key.');
+    postBody = { response: await encryptJwe(responseBody, encJwk), state: request.state };
+  }
   let resp;
   try {
     resp = await fetch(request.responseUri, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(responseBody),
+      body: JSON.stringify(postBody),
     });
   } catch {
     throw new Error('Could not reach the verifier.');

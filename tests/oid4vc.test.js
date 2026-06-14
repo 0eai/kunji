@@ -11,6 +11,7 @@ import {
   verifyVpToken,
   buildSignedAuthorizationRequest,
   verifyRequestObject,
+  resolveAuthorizationRequest,
   buildDcqlQuery,
   dcqlToVcQuery,
   requestQuery,
@@ -211,6 +212,75 @@ describe('OpenID4VP signed request objects', () => {
   });
 });
 
+// request_uri by-reference: the verifier serves the signed request at a URL; the wallet fetches it,
+// then verifies the signature exactly as for an inline request (the fetch host is untrusted).
+describe('OpenID4VP resolveAuthorizationRequest (request_uri by-reference)', () => {
+  const VKID = 'v1';
+  const VCID = 'https://verifier.example';
+  const verifier = generateEd25519KeyPair();
+  const verifierKeys = async () => [{ ...okpJwk(verifier.publicKey), kid: VKID }];
+  const signedJwt = () =>
+    buildSignedAuthorizationRequest(verifier.secretKey, {
+      kid: VKID,
+      params: {
+        client_id: VCID,
+        response_type: 'vp_token',
+        response_mode: 'direct_post',
+        response_uri: `${VCID}/response`,
+        nonce: NONCE,
+        state: 'st',
+        dcql_query: buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] }),
+      },
+    });
+  // A fetch stub that serves the JWS for any URL, recording what was fetched.
+  const fetchStub = (jwt) => {
+    const calls = [];
+    const fetchImpl = async (url) => {
+      calls.push(url);
+      return { ok: true, text: async () => jwt };
+    };
+    return { fetchImpl, calls };
+  };
+
+  it('fetches the request_uri, parses the signed JAR, and it verifies', async () => {
+    const jwt = signedJwt();
+    const { fetchImpl, calls } = fetchStub(jwt);
+    const uri = `${VCID}/request-object/abc`;
+    const input = `openid4vp://?client_id=${encodeURIComponent(VCID)}&request_uri=${encodeURIComponent(uri)}`;
+    const ar = await resolveAuthorizationRequest(input, { fetchImpl });
+    expect(calls).toEqual([uri]);
+    expect(ar).toMatchObject({ signed: true, clientId: VCID, responseUri: `${VCID}/response` });
+    expect(await verifyRequestObject({ requestJwt: ar.requestJwt, getVerifierKeys: verifierKeys, clientId: ar.clientId })).toMatchObject({ ok: true });
+  });
+
+  it('rejects a non-HTTPS request_uri (except loopback)', async () => {
+    const { fetchImpl, calls } = fetchStub(signedJwt());
+    const httpUri = 'http://verifier.example/request-object/abc';
+    const input = `openid4vp://?client_id=${encodeURIComponent(VCID)}&request_uri=${encodeURIComponent(httpUri)}`;
+    await expect(resolveAuthorizationRequest(input, { fetchImpl })).rejects.toThrow('request_uri_not_https');
+    expect(calls).toEqual([]); // never fetched
+    // ...but http loopback is allowed (local dev verifier).
+    const loop = fetchStub(signedJwt());
+    const loopUri = 'http://localhost:3000/oid4vp/request-object/abc';
+    const loopInput = `openid4vp://?client_id=${encodeURIComponent(VCID)}&request_uri=${encodeURIComponent(loopUri)}`;
+    expect((await resolveAuthorizationRequest(loopInput, { fetchImpl: loop.fetchImpl })).signed).toBe(true);
+    expect(loop.calls).toEqual([loopUri]);
+  });
+
+  it('does not fetch when an inline request is present (inline wins) or when there is no request_uri', async () => {
+    const jwt = signedJwt();
+    const { fetchImpl, calls } = fetchStub('SHOULD-NOT-BE-USED');
+    const inline = `openid4vp://?client_id=${encodeURIComponent(VCID)}&request=${jwt}&request_uri=${encodeURIComponent(VCID + '/ro')}`;
+    const ar = await resolveAuthorizationRequest(inline, { fetchImpl });
+    expect(calls).toEqual([]); // inline request used, request_uri ignored
+    expect(ar).toMatchObject({ signed: true, clientId: VCID });
+    // a plain inline (unsigned) request also passes straight through
+    const unsigned = await resolveAuthorizationRequest(`openid4vp://?client_id=${encodeURIComponent(VCID)}&nonce=${NONCE}`, { fetchImpl });
+    expect(unsigned.signed).toBe(false);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe('OpenID4VP DCQL', () => {
   it('buildDcqlQuery → dcqlToVcQuery / requestQuery map to {vct,disclose}', () => {
     const dcql = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'] });
@@ -229,6 +299,33 @@ describe('OpenID4VP DCQL', () => {
     expect(body.presentation_submission).toBeUndefined();
     const r = await verifyVpToken({ vpToken: body.vp_token, dcqlQuery: dcql, getIssuerKeys, clientId: CLIENT, nonce: NONCE });
     expect(r).toMatchObject({ ok: true, vct: 'age', claims: { age_over_18: true } });
+  });
+
+  it('dc+sd-jwt: a renamed-format DCQL request round-trips (mint dc+sd-jwt → present → verify)', async () => {
+    const issuer = generateEd25519KeyPair();
+    const holder = generateEd25519KeyPair();
+    const dc = await mintCredential(issuer.secretKey, {
+      kid: KID,
+      iss: ISS,
+      vct: 'age',
+      claims: { age_over_18: true },
+      holderJwk: holderJwkFor(holder.publicKey),
+      ttlSeconds: 3600,
+      typ: 'dc+sd-jwt',
+    });
+    const dcql = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'], format: 'dc+sd-jwt' });
+    expect(dcqlToVcQuery(dcql).format).toBe('dc+sd-jwt');
+    const vpToken = await buildVpToken({ sdjwt: dc, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
+    const r = await verifyVpToken({ vpToken: { c: vpToken }, dcqlQuery: dcql, getIssuerKeys: issuerKeysFor(issuer.publicKey), clientId: CLIENT, nonce: NONCE });
+    expect(r).toMatchObject({ ok: true, vct: 'age', claims: { age_over_18: true } });
+  });
+
+  it('rejects a genuinely-unknown requested format (not BBS, not an SD-JWT name)', async () => {
+    const { holder, sdjwt, getIssuerKeys } = await setup();
+    const dcql = buildDcqlQuery({ id: 'c', vct: 'age', disclose: ['age_over_18'], format: 'application/totally-unknown' });
+    const vpToken = await buildVpToken({ sdjwt, disclose: ['age_over_18'], clientId: CLIENT, nonce: NONCE, holderSecretKey: holder.secretKey });
+    const r = await verifyVpToken({ vpToken: { c: vpToken }, dcqlQuery: dcql, getIssuerKeys, clientId: CLIENT, nonce: NONCE });
+    expect(r).toMatchObject({ ok: false, error: 'unsupported_format' });
   });
 
   it('PD: bare vp_token + a submission → verify (unchanged path)', async () => {

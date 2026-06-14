@@ -126,7 +126,9 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   relay — `pushDispatch` + `pushChannels` + a service worker), and `docs/oid4vc.md` (**OpenID4VCI/VP
   interop** + verifier auth/DCQL, **incl. `vc+bbs` present**). Proposed (not implemented):
   `docs/verified-credentials.md` §7/§14 **BBS blind issuance** (so the issuer can't see the holder secret
-  / impersonate) + per-verifier pseudonyms — optional future hardening (v3 is otherwise complete).
+  / impersonate — closes S28) + per-verifier pseudonyms — optional future hardening (v3 is otherwise
+  complete). **Deferred: blocked on `@digitalbazaar/bbs-signatures` exporting the blind API** (it ships
+  `lib/bbs/blind` but the `exports` map hides it); the design + unblock condition are tracked in §7.
 - `src/services/credentials.js` + `src/components/CredentialsSheet.jsx` — verified credentials the
   user holds (receive/list/present); stored via `vaultWrite kind:'credential'`; issuance relay =
   `credentialOfferRelay` (issuer deposit) + `credentialPoll` (wallet poll). **Unlinkability v2:** a
@@ -163,7 +165,30 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   `openid4vp://` scan or the `?vp=` deep link in `src/App.jsx`). **Verifier auth + DCQL**: OpenID4VP
   signed request objects verified against the verifier's `.well-known/kunji-verifier.json`
   (`buildSignedAuthorizationRequest`/`verifyRequestObject`, the HTTPS-anchored `client_id` scheme;
-  `fetchVerifierKeys`) + DCQL queries (`buildDcqlQuery`/`requestQuery`/`buildVpResponse`). See `docs/oid4vc.md`.
+  `fetchVerifierKeys`) + DCQL queries (`buildDcqlQuery`/`requestQuery`/`buildVpResponse`). **Request
+  hardening**: `resolveAuthorizationRequest` fetches a by-reference `request_uri` (HTTPS-only except
+  loopback; signature stays the trust anchor — untrusted fetch host can't forge), and `response_mode:
+  'direct_post.jwt'` encrypts the `vp_token` to the verifier's published P-256 enc key. **§5 completion**:
+  `dc+sd-jwt` format alignment (accept both names; emit stays `vc+sd-jwt` — `SD_JWT_VC_FORMATS`, mirrored in
+  `vc.js`'s `SD_JWT_VC_TYPS`); **DPoP** (RFC 9449, EdDSA-pinned, opt-in) `buildDpopProof`/`verifyDpopProof`/
+  `jwkThumbprint` binding the OID4VCI token+credential leg; **authorization_code + PKCE** (`generatePkce`/
+  `buildAuthorizationRequest`/`verifyPkce` + issuer `/authorize` + `oid4vc-sim --auth-code` — **wallet UI
+  deferred**, kunji is QR/no-redirect); and **x509/DID `client_id` schemes** (`parseClientIdScheme` →
+  `verifyRequestObject` dispatch). See `docs/oid4vc.md`.
+- `src/lib/jwe.js` — minimal **`ECDH-ES`/`A256GCM`** JWE (compact) for the OID4VP encrypted response;
+  `encryptJwe`/`decryptJwe`/`generateJweKeyPair`, isomorphic over `crypto.subtle`, **no new dep**. Pure;
+  byte-identical Node port `kunji-node-demo/jwe.js` (parity-guarded by `tests/jwe.test.js`). Envelope-only
+  — wraps SD-JWT and BBS vp_tokens alike, no credential-core change.
+- `src/lib/did.js` + `src/lib/x509.js` — the OpenID4VP **`did` + `x509_san_dns` client_id schemes** (verifier
+  auth beyond the HTTPS-anchored `.well-known` default). `did.js`: `parseDidJwk`/`didWebToUrl`/`resolveDidKey`
+  (`did:jwk` embedded, `did:web` fetched). `x509.js`: a pure DER parser + `verifyX5cChain` (SAN==client_id,
+  validity, ECDSA-P256-SHA256 to a **pinned anchor — empty ⇒ fail closed**, ES256-only — a SCOPED PKI, **not**
+  full RFC 5280; see `docs/oid4vc.md`) + `verifyEs256Jws`. Both pure (`@noble/curves` p256 + raw bytes, no new
+  dep), byte-identical Node ports in `kunji-node-demo` (parity by `tests/x509.did.parity.test.js`). Injected
+  into `verifyRequestObject` so the envelope stays EdDSA-pure + DER-parser-free. The shipped wallet pins **no
+  x509 anchors** (`WALLET_TRUST_ANCHORS = []` ⇒ x509 fails closed); `did:jwk` needs an encrypted response (no
+  origin to host-bind for S20). Cert minting for the demo/tests lives in `kunji-node-demo/x509-mint.js` (the
+  wallet never mints — kept out of `x509.js`).
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 

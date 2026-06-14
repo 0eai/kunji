@@ -14,6 +14,11 @@ import {
   buildVpResponse as libBuildVpResponse,
   buildSignedAuthorizationRequest as libBuildSignedReq,
   verifyRequestObject as libVerifyReq,
+  buildDpopProof as libBuildDpop,
+  verifyDpopProof as libVerifyDpop,
+  jwkThumbprint as libThumbprint,
+  computeCodeChallenge as libChallenge,
+  verifyPkce as libVerifyPkce,
 } from '../src/lib/oid4vc.js';
 import {
   buildProofJwt as nodeBuildProof,
@@ -23,6 +28,11 @@ import {
   buildVpResponse as nodeBuildVpResponse,
   buildSignedAuthorizationRequest as nodeBuildSignedReq,
   verifyRequestObject as nodeVerifyReq,
+  buildDpopProof as nodeBuildDpop,
+  verifyDpopProof as nodeVerifyDpop,
+  jwkThumbprint as nodeThumbprint,
+  computeCodeChallenge as nodeChallenge,
+  verifyPkce as nodeVerifyPkce,
 } from '../examples/kunji-node-demo/oid4vc.js';
 import { mintCredential as nodeMint } from '../examples/kunji-node-demo/vc.js';
 import { generateEd25519KeyPair } from '../src/lib/crypto/index.js';
@@ -55,6 +65,29 @@ describe('OpenID4VC parity (wallet lib ↔ demo Node port)', () => {
     const args = { holderSecretKey: h.secretKey, holderPublicKey: h.publicKey, audience: ISS, cNonce: 'cn' };
     expect(nodeVerifyProof({ proofJwt: libBuildProof(args), audience: ISS, cNonce: 'cn' }).ok).toBe(true);
     expect(libVerifyProof({ proofJwt: nodeBuildProof(args), audience: ISS, cNonce: 'cn' }).ok).toBe(true);
+  });
+
+  it('DPoP: lib builds → Node verifies, and the reverse (with an identical jkt)', async () => {
+    const h = generateEd25519KeyPair();
+    const args = { htu: 'https://issuer.example/token', htm: 'POST', holderSecretKey: h.secretKey, holderPublicKey: h.publicKey };
+    const libDpop = await libBuildDpop(args);
+    const nodeDpop = await nodeBuildDpop(args);
+    const a = await nodeVerifyDpop({ dpop: libDpop, htu: args.htu, htm: 'POST' });
+    const b = await libVerifyDpop({ dpop: nodeDpop, htu: args.htu, htm: 'POST' });
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    // both implementations compute the same RFC 7638 thumbprint for the same key
+    expect(a.jkt).toBe(await libThumbprint(okpJwk(h.publicKey)));
+    expect(await nodeThumbprint(okpJwk(h.publicKey))).toBe(await libThumbprint(okpJwk(h.publicKey)));
+  });
+
+  it('PKCE: lib challenge verifies under Node verifyPkce, and the reverse (S256 identical)', async () => {
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    expect(await libChallenge(verifier)).toBe(await nodeChallenge(verifier)); // byte-identical S256
+    const libCc = await libChallenge(verifier);
+    expect(await nodeVerifyPkce({ codeVerifier: verifier, codeChallenge: libCc })).toBe(true);
+    const nodeCc = await nodeChallenge(verifier);
+    expect(await libVerifyPkce({ codeVerifier: verifier, codeChallenge: nodeCc })).toBe(true);
   });
 
   it('vp_token: Node presents → lib verifies', async () => {

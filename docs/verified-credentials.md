@@ -189,13 +189,27 @@ still present unbound. **Residual (documented):** the issuer *sees* the secret a
 via the public `sign`), so a malicious issuer could impersonate the holder — bounded (issuer trust is
 already assumed; cross-presentation unlinkability is unaffected; it protects against third-party blob
 theft). Closing the issuer-impersonation gap needs **blind issuance** (the issuer signs a commitment it
-can't see — `@digitalbazaar/bbs-signatures`' unexported `lib/bbs/blind`), a future hardening.
+can't see), a future hardening — **deferred, blocked on the dependency.**
+
+> **Blind issuance (deferred — tracked).** Design when unblocked: the wallet commits to
+> `deriveBbsHolderSecret(masterKey, issuer)` (a commitment + proof-of-knowledge — the secret is never
+> sent); the issuer **blind-signs** the claims + the commitment (`BlindSign`); the wallet **unblinds** to
+> a normal BBS credential it presents with the holder secret undisclosed (re-derived from the master key)
+> **exactly as today** — no change to `buildBbsPresentation`/`verifyBbsPresentation` or the presentation
+> path. Net effect over the shipped holder binding: the issuer never sees the secret, so it can't
+> impersonate (closes S28). **Blocker:** `@digitalbazaar/bbs-signatures` (3.1.0, latest) ships the blind
+> code in `lib/bbs/blind/` but its `exports` map exposes only `lib/index.js` — no released version exports
+> `BlindSign`/`BlindProofGen`/… and deep imports are hard-blocked. **Unblock condition:** the lib exports
+> the blind API (or blind BBS reaches a CFRG WG draft — it's currently the individual `draft-kalos-bbs-
+> blind-signatures`). Then this is a **small slice over the public API**. Until then S28 stays a
+> documented, accepted Low (issuer trust is already assumed; third-party blob theft is already closed by
+> the shipped holder binding).
 
 **Recommendation:** **v1 + v2 shipped, v3 foundation shipped** (the wallet still warns at consent that a
 verified credential is more identifiable than the default per-app `sub`, a §9.2-style caveat). **v3 is
 complete** — unlinkable, presentable over OID4VP + login, and **holder-bound (non-transferable)**. The
-only remaining BBS work is optional future hardening: **blind issuance** (so the issuer can't see the
-holder secret / impersonate) + per-verifier pseudonyms.
+only remaining BBS work is optional future hardening — **blind issuance** (closes S28) + per-verifier
+pseudonyms — both **deferred, blocked on the lib exporting the blind API** (see the tracked note above).
 
 ## 8. Issuance
 

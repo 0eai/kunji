@@ -67,6 +67,17 @@ holder   ──POST {response_uri}  { vp_token, [presentation_submission], state
 - **DCQL.** The request carries either a `presentation_definition` or a **`dcql_query`** (OpenID4VP 1.0).
   The DCQL response is a `vp_token` **object keyed by the credential id** (no `presentation_submission`);
   the PD response is the bare `vp_token` + a submission. `requestQuery`/`buildVpResponse` handle both.
+- **`request_uri` by-reference.** Instead of embedding the whole signed JWS inline (a big QR), the verifier
+  can serve it at a URL and the QR carries only `client_id` + `request_uri=<https url>`. The wallet
+  `resolveAuthorizationRequest`s it: fetch (**HTTPS-only except loopback**) → the same `parseAuthorizationRequest`
+  → the **same `verifyRequestObject` signature check**. The fetch host is **untrusted** — the request
+  signature stays the trust anchor, so a forged `request_uri` body can't impersonate a verifier.
+- **Encrypted response (`direct_post.jwt`).** When the (signed) request sets `response_mode: 'direct_post.jwt'`
+  and publishes a P-256 **encryption** JWK in `client_metadata.jwks` (signature-protected — no extra fetch),
+  the wallet JWE-encrypts the whole `buildVpResponse` body to that key and POSTs `{ response: <jwe>, state }`.
+  An on-path observer / the transport can't read the `vp_token` (the presentation). The JWE is pinned to
+  **`alg: ECDH-ES` + `enc: A256GCM`** (compact, ephemeral-static P-256 + Concat-KDF) — one algorithm, like
+  the BBS ciphersuite (`src/lib/jwe.js`). Format-agnostic: it wraps SD-JWT and BBS vp_tokens alike.
 - Lib: `parseAuthorizationRequest` (sets `signed`/`requestJwt`, parses either query form),
   `buildSignedAuthorizationRequest`, `verifyRequestObject`, `buildDcqlQuery`/`dcqlToVcQuery`/`requestQuery`,
   `buildVpToken`, `buildVpResponse`, `verifyVpToken`. The verifier resolves **issuer** keys from the
@@ -84,22 +95,72 @@ query carries `format: 'vc+bbs'`; the holder answers with `buildBbsVpToken` and 
 (not a nested object) — so it rides the existing string-typed `vp_token`/`vc_presentations` slots and the
 login assertion's canonical-JSON signing is undisturbed; verifiers dispatch on the `bbs~` tag, resolving
 the issuer's BBS key from its `.well-known` (`alg:'BBS'`). BBS uses DCQL (not presentation_definition).
-Deferred (documented, not built): the `authorization_code` grant + PKCE, DPoP,
-`request_uri` by-reference, **x509/DID `client_id` schemes**, encrypted requests, and the in-flight
-`vc+sd-jwt` → `dc+sd-jwt` format rename (kept as the `SD_JWT_VC_FORMAT` knob in `oid4vc.js`). These are
-envelope-only extensions — none touches the SD-JWT VC core.
+Also implemented: **`request_uri` by-reference** (the verifier serves the signed request at a URL; the
+wallet fetches HTTPS-only then verifies the signature as usual — the fetch host is untrusted) and the
+**encrypted response** `response_mode: 'direct_post.jwt'` (the wallet JWE-encrypts the `vp_token` to the
+verifier's published P-256 enc key — **`ECDH-ES`/`A256GCM`**, one pinned algorithm, `src/lib/jwe.js`).
+
+Also implemented (this slice):
+
+- **`dc+sd-jwt` format alignment.** The SD-JWT VC format/`typ` is migrating `vc+sd-jwt` → `dc+sd-jwt`
+  (OpenID4VC drafts + EU ARF). kunji **accepts both** forever (`vc.js` verify + the `oid4vc.js`
+  `SD_JWT_VC_FORMATS` accept-list); the default **emit** stays `vc+sd-jwt` so existing credentials + mint
+  bytes are byte-stable. A demo can mint/request `dc+sd-jwt` to prove interop (`oid4vc-sim --dc-sd-jwt`).
+- **DPoP (RFC 9449).** A sender-constrained access token on the OID4VCI token+credential leg, **opt-in**:
+  the wallet presents a `dpop+jwt` proof at `/token`; if the issuer echoes `token_type:'DPoP'` it binds the
+  token to the proof key (`cnf.jkt`) and `/credential` requires a matching proof (`jkt` + `ath`). No DPoP
+  header ⇒ the legacy bearer path, byte-unchanged. **EdDSA-pinned** (kunji's one curve — a deliberate
+  deviation from the RFC's usual ES256). `buildDpopProof`/`verifyDpopProof`/`jwkThumbprint` in `oid4vc.js`.
+- **`authorization_code` grant + PKCE (S256).** A second issuance path alongside pre-authorized_code (the
+  default). The lib (`generatePkce`/`buildAuthorizationRequest`/`resolveAuthorizationEndpoint`/`verifyPkce`),
+  the issuer demo (`/authorize` → single-use `code` storing only the `code_challenge`; `/token` re-checks
+  `redirect_uri` + verifies the verifier), and the headless sim (`oid4vc-sim --auth-code`) prove it
+  end-to-end. **The wallet UI is deferred**: kunji is a QR/no-redirect wallet, so there is no
+  authorization-server redirect or custom-scheme return — a pasted authorization_code-only offer fails with
+  a precise message. A same-device `?code=` deep-link on-ramp is a documented future slice.
+- **x509 / DID `client_id` schemes.** OpenID4VP verifier auth beyond the HTTPS-anchored `.well-known`
+  scheme (which stays the default). `verifyRequestObject` dispatches on the `client_id` prefix
+  (`parseClientIdScheme`): `did:jwk` (key embedded — no fetch), `did:web` (key from
+  `https://<host>/.well-known/did.json`), and `x509_san_dns:<dns>` (an ES256 JWS carrying an `x5c` chain).
+  DID/x509 verifiers are **injected** into `verifyRequestObject` (`resolveDidKey` / `verifyX509`) so the
+  envelope stays EdDSA-pure and free of the DER parser (`src/lib/did.js`, `src/lib/x509.js`).
+
+  **x509_san_dns SECURITY BOUNDARY (scoped — a client-only wallet can't run a CA program).** `verifyX5cChain`
+  verifies: the leaf SAN dNSName == `client_id`, the leaf validity window, each link's **ECDSA-P256-SHA256**
+  signature, and that the chain terminates at a **pinned trust-anchor set (empty ⇒ fail closed)** — ES256
+  only. It does **NOT** do full RFC 5280 path validation (BasicConstraints/KeyUsage/EKU/name-constraints/
+  policy), revocation (CRL/OCSP), RSA / non-P256 certs, or wildcard SANs. `@peculiar/x509` is the heavy-dep
+  fallback only if a future mandate needs full path validation. The shipped wallet pins **no anchors**, so
+  `x509_san_dns` fails closed until a deployment configures `WALLET_TRUST_ANCHORS`; `did:web`/`did:jwk` work.
+  `did:jwk` has **no origin binding**, so the S20 response-target guard requires an **encrypted response**
+  (`direct_post.jwt`) for it. Runtime E2E: `oid4vc-sim --scheme=did:jwk`; x509 + did:web are unit-test-proven
+  (`tests/oid4vc.{x509,did}.test.js` drive the real `verifyRequestObject` + `x509.js`/`did.js`).
+
+Deferred (documented, not built): the **encrypted *request*** (verifier→wallet) — deliberately out of
+scope: it would require the verifier to know the wallet's key before the QR is shown, infeasible for a fresh
+QR scan in a no-directory wallet, whereas the response carries the sensitive data so encrypting *it* is the
+meaningful, feasible privacy win — and the `authorization_code` **wallet UI** (lib+demos+sim only). These
+are all envelope-only extensions — none touches the SD-JWT VC core.
 
 ## 6. Where it lives
 
 - `src/lib/oid4vc.js` — the canonical envelope (wraps `vc.js` + the `capability.js` JWS primitives);
   byte-identical Node port in `examples/kunji-node-demo/oid4vc.js` + `examples/kunji-issuer-demo/oid4vc.js`
-  (parity-guarded by `tests/oid4vc.parity.test.js`, like `vc.js`).
+  (parity-guarded by `tests/oid4vc.parity.test.js`, like `vc.js`). `resolveAuthorizationRequest` (fetch a
+  `request_uri`, HTTPS-only) lives here too.
+- `src/lib/jwe.js` — the minimal `ECDH-ES`/`A256GCM` JWE (compact) for the encrypted response;
+  `encryptJwe`/`decryptJwe`/`generateJweKeyPair`, isomorphic over `crypto.subtle` (no new dep).
+  Byte-identical Node port `examples/kunji-node-demo/jwe.js` (parity-guarded by `tests/jwe.test.js`).
 - Issuer: `examples/kunji-issuer-demo/oid4vci.js` (offer/token/credential store) + the routes in its `server.js`.
 - Verifier: the `/oid4vp/{request,response,result}` routes + `GET /.well-known/kunji-verifier.json` and the
   persisted `.verifier-key` (request signing) in `examples/kunji-node-demo/server.js`. `/oid4vp/request`
-  emits a signed request + DCQL by default (`?signed=0`, `?query=pd` toggle the legacy/interop matrix).
+  emits a signed request + DCQL by default (`?signed=0`, `?query=pd` toggle the legacy/interop matrix;
+  `?ref=1` returns a `request_uri` served by `GET /oid4vp/request-object/{id}`; `?enc=1` sets
+  `direct_post.jwt` + publishes the verifier's P-256 enc key in `client_metadata`). The enc keypair is
+  persisted beside the signing key as `.verifier-enc-key`; `/oid4vp/response` `decryptJwe`s a `{response}` body.
 - Holder sim: `examples/kunji-node-demo/oid4vc-sim.js` (`npm run oid4vc`) — offer→token→credential, then a
-  signed+DCQL request (verified, forgery-rejected) → vp_token → direct_post; `--legacy` runs unsigned+PD.
+  signed+DCQL request (verified, forgery-rejected) → vp_token → direct_post; `--legacy` runs unsigned+PD,
+  `--ref` drives the `request_uri` fetch, `--enc` drives the encrypted response.
 - **Wallet:** `src/services/credentials.js` `receiveViaOffer` (OpenID4VCI redeem → store), `presentViaOid4vp`
   (`buildVpResponse` — DCQL keyed vs PD), and `fetchVerifierKeys` (the verifier's `.well-known`);
   `CredentialsSheet.jsx` accepts an offer (paste/scan); `PresentCredentialSheet.jsx` is the consent sheet
