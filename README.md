@@ -8,7 +8,7 @@ kunji lets you sign in to apps by scanning a code, authenticated by keys that ne
 
 - **App:** https://app.kunji.cc
 - **Site:** https://kunji.cc · **Security:** https://kunji.cc/security · **Developers:** https://kunji.cc/developers
-- **Live demo:** https://kunji-demo.web.app
+- **Live demos:** https://demo.kunji.cc (sign-in · verified credentials · agent authorization · the drop-in widget)
 
 ---
 
@@ -42,12 +42,12 @@ Fastest path — the drop-in widget:
 ```
 
 - **Protocol & message formats:** [`docs/discoverable-login.md`](docs/discoverable-login.md)
-- **Guides:** [kunji.cc/developers](https://kunji.cc/developers) · [Firebase end-to-end](https://kunji.cc/developers/firebase) · [try it live](https://kunji.cc/developers/try)
+- **Guides:** [kunji.cc/developers](https://kunji.cc/developers) · [Firebase end-to-end](https://kunji.cc/developers/firebase) · [try it live](https://demo.kunji.cc/#rpjs)
 - **Working reference RPs:** [`examples/kunji-login-demo/`](examples/kunji-login-demo) (Firebase) · [`examples/kunji-node-demo/`](examples/kunji-node-demo) (plain Node — no Firebase, no framework) · [`examples/kunji-agent-demo/`](examples/kunji-agent-demo) (plain Node + agent logins — `POST /kunji/agent`) · [`examples/kunji-relay-demo/`](examples/kunji-relay-demo) (local server + Firebase relay — real phone, no tunnel) · [`examples/kunji-selfhosted-demo/`](examples/kunji-selfhosted-demo) (own Firebase + on-prem worker on a dynamic IP)
 
 ### Let an agent sign in for you
 
-Beyond human login, kunji supports **agentic delegation**: a user authorizes an agent (an AI assistant, script, or service) to act for them at one app via a **scoped, expiring, revocable, holder-of-key capability** — the agent never receives the user's keys. See [`docs/agentic-delegation.md`](docs/agentic-delegation.md) and the [agents guide](https://kunji.cc/developers/agents). Run it end-to-end with [`examples/kunji-agent-demo/`](examples/kunji-agent-demo) (the RP) + [`examples/kunji-mcp/`](examples/kunji-mcp) (the MCP bridge for AI runtimes).
+Beyond human login, kunji supports **agentic delegation**: a user authorizes an agent (an AI assistant, script, or service) to act for them at one app via a **scoped, expiring, revocable, holder-of-key capability** — the agent never receives the user's keys. See [`docs/agentic-delegation.md`](docs/agentic-delegation.md) and the [agents demo](https://demo.kunji.cc/#agentic). Run it end-to-end with [`examples/kunji-agent-demo/`](examples/kunji-agent-demo) (the RP) + [`examples/kunji-mcp/`](examples/kunji-mcp) (the MCP bridge for AI runtimes).
 
 ## Repository layout
 

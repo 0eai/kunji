@@ -13,7 +13,7 @@ store **only ciphertext**. There is no email/phone/name — sign-in is anonymous
 a user can authorize an AI **agent** to act for them at one app via a scoped, expiring, revocable,
 holder-of-key capability — never the keys (agentic delegation, shipped).
 
-- App: https://app.kunji.cc · Site: https://kunji.cc · Demo: https://kunji-demo.web.app
+- App: https://app.kunji.cc · Site: https://kunji.cc · Demos: https://demo.kunji.cc (= the `kunji-demo` site)
 - Stack: Vite + React 19 PWA, Tailwind v4, Firebase (anon Auth, Firestore, Hosting multi-site,
   Functions 2nd-gen). Crypto: hash-wasm (Argon2id), WebCrypto (AES-GCM), @noble/curves (Ed25519).
 
@@ -95,10 +95,26 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   `admin-kunji-cc`). SD-JWT core reused via byte-identical ports `issuer-functions/{vc,oid4vc,bbs,vcBbs}.js`
   (parity-guarded). See `docs/issuer.md`. **A trusted-third-party role — the opposite posture from the
   zero-knowledge wallet.**
-- `landing/` — marketing site + `rp.js` (the built drop-in "Sign in with kunji" widget).
-- `widget/` — `rp.js` source (built with esbuild into `landing/`).
+- `landing/` — marketing site + `rp.js` (the built drop-in "Sign in with kunji" widget). The marketing
+  site is **prose/docs** (incl. the agents/credentials/firebase developer guides); the **live** demos run on
+  **demo.kunji.cc** (the `kunji-demo` site — see below). Pages link to them (and the agents guide has a
+  "Watch it live" CTA → `demo.kunji.cc/#agentic`); `/developers/try` 301-redirects to `demo.kunji.cc/#rpjs`.
+  The footer links `demo` + `issuer`.
+- `widget/` — `rp.js` source (built with esbuild into `landing/rp.js` + pinned `rp.v1.js`, served at the
+  canonical `kunji.cc/rp.js` — a public contract). The same build also emits `agent-demo.js` →
+  `examples/kunji-login-demo/public/kunji-agent-demo.js` (the agent-demo bundle the demo SPA loads).
 - `examples/` — reference relying parties: `kunji-login-demo` (Firebase; same project `kunji-cc`,
-  site `kunji-demo`, default functions codebase), `kunji-node-demo` (plain Node, no Firebase),
+  site `kunji-demo`, **custom domain demo.kunji.cc** — default functions codebase). It's the single home for
+  the **live demos**: one Vite SPA with a **hub** (root) + four **hash routes** — `#login` (sign-in),
+  `#rpjs` (the `rp.js` drop-in widget), `#credentials` (verified credentials), `#agentic` (agent
+  authorization). The demos are **configurable**: `#rpjs` + `#agentic` have a **scope picker**
+  (client-only), and `#credentials` lets a tester pick the age threshold (13/16/18/21) and the **format —
+  SD-JWT or unlinkable BBS** (the demo issuer mints both: SD-JWT via the OID4VCI offer flow / kunji-native
+  `POST /issue`, BBS via `/issue` `{format:'bbs'}` signed by the `ISSUER_BBS_KEY` secret; the verifier
+  accepts both via `oid4vpRequest`'s `?claim`/`?format`). `index.html` loads `rp.js` (kunji.cc) +
+  `kunji-agent-demo.js` so `window.kunji`/`window.kunjiAgentDemo` exist; the SPA's single CSP allows the
+  `kunji.cc` script + cross-origin XHR to kunji's own relay/RP (demo-only — the wallet CSP is untouched).
+  `kunji-node-demo` (plain Node, no Firebase),
   `kunji-agent-demo` (plain Node, no Firebase — like `kunji-node-demo` but also accepts **agent**
   capability logins via `POST /kunji/agent`; the runnable target for `kunji-mcp` / `agent-sim.js`),
   `kunji-relay-demo` (local RP + thin public callback Function, for real-phone testing with no tunnel),
@@ -212,9 +228,11 @@ Firebase project `kunji-cc`, five root Hosting targets: `app` → `app-kunji-cc`
 lives in Functions **codebase `app`**; the real age issuer's functions live in **codebase `issuer`**
 (`issuer-functions/`) — both in the root `firebase.json` `functions` array, codebase-isolated. The demo
 (`examples/kunji-login-demo/`) is in the **same project** but deploys from its own `firebase.json` (`cd`
-into it): Hosting site `kunji-demo`, and its four functions in the **default** codebase — codebase-isolated
-from `app`/`issuer`, so deploying one never prunes the other. That isolation is load-bearing: always deploy
-functions with explicit `--only` (e.g. `--only functions:issuer,hosting:issuer,hosting:admin`).
+into it): Hosting site `kunji-demo` (**custom domain demo.kunji.cc**, attached in the console + DNS — not in
+`.firebaserc`), and its functions in the **default** codebase — codebase-isolated from `app`/`issuer`, so
+deploying one never prunes the other. Deploy the demo with `--only "hosting:kunji-demo,functions"` (its BBS
+issuance needs the `ISSUER_BBS_KEY` secret set). That isolation is load-bearing: always deploy functions with
+explicit `--only` (e.g. `--only functions:issuer,hosting:issuer,hosting:admin`).
 
 ## Workflow norms
 

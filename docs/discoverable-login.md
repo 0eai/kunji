@@ -405,4 +405,4 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 
 - `https://kunji.cc/developers` — stack-agnostic protocol guide.
 - `https://kunji.cc/developers/firebase` — end-to-end Firebase guide (widget-first, then the functions/rules above).
-- `https://kunji.cc/developers/try` — the widget running live against the demo's endpoints.
+- `https://demo.kunji.cc/#rpjs` — the widget running live against the demo's endpoints (pick the scopes to request).

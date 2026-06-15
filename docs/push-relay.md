@@ -211,17 +211,23 @@ metadata-bearing state that kunji otherwise doesn't keep.
    authorizes on the **registered `postKeyJwk` (holder-of-key)** — a kunji-cap+jwt with a `channel:post`
    scope (§12) was considered but the direct postKeyJwk model is simpler and equally sound.
 
-## 12. Open decisions
+## 12. Decisions (resolved — both transports shipped)
 
-- Deep-link payload: inline vs `req`-id fetch (recommended: id fetch via the existing request relay
-  for anything non-trivial).
-- `channelId` lifetime & rotation policy.
-- Whether the posting capability is the same `kunji-cap+jwt` minted with a `channel:post` scope (reuse
-  [`scope.md`](./scope.md)) or a distinct token type. Recommendation: reuse `kunji-cap+jwt` with a
-  reserved `channel:post` scope.
-- Web Push provider/VAPID key custody.
+- **Deep-link payload — RESOLVED: id-fetch.** Transport ② push carries only the opaque `requestId`
+  (`?push=<requestId>` → `lookupAgentRequest` fetches + decrypts client-side); the same-device step-up
+  uses the inline `?authorize=<base64url(request)>` deep link. The push payload never carries scope/VC
+  detail.
+- **`channelId` lifetime — RESOLVED: 30-day TTL + re-subscribe; no rotation.** `channelId` is a per-audience
+  HKDF derivation (opaque, unlinkable across apps); it isn't rotated — turning notifications off is a
+  signed `delete` (`revokePushForAudience`), and the channel re-registers on the next opt-in.
+- **Posting authorization — RESOLVED: direct `postKeyJwk` holder-of-key.** `pushDispatch` verifies the
+  poster's Ed25519 signature over `(channelId, requestId)` against the registered `postKeyJwk`. A distinct
+  `channel:post` `kunji-cap+jwt` was considered but the direct model is simpler and equally sound — not used.
+- **VAPID custody — RESOLVED.** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` live in Functions Secret Manager
+  (codebase `app`); the public half ships to the wallet as `VITE_VAPID_PUBLIC_KEY`. See
+  [`ops-cost-controls.md`](./ops-cost-controls.md).
 
-## 13. Where it will live (when built)
+## 13. Where it lives (as built)
 
 - Deep link + re-consent sheet → the wallet (`src/components/`), reusing the agent/login approval UI.
 - ② service worker + push subscription → `public/` + `src/` (new PWA push plumbing; the app currently
