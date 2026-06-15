@@ -79,6 +79,7 @@ describe('BBS module parity (wallet lib ↔ demo Node ports are byte-identical)'
       expect(read(`../examples/kunji-issuer-demo/${f}`)).toBe(lib);
       expect(read(`../examples/kunji-node-demo/${f}`)).toBe(lib);
       expect(read(`../examples/kunji-login-demo/functions/${f}`)).toBe(lib);
+      expect(read(`../issuer-functions/${f}`)).toBe(lib);
     });
   }
 });

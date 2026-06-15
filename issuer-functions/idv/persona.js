@@ -65,8 +65,10 @@ export const makeIdv = ({ apiKey, webhookSecret, templateId, version }) => ({
       const evt = JSON.parse(body);
       const name = evt?.data?.attributes?.name || '';
       const inq = evt?.data?.attributes?.payload?.data || {};
+      // `approved` fires when a decision/workflow auto-approves; `completed` when verifications pass with no
+      // decision step. Treat both as a success trigger — verifiedAgeFor then re-checks status + birthdate.
       const status =
-        name === 'inquiry.approved'
+        ['inquiry.approved', 'inquiry.completed'].includes(name)
           ? 'verified'
           : ['inquiry.declined', 'inquiry.failed', 'inquiry.expired'].includes(name)
             ? 'failed'

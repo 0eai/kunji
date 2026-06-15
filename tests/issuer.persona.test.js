@@ -38,7 +38,11 @@ describe('persona adapter — webhook signature + normalization (the critical co
     expect(idv.parseWebhook({ rawBody: '{}', headers: { 'persona-signature': 't=1,v1=zz' } }).ok).toBe(false);
   });
 
-  it('event name → status mapping (declined/failed/expired → failed; other → ignore)', () => {
+  it('event name → status mapping (approved/completed → verified; declined/failed/expired → failed; other → ignore)', () => {
+    for (const n of ['inquiry.approved', 'inquiry.completed']) {
+      const body = evt(n, 's', 'i');
+      expect(idv.parseWebhook({ rawBody: body, headers: { 'persona-signature': sign(body) } }).status).toBe('verified');
+    }
     for (const n of ['inquiry.declined', 'inquiry.failed', 'inquiry.expired']) {
       const body = evt(n, 's', 'i');
       expect(idv.parseWebhook({ rawBody: body, headers: { 'persona-signature': sign(body) } }).status).toBe('failed');
