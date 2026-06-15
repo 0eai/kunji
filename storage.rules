@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Deny ALL client access. The only data here is the issuer's transient ID-document uploads
+// (verify-docs/**), written + read + deleted exclusively by the issuer Cloud Functions via the Admin SDK
+// (which bypasses these rules). No client — wallet or otherwise — touches Storage. See docs/issuer.md.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

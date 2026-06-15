@@ -1,60 +1,49 @@
-// kunji age-credential ISSUER — Cloud Functions for issuer.kunji.cc (Functions codebase `issuer`, isolated
-// from the wallet's `app` codebase). This is the REAL issuer: a separate origin, its own ISSUER_SIGNING_KEY
-// secret (a rotation-capable key SET), namespaced `issuer*` Firestore collections, and a verifier that
-// fetches THIS origin's `.well-known` cross-origin. SD-JWT VC only.
+// kunji credential ISSUER — Cloud Functions for issuer.kunji.cc (Functions codebase `issuer`, isolated from
+// the wallet's `app` codebase). A separate origin with its own KUNJI_ISSUER_SIGNING_KEY secret (a
+// rotation-capable key set), namespaced `issuer*`/`verification*` Firestore, and a verifier that fetches THIS
+// origin's `.well-known` cross-origin. SD-JWT VC only.
 //
-// PROOFING GATE: issuance is CLOSED by default (503 issuance_not_enabled) and only opens when
-// ISSUER_OPEN_MINT=true. Phase 1 uses the open flag to prove the cross-origin trust path; Phase 2 replaces
-// the flag with a real IDV proofing gate (a verified `idvSessions` doc) before any mint. See ../docs/issuer.md.
+// kunji's OWN verification flow (pluggable): a credential TYPE (credentials.js) is verified by a METHOD
+// (verify/). MVP method = document-review (the user uploads a government ID, an operator reviews it + confirms
+// the DOB in the admin console, then we mint). Future methods (PASS, Aadhaar, …) slot into the same flow.
+// PROOFING GATE: a credential offer is minted ONLY for a `verified` verificationSession (or, for dev only,
+// ISSUER_OPEN_MINT=true). See ../docs/issuer.md.
 import { onRequest } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
 import { verifyProofJwt } from './oid4vc.js';
-import {
-  loadKeySet,
-  issuerWellKnown,
-  credentialIssuerMetadata,
-  authServerMetadata,
-  mintAgeCredential,
-  ageClaimsFromAge,
-  MAX_BATCH,
-} from './issuer.js';
-import { makeIdv } from './idv/persona.js';
+import { loadKeySet, issuerWellKnown, credentialIssuerMetadata, authServerMetadata, mintTypedCredential, MAX_BATCH } from './issuer.js';
+import { getType } from './credentials.js';
+import { getMethod } from './verify/index.js';
 
-initializeApp();
+const ISSUER_ORIGIN = process.env.ISSUER_ORIGIN || 'https://issuer-kunji-cc.web.app';
+const STORAGE_BUCKET = process.env.STORAGE_BUCKET || 'kunji-cc.firebasestorage.app';
+initializeApp({ storageBucket: STORAGE_BUCKET });
 const db = getFirestore();
+const bucket = () => getStorage().bucket();
 
 // Distinct from the kunji-demo's `ISSUER_SIGNING_KEY`: Firebase Secrets are PROJECT-scoped and both codebases
-// live in kunji-cc, so reusing that name would make the REAL issuer sign with the demo's (mints-to-anyone)
-// key. This is the real issuer's own key (a rotation-capable set — see issuer.js loadKeySet).
+// live in kunji-cc, so reusing that name would make the REAL issuer sign with the demo's (mints-to-anyone) key.
 const ISSUER_SIGNING_KEY = defineSecret('KUNJI_ISSUER_SIGNING_KEY');
-// IDV vendor (Persona) — the age-proofing trust root. The webhook secret verifies a "verified" event
-// genuinely came from Persona (a forged one would mint a false age credential). The inquiry template id is
-// non-secret config (env PERSONA_INQUIRY_TEMPLATE_ID); env PERSONA_VERSION optionally pins the API version.
-const PERSONA_API_KEY = defineSecret('PERSONA_API_KEY');
-const PERSONA_WEBHOOK_SECRET = defineSecret('PERSONA_WEBHOOK_SECRET');
-// The issuer's public origin — the `credential_issuer`/`iss` the wallet fetches + binds to, and the origin a
-// verifier resolves keys from. Defaults to the Hosting `.web.app` URL so the cross-origin path works before
-// the issuer.kunji.cc custom domain's DNS is live; flip to https://issuer.kunji.cc via env when DNS lands.
-const ISSUER_ORIGIN = process.env.ISSUER_ORIGIN || 'https://issuer-kunji-cc.web.app';
-// Issuance is closed unless explicitly opened. Production stays CLOSED until the Phase-2 IDV gate is wired;
-// the open flag exists only to prove the Phase-1 cross-origin verify path with a real credential.
+// Dev-only escape: mint without a verification (default OFF). Production issues only after a verified session.
 const OPEN_MINT = process.env.ISSUER_OPEN_MINT === 'true';
 
 const VC_TTL_MS = 5 * 60 * 1000;
-const IDV_TTL_MS = 15 * 60 * 1000; // a verified session lives long enough for the user to fetch the offer
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // a verification session (incl. pending review) lives a day
+const DOC_MAX_AGE_MS = 24 * 60 * 60 * 1000; // abandoned ID images are swept after this
 const vcOpts = (secrets) => ({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets });
 const ttlAfter = (ms) => Timestamp.fromMillis(Date.now() + ms + 5 * 60 * 1000);
 const token = (n) => randomBytes(n).toString('base64url');
 const keySet = () => loadKeySet(ISSUER_SIGNING_KEY.value());
 
-// Reserve `n` contiguous StatusList indices (one per minted copy) in a transaction — the stateless,
-// multi-instance fleet can't keep an in-memory counter. Namespaced `issuerStatusList` (NOT the demo's).
-const allocStatusIdxs = async (n) => {
-  const ref = db.collection('issuerStatusList').doc('age');
+// Reserve `n` contiguous StatusList indices for credential `type` in a transaction (per-type idx space).
+const allocStatusIdxs = async (type, n) => {
+  const ref = db.collection('issuerStatusList').doc(type);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const start = (snap.exists && snap.data().nextIdx) || 1;
@@ -62,14 +51,14 @@ const allocStatusIdxs = async (n) => {
     return Array.from({ length: n }, (_, i) => start + i);
   });
 };
-// StatusList check: a credential's idx is valid unless an admin has added it to `revoked` (Phase 3 revoke).
-const checkStatus = async (idx) => {
-  const snap = await db.collection('issuerStatusList').doc('age').get();
+// StatusList check: an idx is valid unless an admin added it to the type's `revoked` list.
+const checkStatus = async (type, idx) => {
+  const snap = await db.collection('issuerStatusList').doc(type).get();
   const revoked = (snap.exists && snap.data().revoked) || [];
   return !revoked.includes(Number(idx)); // false ⇒ revoked
 };
 
-// Per-IP sliding-window rate limit on the public issuer endpoints (namespaced `issuerRateLimits`).
+// Per-IP sliding-window rate limit on the public endpoints (namespaced `issuerRateLimits`).
 const rateLimited = async (ip, max = 30, windowMs = 60 * 1000) => {
   const ref = db.collection('issuerRateLimits').doc(`${(ip || 'unknown').replace(/[^\w.:-]/g, '_')}`);
   const now = Date.now();
@@ -86,121 +75,100 @@ const rateLimited = async (ip, max = 30, windowMs = 60 * 1000) => {
   });
 };
 
-// ── IDV proofing gate (Persona) — verify age once, then allow ONE credential offer ──
-// The vendor holds the document/biometric + liability; we receive only a verified age, store the derived
-// `age_over_N` booleans + the vendor session id (audit), and NEVER persist the DOB. The adapter
-// (idv/persona.js) keeps a vendor-neutral interface so the provider stays swappable. See docs/issuer.md.
-const PERSONA_VERSION = process.env.PERSONA_VERSION;
-const PERSONA_TEMPLATE_ID = process.env.PERSONA_INQUIRY_TEMPLATE_ID;
+// ── Verification flow (kunji's own) — start → (method-specific) → verified ──
+// POST /verify/start { type, method } → create a session. A 'manual' method (document-review) awaits an
+// upload ('collecting'); future 'redirect'/'inline' methods would start the provider and return a url.
+export const issuerVerifyStart = onRequest(vcOpts([]), async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
+  const { type, method } = req.body || {};
+  const t = getType(type);
+  const m = getMethod(method);
+  if (!t || !m || !t.methods.includes(method)) return res.status(400).json({ error: 'unsupported' });
+  const sid = token(24);
+  const status = m.kind === 'manual' ? 'collecting' : 'pending_review';
+  await db.collection('verificationSessions').doc(sid).set({ type, method, status, ttl: ttlAfter(VERIFY_TTL_MS) });
+  res.json({ sid, kind: m.kind });
+});
 
-// POST /idv/start → create a hosted verification session; the page stashes `sid` + redirects to `url`.
-// Rate-limited (each session may bill).
-export const issuerIdvStart = onRequest(vcOpts([PERSONA_API_KEY]), async (req, res) => {
+// POST /verify/upload { sid, image (base64/dataURL), contentType } → store the ID image (Admin SDK, private)
+// and move the session to 'pending_review'. The image is deleted on the admin's decision (data minimization).
+export const issuerVerifyUpload = onRequest(vcOpts([]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   if (await rateLimited(req.ip, 10)) return res.status(429).json({ error: 'rate_limited' });
+  const { sid, image, contentType } = req.body || {};
+  const ref = db.collection('verificationSessions').doc(String(sid || ''));
+  const snap = await ref.get();
+  const session = snap.exists ? snap.data() : null;
+  if (!session || session.status !== 'collecting') return res.status(409).json({ error: 'bad_session' });
+  const m = getMethod(session.method);
+  if (!m || m.kind !== 'manual') return res.status(400).json({ error: 'unsupported' });
+  let buf;
   try {
-    const idv = makeIdv({ apiKey: PERSONA_API_KEY.value(), templateId: PERSONA_TEMPLATE_ID, version: PERSONA_VERSION });
-    const sid = token(24);
-    const { vendorSessionId, url } = await idv.createSession({ returnUrl: `${ISSUER_ORIGIN}/`, sid });
-    await db.collection('idvSessions').doc(sid).set({ status: 'pending', vendorSessionId, ttl: ttlAfter(IDV_TTL_MS) });
-    res.json({ sid, url });
+    buf = Buffer.from(String(image || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
   } catch {
-    res.status(502).json({ error: 'idv_start_failed' });
+    return res.status(400).json({ error: 'bad_image' });
   }
+  if (!m.validateUpload({ contentType, bytes: buf.length })) return res.status(400).json({ error: 'bad_image' });
+  const docPath = `verify-docs/${sid}`;
+  await bucket().file(docPath).save(buf, { contentType, resumable: false, metadata: { cacheControl: 'no-store' } });
+  await ref.update({ status: 'pending_review', docPath, docContentType: contentType, submittedAt: Date.now() });
+  res.json({ status: 'pending_review' });
 });
 
-// POST /idv/webhook ← Persona. The adapter verifies the signature over the RAW body (THE critical control)
-// and normalizes the event to { ok, status, sid, vendorSessionId }. On `verified` we retrieve the inquiry
-// fresh (authoritative age), derive the boolean thresholds, and record ONLY those + the vendor session id —
-// the DOB is never written. Idempotent (the vendor retries); minting is separately single-use at /credential.
-export const issuerIdvWebhook = onRequest(
-  { cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets: [PERSONA_API_KEY, PERSONA_WEBHOOK_SECRET] },
-  async (req, res) => {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-    const idv = makeIdv({
-      apiKey: PERSONA_API_KEY.value(),
-      webhookSecret: PERSONA_WEBHOOK_SECRET.value(),
-      version: PERSONA_VERSION,
-    });
-    const evt = idv.parseWebhook({ rawBody: req.rawBody, headers: req.headers });
-    if (!evt.ok) return res.status(400).json({ error: 'bad_signature' }); // forged/misconfigured — never trust it
-    try {
-      if (evt.status === 'ignore' || !evt.sid) return res.json({ ok: true }); // irrelevant/not ours — ack
-      const ref = db.collection('idvSessions').doc(String(evt.sid));
-      if (evt.status === 'verified') {
-        const r = await idv.verifiedAgeFor(evt.vendorSessionId); // fresh authenticated retrieve (dob → age, in memory)
-        await db.runTransaction(async (tx) => {
-          const snap = await tx.get(ref);
-          if (!snap.exists) return; // already consumed/expired — a re-delivered event must never resurrect it
-          if (!r.ok) tx.update(ref, { status: 'failed', ttl: ttlAfter(IDV_TTL_MS) });
-          else tx.update(ref, { status: 'verified', claims: ageClaimsFromAge(r.age), vendorRef: evt.vendorSessionId, ttl: ttlAfter(IDV_TTL_MS) });
-        });
-      } else if (evt.status === 'failed') {
-        await db.runTransaction(async (tx) => {
-          const snap = await tx.get(ref);
-          // only a still-pending session regresses to failed — never clobber a verified/consumed one (out-of-order delivery)
-          if (snap.exists && snap.data().status === 'pending') tx.update(ref, { status: 'failed', ttl: ttlAfter(IDV_TTL_MS) });
-        });
-      }
-      res.json({ ok: true });
-    } catch {
-      res.status(500).json({ error: 'webhook_processing_failed' }); // let the vendor retry (don't drop a verification)
-    }
-  },
-);
-
-// GET /idv/status?sid= → the issuer page polls this; returns only the non-privileged status.
-export const issuerIdvStatus = onRequest(vcOpts([]), async (req, res) => {
-  const snap = await db.collection('idvSessions').doc(String(req.query.sid || '')).get();
+// GET /verify/status?sid → the issuer page polls this; returns only the non-privileged status.
+export const issuerVerifyStatus = onRequest(vcOpts([]), async (req, res) => {
+  const snap = await db.collection('verificationSessions').doc(String(req.query.sid || '')).get();
   if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
-  res.json({ status: snap.data().status || 'pending' });
+  res.json({ status: snap.data().status || 'collecting' });
 });
 
-// ── Issuer metadata + trust anchor (the key SET a verifier fetches cross-origin) ──
+// ── Issuer metadata + trust anchor (the key SET + brand a verifier fetches cross-origin) ──
 export const issuerOidcMetadata = onRequest(vcOpts([]), (_req, res) => res.json(credentialIssuerMetadata(ISSUER_ORIGIN)));
 export const issuerOauthMetadata = onRequest(vcOpts([]), (_req, res) => res.json(authServerMetadata(ISSUER_ORIGIN)));
-export const issuerKeys = onRequest(vcOpts([ISSUER_SIGNING_KEY]), (_req, res) =>
-  res.json(issuerWellKnown(ISSUER_ORIGIN, keySet())),
-);
+export const issuerKeys = onRequest(vcOpts([ISSUER_SIGNING_KEY]), (_req, res) => res.json(issuerWellKnown(ISSUER_ORIGIN, keySet())));
 
 // ── OpenID4VCI: offer → token → credential ──
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
 
-// GET /credential-offer → mint a single-use pre-authorized_code + return the offer.
-// PROOFING GATE: with `?sid=<verified IDV session>` → mint bound to that session's verified age booleans and
-// CONSUME the session (one proofing ⇒ one offer/batch). Without a sid only the OPEN_MINT test path (default
-// claims) is allowed; otherwise closed (503) until proofing is enabled.
+// GET /credential-offer?sid → mint a single-use pre-authorized_code bound to a VERIFIED session's type+claims
+// (and consume the session). Without a sid, only the dev OPEN_MINT path; otherwise closed (503).
 export const issuerOffer = onRequest(vcOpts([]), async (req, res) => {
   if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
   const sid = String(req.query.sid || '');
+  let type = null;
   let claims = null;
-  let vendorRef = null;
   if (sid) {
     const verified = await db.runTransaction(async (tx) => {
-      const ref = db.collection('idvSessions').doc(sid);
+      const ref = db.collection('verificationSessions').doc(sid);
       const snap = await tx.get(ref);
       const d = snap.exists ? snap.data() : null;
       if (!d || d.status !== 'verified') return null;
-      tx.delete(ref); // consume: one verified proofing ⇒ one offer
+      tx.delete(ref); // consume: one verified session ⇒ one offer/batch
       return d;
     });
     if (!verified) return res.status(403).json({ error: 'not_verified' });
+    type = verified.type;
     claims = verified.claims || null;
-    vendorRef = verified.vendorRef || null;
-  } else if (!OPEN_MINT) {
+  } else if (OPEN_MINT) {
+    type = 'age';
+    claims = getType('age').buildClaims({ age: 30 }); // dev-only test path
+  } else {
     return res.status(503).json({ error: 'issuance_not_enabled' });
   }
+  if (!getType(type) || !claims) return res.status(400).json({ error: 'unsupported' });
   const code = token(24);
-  await db.collection('issuerOffers').doc(code).set({ configurationId: 'age', claims, vendorRef, ttl: ttlAfter(VC_TTL_MS) });
+  await db.collection('issuerOffers').doc(code).set({ type, claims, ttl: ttlAfter(VC_TTL_MS) });
   const offer = {
     credential_issuer: ISSUER_ORIGIN,
-    credential_configuration_ids: ['age'],
+    credential_configuration_ids: [type],
     grants: { [PRE_AUTH_GRANT]: { 'pre-authorized_code': code } },
   };
   res.json({ offer, offerUri: `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(offer))}` });
 });
 
-// POST /token → redeem the pre-authorized_code (single-use) for an access_token + c_nonce (bearer).
+// POST /token → redeem the pre-authorized_code (single-use) for an access_token + c_nonce, carrying the
+// session's type+claims so /credential mints exactly what was verified.
 export const issuerTokenEndpoint = onRequest(vcOpts([]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
@@ -216,17 +184,12 @@ export const issuerTokenEndpoint = onRequest(vcOpts([]), async (req, res) => {
   if (!offer) return res.status(400).json({ error: 'invalid_grant' });
   const access_token = token(24);
   const cNonce = token(24);
-  // Carry the verified age claims + vendor ref from the offer onto the token, so /credential mints exactly
-  // what the IDV gate proved (issuerCredentialEndpoint reads consumed.claims / consumed.vendorRef).
-  await db
-    .collection('issuerTokens')
-    .doc(access_token)
-    .set({ cNonce, claims: offer.claims || null, vendorRef: offer.vendorRef || null, ttl: ttlAfter(VC_TTL_MS) });
+  await db.collection('issuerTokens').doc(access_token).set({ cNonce, type: offer.type, claims: offer.claims || null, ttl: ttlAfter(VC_TTL_MS) });
   res.json({ access_token, token_type: 'bearer', expires_in: 300, c_nonce: cNonce, c_nonce_expires_in: 300 });
 });
 
-// POST /credential → verify the holder proof JWT(s) (single-use token) and mint the SD-JWT VC(s).
-// Writes a data-minimized ledger row per copy (the age booleans + idx + kid — NEVER a DOB/document).
+// POST /credential → verify the holder proof JWT(s) (single-use token) and mint the SD-JWT VC(s) of the
+// session's type. Writes a data-minimized ledger row per copy (the booleans + idx + kid — never a DOB/image).
 export const issuerCredentialEndpoint = onRequest(vcOpts([ISSUER_SIGNING_KEY]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const tok = /^(?:DPoP|Bearer) (.+)$/.exec(String(req.headers.authorization || ''))?.[1];
@@ -238,13 +201,14 @@ export const issuerCredentialEndpoint = onRequest(vcOpts([ISSUER_SIGNING_KEY]), 
     return snap.data();
   });
   if (!consumed) return res.status(401).json({ error: 'invalid_token' });
+  const type = consumed.type || 'age';
+  const t = getType(type);
+  const claims = consumed.claims || null;
+  if (!t || !claims) return res.status(400).json({ error: 'unsupported' });
   const fmt = req.body?.format;
   if (fmt && fmt !== 'vc+sd-jwt' && fmt !== 'dc+sd-jwt') return res.status(400).json({ error: 'unsupported_credential_format' });
   const typ = fmt === 'dc+sd-jwt' ? fmt : undefined;
   const ks = keySet();
-  // The verified-age claims to bake. Phase 1 (open mint) uses the demo default; Phase 2 reads the booleans
-  // the IDV gate stored on the token's session.
-  const claims = consumed.claims || undefined;
 
   // Batch (unlinkability v2): one one-time copy per holder key. `proof` is the pre-batch fallback.
   const batch = req.body?.proofs?.jwt;
@@ -257,31 +221,24 @@ export const issuerCredentialEndpoint = onRequest(vcOpts([ISSUER_SIGNING_KEY]), 
     if (!v.ok) return res.status(400).json({ error: 'invalid_proof', detail: v.error });
     holderJwks.push(v.holderJwk);
   }
-  const idxs = await allocStatusIdxs(holderJwks.length);
-  const creds = holderJwks.map((holderJwk, i) => mintAgeCredential({ keySet: ks, origin: ISSUER_ORIGIN, holderJwk, idx: idxs[i], claims, typ }));
-  // Data-minimized issuance ledger (admin console reads it; no PII — booleans + idx + kid + vendor ref only).
+  const idxs = await allocStatusIdxs(type, holderJwks.length);
+  const creds = holderJwks.map((holderJwk, i) => mintTypedCredential({ keySet: ks, origin: ISSUER_ORIGIN, type, holderJwk, idx: idxs[i], claims, typ }));
   const issuedAt = Date.now();
   await Promise.all(
     idxs.map((idx) =>
-      db.collection('issuerCredentials').doc(`age_${idx}`).set({
-        vct: 'age',
-        idx,
-        kid: ks.active.kid,
-        claims: claims || null,
-        vendorRef: consumed.vendorRef || null,
-        issuedAt,
-      }),
+      db.collection('issuerCredentials').doc(`${type}_${idx}`).set({ vct: t.vct, type, idx, kid: ks.active.kid, claims, issuedAt }),
     ),
   );
   res.json(Array.isArray(batch) && batch.length ? { credentials: creds } : { credential: creds[0] });
 });
 
-// GET /status/1?idx= → StatusList check (a verifier's checkStatus honors valid:false as revoked).
+// GET /status/{type}?idx= → StatusList check (a verifier's checkStatus honors valid:false as revoked).
 export const issuerStatusEndpoint = onRequest(vcOpts([]), async (req, res) => {
-  res.json({ valid: await checkStatus(req.query.idx) });
+  const type = req.path.split('/')[2] || 'age';
+  res.json({ valid: await checkStatus(type, req.query.idx) });
 });
 
-// ── Admin console API (admin.kunji.cc) — operator-only: ledger, revocation, stats ──
+// ── Admin console API (admin.kunji.cc) — operator-only: review queue, ledger, revoke, stats ──
 // THE GATE IS THE `admin:true` CUSTOM CLAIM, not authentication: this same project mints anonymous wallet
 // tokens, which verifyIdToken would accept — so a token without the claim must be rejected. The admin API
 // holds NO signing secret (keys are read from the public .well-known), so it cannot sign or rotate keys.
@@ -296,48 +253,90 @@ const requireAdmin = async (req) => {
   }
 };
 
-// Issuance ledger, newest first, paginated by the (unique, sequential) StatusList idx. No PII — the rows are
-// booleans + idx + kid + vendorRef + issuedAt; each is flagged with its current revocation status.
+// Pending-review queue (oldest first). No PII — just sid/type/method/submittedAt; the image is fetched lazily.
+const adminReviews = async () => {
+  const snap = await db.collection('verificationSessions').where('status', '==', 'pending_review').limit(100).get();
+  const items = snap.docs
+    .map((d) => ({ sid: d.id, ...d.data() }))
+    .map((x) => ({ sid: x.sid, type: x.type, method: x.method, submittedAt: x.submittedAt || null }))
+    .sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
+  return { items };
+};
+
+// Stream the pending session's ID image to the (already claim-verified) operator — never a public URL.
+const adminReviewDoc = async (sid, res) => {
+  const snap = await db.collection('verificationSessions').doc(String(sid || '')).get();
+  const s = snap.exists ? snap.data() : null;
+  if (!s || !s.docPath) return res.status(404).json({ error: 'no_document' });
+  const [buf] = await bucket().file(s.docPath).download();
+  res.set('Content-Type', s.docContentType || 'application/octet-stream');
+  res.set('Cache-Control', 'no-store');
+  return res.send(buf);
+};
+
+// Approve (with the reviewer-confirmed DOB) → verified + claims; or reject. Either way DELETE the ID image.
+const adminReviewDecision = async (admin, { sid, approve, dob }) => {
+  const ref = db.collection('verificationSessions').doc(String(sid || ''));
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const s = snap.exists ? snap.data() : null;
+    if (!s || s.status !== 'pending_review') return { error: 'bad_session' };
+    if (!approve) {
+      tx.update(ref, { status: 'rejected', reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
+      return { docPath: s.docPath, status: 'rejected' };
+    }
+    const claims = getType(s.type)?.buildClaims({ dob });
+    if (!claims) return { error: 'bad_dob' };
+    tx.update(ref, { status: 'verified', claims, reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
+    return { docPath: s.docPath, status: 'verified' };
+  });
+  if (result.error) throw new Error(result.error);
+  if (result.docPath) await bucket().file(result.docPath).delete({ ignoreNotFound: true }).catch(() => {});
+  return { status: result.status };
+};
+
+// Issuance ledger, newest first (by issuedAt — idx is per-type), each flagged with its revocation status.
 const adminLedger = async (req) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const before = Number(req.query.before);
-  let q = db.collection('issuerCredentials').orderBy('idx', 'desc');
-  if (Number.isInteger(before) && before > 0) q = q.where('idx', '<', before).orderBy('idx', 'desc');
-  const [snap, statusSnap] = await Promise.all([
-    q.limit(limit).get(),
-    db.collection('issuerStatusList').doc('age').get(),
-  ]);
-  const revoked = new Set(((statusSnap.exists && statusSnap.data().revoked) || []).map(Number));
-  const items = snap.docs.map((d) => {
-    const x = d.data();
-    return { idx: x.idx, vct: x.vct, kid: x.kid, claims: x.claims || null, vendorRef: x.vendorRef || null, issuedAt: x.issuedAt || null, revoked: revoked.has(Number(x.idx)) };
-  });
-  return { items, nextBefore: items.length === limit ? items[items.length - 1].idx : null };
+  let q = db.collection('issuerCredentials').orderBy('issuedAt', 'desc');
+  if (Number.isInteger(before) && before > 0) q = q.where('issuedAt', '<', before).orderBy('issuedAt', 'desc');
+  const snap = await q.limit(limit).get();
+  const items = await Promise.all(
+    snap.docs.map(async (d) => {
+      const x = d.data();
+      const valid = await checkStatus(x.type || 'age', x.idx);
+      return { id: d.id, type: x.type || 'age', vct: x.vct, idx: x.idx, kid: x.kid, claims: x.claims || null, issuedAt: x.issuedAt || null, revoked: !valid };
+    }),
+  );
+  return { items, nextBefore: items.length === limit ? items[items.length - 1].issuedAt : null };
 };
 
-// Aggregate stats (count() — no docs returned): the IDV funnel + issuance/revocation totals.
+// Aggregate stats (count() — no docs returned): the verification funnel + issuance/revocation totals.
 const adminStats = async () => {
-  const idv = db.collection('idvSessions');
-  const [pending, verified, failed, issued, statusSnap] = await Promise.all([
-    idv.where('status', '==', 'pending').count().get(),
-    idv.where('status', '==', 'verified').count().get(),
-    idv.where('status', '==', 'failed').count().get(),
+  const vs = db.collection('verificationSessions');
+  const [collecting, pending, verified, rejected, issued] = await Promise.all([
+    vs.where('status', '==', 'collecting').count().get(),
+    vs.where('status', '==', 'pending_review').count().get(),
+    vs.where('status', '==', 'verified').count().get(),
+    vs.where('status', '==', 'rejected').count().get(),
     db.collection('issuerCredentials').count().get(),
-    db.collection('issuerStatusList').doc('age').get(),
   ]);
-  const revoked = ((statusSnap.exists && statusSnap.data().revoked) || []).length;
+  const statusSnaps = await db.collection('issuerStatusList').get();
+  const revoked = statusSnaps.docs.reduce((n, d) => n + ((d.data().revoked || []).length), 0);
   return {
-    idv: { pending: pending.data().count, verified: verified.data().count, failed: failed.data().count },
+    verification: { collecting: collecting.data().count, pending_review: pending.data().count, verified: verified.data().count, rejected: rejected.data().count },
     issued: issued.data().count,
     revoked,
   };
 };
 
-// Revoke / un-revoke an idx by toggling it in issuerStatusList/age.revoked (transaction; idempotent).
-const adminSetRevoked = async (idx, revoke) => {
+// Revoke / un-revoke an idx of `type` by toggling issuerStatusList/{type}.revoked (transaction; idempotent).
+const adminSetRevoked = async (type, idx, revoke) => {
   const n = Number(idx);
-  if (!Number.isInteger(n) || n < 1) throw new Error('bad_idx');
-  const ref = db.collection('issuerStatusList').doc('age');
+  const t = getType(type);
+  if (!t || !Number.isInteger(n) || n < 1) throw new Error('bad_idx');
+  const ref = db.collection('issuerStatusList').doc(type);
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const cur = new Set(((snap.exists && snap.data().revoked) || []).map(Number));
@@ -345,7 +344,7 @@ const adminSetRevoked = async (idx, revoke) => {
     else cur.delete(n);
     tx.set(ref, { revoked: Array.from(cur) }, { merge: true });
   });
-  return { idx: n, revoked: revoke };
+  return { type, idx: n, revoked: revoke };
 };
 
 // /api/** (admin.kunji.cc rewrite) — one Function, internal path router; same-origin (no CORS).
@@ -355,10 +354,27 @@ export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: 
   try {
     if (req.method === 'GET' && req.path === '/api/ledger') return res.json(await adminLedger(req));
     if (req.method === 'GET' && req.path === '/api/stats') return res.json(await adminStats());
-    if (req.method === 'POST' && req.path === '/api/revoke') return res.json(await adminSetRevoked(req.body?.idx, true));
-    if (req.method === 'POST' && req.path === '/api/unrevoke') return res.json(await adminSetRevoked(req.body?.idx, false));
+    if (req.method === 'GET' && req.path === '/api/reviews') return res.json(await adminReviews());
+    if (req.method === 'GET' && req.path === '/api/review/doc') return await adminReviewDoc(req.query.sid, res);
+    if (req.method === 'POST' && req.path === '/api/review/decision')
+      return res.json(await adminReviewDecision(admin, req.body || {}));
+    if (req.method === 'POST' && req.path === '/api/revoke') return res.json(await adminSetRevoked(req.body?.type || 'age', req.body?.idx, true));
+    if (req.method === 'POST' && req.path === '/api/unrevoke') return res.json(await adminSetRevoked(req.body?.type || 'age', req.body?.idx, false));
     return res.status(404).json({ error: 'not_found' });
   } catch (e) {
-    return res.status(e?.message === 'bad_idx' ? 400 : 500).json({ error: e?.message === 'bad_idx' ? 'bad_idx' : 'admin_failed' });
+    const known = ['bad_idx', 'bad_dob', 'bad_session'].includes(e?.message);
+    return res.status(known ? 400 : 500).json({ error: known ? e.message : 'admin_failed' });
   }
+});
+
+// Daily sweep: delete abandoned ID images (uploaded but never reviewed) older than DOC_MAX_AGE_MS, so an ID
+// document never lingers. Reviewed images are already deleted on the decision.
+export const issuerCleanup = onSchedule({ schedule: 'every 24 hours', maxInstances: 1 }, async () => {
+  const [files] = await bucket().getFiles({ prefix: 'verify-docs/' });
+  const cutoff = Date.now() - DOC_MAX_AGE_MS;
+  await Promise.all(
+    files
+      .filter((f) => new Date(f.metadata.timeCreated).getTime() < cutoff)
+      .map((f) => f.delete({ ignoreNotFound: true }).catch(() => {})),
+  );
 });

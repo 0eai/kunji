@@ -81,16 +81,20 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `src/services/identity.js` — QR parsing, callback safety (`isSafeReturnUrl`), assertion submit,
   app register/delete, legacy migration.
 - `functions/` — `vaultWrite` Cloud Function (codebase `app`, Node 20).
-- `issuer-functions/` — the **real age-credential issuer** (`issuer.kunji.cc`), Functions **codebase `issuer`**
-  (Node 20). OpenID4VCI offer/token/credential + `.well-known` key SET (rotation) + StatusList revocation,
-  signed by its OWN secret `KUNJI_ISSUER_SIGNING_KEY` (distinct from the demo's). Issuance is gated CLOSED
-  (`ISSUER_OPEN_MINT`) until proofed) → **IDV proofing gate** (swappable adapter `idv/persona.js` — Persona;
-  `/idv/start|webhook|status`; signed-webhook → verified age → booleans, DOB never stored) → an **auth-gated
-  admin API** (`issuerAdminApi`: ledger/revoke/stats, gated by the `admin:true` custom claim, no signing
-  secret). Booleans-only, no DOB/PII at rest; namespaced `issuer*`/`idv*` Firestore. `issuer-public/` is the
-  "verify your age" frontend; `admin/` is the standalone admin-console SPA (admin.kunji.cc). SD-JWT core +
-  OID4VCI helpers reused via byte-identical ports `issuer-functions/{vc.js,oid4vc.js}` (parity-guarded). See
-  `docs/issuer.md`. **A trusted-third-party role — the opposite posture from the zero-knowledge wallet.**
+- `issuer-functions/` — the **real credential issuer** (`issuer.kunji.cc`), Functions **codebase `issuer`**
+  (Node 20). A **pluggable framework**: a credential-TYPE registry (`credentials.js` — `age` now) × a
+  verification-METHOD registry (`verify/` — `document-review` now; future PASS/Aadhaar slot in). OpenID4VCI
+  offer/token/credential + `.well-known` key SET (rotation) + brand + per-type StatusList revocation, signed by
+  its OWN secret `KUNJI_ISSUER_SIGNING_KEY`. **kunji's own verification** (no third-party): the user uploads a
+  government ID (`/verify/start|upload`, stored in Firebase **Storage** `verify-docs/**`, deny-all
+  `storage.rules`), an operator reviews it in the admin console + confirms the DOB → mint; the **image is
+  deleted on decision** + a daily `issuerCleanup` sweep — only `age_over_N` booleans persist (no DOB/PII; S33).
+  **Auth-gated admin API** `issuerAdminApi` (review queue / ledger / revoke / stats, gated by the `admin:true`
+  custom claim, no signing secret). Frontends (both wallet-matched, copy the design tokens/primitives):
+  `issuer-web/` (the public "verify your age" flow, → `issuer-kunji-cc`) + `admin/` (operator console, →
+  `admin-kunji-cc`). SD-JWT core reused via byte-identical ports `issuer-functions/{vc,oid4vc,bbs,vcBbs}.js`
+  (parity-guarded). See `docs/issuer.md`. **A trusted-third-party role — the opposite posture from the
+  zero-knowledge wallet.**
 - `landing/` — marketing site + `rp.js` (the built drop-in "Sign in with kunji" widget).
 - `widget/` — `rp.js` source (built with esbuild into `landing/`).
 - `examples/` — reference relying parties: `kunji-login-demo` (Firebase; same project `kunji-cc`,

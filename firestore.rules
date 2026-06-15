@@ -119,7 +119,7 @@ service cloud.firestore {
     match /issuerOffers/{d} { allow read, write: if false; }
     match /issuerTokens/{d} { allow read, write: if false; }
     match /issuerRateLimits/{d} { allow read, write: if false; }
-    match /idvSessions/{d} { allow read, write: if false; }
+    match /verificationSessions/{d} { allow read, write: if false; }
     match /issuerAdmins/{d} { allow read, write: if false; }
   }
 }

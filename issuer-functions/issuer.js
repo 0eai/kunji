@@ -1,22 +1,21 @@
-// The kunji age-credential ISSUER (issuer.kunji.cc). Adapted from the kunji-demo issuer port, but this is
-// the REAL issuer: a separate origin, its own signing-key SET (rotation-capable), and — once Phase 2 lands —
-// minting only AFTER an IDV proofing gate. No filesystem / module state: the Ed25519 signing key(s) come
-// from a Secret and the StatusList idx is allocated in Firestore (see index.js). SD-JWT VC only.
+// The kunji credential ISSUER (issuer.kunji.cc) — crypto + metadata. A separate origin with its own
+// rotation-capable signing-key SET (from the KUNJI_ISSUER_SIGNING_KEY secret); SD-JWT VC only. The credential
+// TYPES (age, …) live in credentials.js and the verification METHODS in verify/; this file is type-agnostic.
 //
-// Predicate pre-baking: issues `age_over_13/16/18/21` booleans, never a DOB — disclosing a threshold leaks
-// the answer, not the birthday. The booleans are derived from a vendor-verified age (Phase 2); never the DOB.
-// See ../docs/verified-credentials.md and the plan in ../docs/issuer.md.
+// Predicate pre-baking: an age credential carries `age_over_N` booleans, never a DOB — disclosing a threshold
+// leaks the answer, not the birthday. See ../docs/issuer.md and ../docs/verified-credentials.md.
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { mintCredential } from './vc.js';
+import { ISSUER_BRAND, credentialConfigs, getType } from './credentials.js';
 
 export const DEFAULT_KID = 'issuer-key-1';
 export const MAX_BATCH = 10; // cap batch issuance (resource exhaustion) [S24]
 const DAY = 24 * 3600;
 const b64u = (b) => Buffer.from(b).toString('base64url');
 
-// Load the issuer signing-key SET from the ISSUER_SIGNING_KEY secret. Accepts either a bare base64 Ed25519
-// secret key (single key) OR a JSON array of `[{ kid, sk, active? }]` for key rotation: every entry's PUBLIC
-// key is published in the trust anchor (so credentials signed by a retired key still verify until they
+// Load the issuer signing-key SET from the KUNJI_ISSUER_SIGNING_KEY secret. Accepts either a bare base64
+// Ed25519 secret key (single key) OR a JSON array of `[{ kid, sk, active? }]` for key rotation: every entry's
+// PUBLIC key is published in the trust anchor (so credentials signed by a retired key still verify until they
 // expire), but signing always uses the ACTIVE key (the first `active:true`, else the first entry).
 export const loadKeySet = (secretValue) => {
   const raw = String(secretValue).trim();
@@ -45,15 +44,8 @@ export const credentialIssuerMetadata = (origin) => ({
   credential_issuer: origin,
   credential_endpoint: `${origin}/credential`,
   authorization_servers: [origin],
-  credential_configurations_supported: {
-    age: {
-      format: 'vc+sd-jwt',
-      vct: 'age',
-      cryptographic_binding_methods_supported: ['jwk'],
-      credential_signing_alg_values_supported: ['EdDSA'],
-      proof_types_supported: { jwt: { proof_signing_alg_values_supported: ['EdDSA'] } },
-    },
-  },
+  brand: ISSUER_BRAND,
+  credential_configurations_supported: credentialConfigs(),
 });
 
 export const authServerMetadata = (origin) => ({
@@ -62,46 +54,34 @@ export const authServerMetadata = (origin) => ({
   'pre-authorized_grant_anonymous_access_supported': true,
 });
 
-// The issuer's trust anchor — the Ed25519 public-key SET the wallet/verifier fetch (cross-origin) to verify
-// credentials. Publishes every key in the set so rotation never strands an unexpired credential.
+// The issuer's trust anchor — the Ed25519 public-key SET a wallet/verifier fetches (cross-origin) to verify
+// credentials, plus the brand so a relying party can show WHO issued it. Publishes every key in the set so
+// rotation never strands an unexpired credential.
 export const issuerWellKnown = (origin, keySet) => ({
   issuer: origin,
-  name: 'kunji age issuer',
+  name: `${ISSUER_BRAND.name} issuer`,
+  brand: ISSUER_BRAND,
   keys: keySet.keys.map((k) => ({ kid: k.kid, kty: 'OKP', crv: 'Ed25519', x: b64u(k.publicKey) })),
 });
 
-const AGE_THRESHOLDS = [13, 16, 18, 21];
-const DEFAULT_DOB = '1990-01-01';
-const ageOf = (dob) => {
-  const b = new Date(dob);
-  const now = new Date();
-  let age = now.getUTCFullYear() - b.getUTCFullYear();
-  const m = now.getUTCMonth() - b.getUTCMonth();
-  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--;
-  return age;
-};
-// Derive the boolean thresholds from a verified age (the IDV result, Phase 2). `dob` is the DEMO/test path
-// only (open-mint); production passes a verified integer age via `ageClaimsFromAge`.
-export const ageClaims = (dob = DEFAULT_DOB) =>
-  Object.fromEntries(AGE_THRESHOLDS.map((n) => [`age_over_${n}`, ageOf(dob) >= n]));
-export const ageClaimsFromAge = (age) =>
-  Object.fromEntries(AGE_THRESHOLDS.map((n) => [`age_over_${n}`, Number(age) >= n]));
-
-// Coarsen iat/exp to the UTC-day boundary so timestamps don't fingerprint WHEN a credential was issued
-// and a day's batch copies share one iat/exp (a large anonymity set; critical for v2 batch unlinkability). [S23]
+// Coarsen iat/exp to the UTC-day boundary so timestamps don't fingerprint WHEN a credential was issued and a
+// day's batch copies share one iat/exp (a large anonymity set; critical for v2 batch unlinkability). [S23]
 const coarseNowMs = () => Math.floor(Date.now() / 1000 / DAY) * DAY * 1000;
 
-// Mint one age SD-JWT VC bound to `holderJwk` with StatusList `idx`, signed by the active key in `keySet`.
-// `claims` (pre-baked booleans) is preferred; falls back to the demo default. `typ` opts into `dc+sd-jwt`.
-export const mintAgeCredential = ({ keySet, origin, holderJwk, idx, claims, typ }) =>
-  mintCredential(keySet.active.secretKey, {
+// Mint one SD-JWT VC of credential `type`, bound to `holderJwk` with StatusList `idx`, signed by the active
+// key. `claims` are the verified, disclosable claims the type/method produced (e.g. age_over_N booleans).
+export const mintTypedCredential = ({ keySet, origin, type, holderJwk, idx, claims, typ }) => {
+  const t = getType(type);
+  if (!t) throw new Error('unknown_type');
+  return mintCredential(keySet.active.secretKey, {
     kid: keySet.active.kid,
     iss: origin,
-    vct: 'age',
-    claims: claims || ageClaims(),
+    vct: t.vct,
+    claims,
     holderJwk,
-    status: { uri: `${origin}/status/1`, idx },
-    ttlSeconds: 365 * DAY,
+    status: { uri: `${origin}/status/${t.vct}`, idx },
+    ttlSeconds: t.ttlSeconds,
     now: coarseNowMs(),
     ...(typ ? { typ } : {}),
   });
+};

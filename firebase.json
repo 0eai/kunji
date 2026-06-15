@@ -109,7 +109,7 @@
     },
     {
       "target": "issuer",
-      "public": "issuer-public",
+      "public": "issuer-web/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [
         {
@@ -125,16 +125,16 @@
           "function": { "functionId": "issuerKeys", "region": "us-central1" }
         },
         {
-          "source": "/idv/start",
-          "function": { "functionId": "issuerIdvStart", "region": "us-central1" }
+          "source": "/verify/start",
+          "function": { "functionId": "issuerVerifyStart", "region": "us-central1" }
         },
         {
-          "source": "/idv/webhook",
-          "function": { "functionId": "issuerIdvWebhook", "region": "us-central1" }
+          "source": "/verify/upload",
+          "function": { "functionId": "issuerVerifyUpload", "region": "us-central1" }
         },
         {
-          "source": "/idv/status",
-          "function": { "functionId": "issuerIdvStatus", "region": "us-central1" }
+          "source": "/verify/status",
+          "function": { "functionId": "issuerVerifyStatus", "region": "us-central1" }
         },
         {
           "source": "/credential-offer",
@@ -149,7 +149,7 @@
           "function": { "functionId": "issuerCredentialEndpoint", "region": "us-central1" }
         },
         {
-          "source": "/status/1",
+          "source": "/status/**",
           "function": { "functionId": "issuerStatusEndpoint", "region": "us-central1" }
         }
       ],
@@ -204,7 +204,7 @@
             },
             {
               "key": "Content-Security-Policy",
-              "value": "default-src 'self'; script-src 'self' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://kunji.cc https://*.googleusercontent.com; connect-src 'self' https://issuer-kunji-cc.web.app https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; font-src 'self' data:; frame-src https://kunji-cc.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+              "value": "default-src 'self'; script-src 'self' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://kunji.cc https://*.googleusercontent.com; connect-src 'self' https://issuer-kunji-cc.web.app https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; font-src 'self' data:; frame-src https://kunji-cc.firebaseapp.com https://accounts.google.com https://apis.google.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
             }
           ]
         }
@@ -213,6 +213,9 @@
   ],
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
   },
   "functions": [
     {
