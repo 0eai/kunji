@@ -449,6 +449,19 @@ export const fetchVerifierKeys = async (clientId) => {
  * → a reusable v1 credential (graceful fallback). Same issuer-origin guard as `receiveFromIssuer`.
  * Returns `{ poolId, count, vct, iss }`.
  */
+// Map an issuer error response to a user-facing message. A consumed/expired single-use offer comes back as
+// `invalid_grant` (at /token) or `invalid_token` (a reused access token at /credential) — say so clearly
+// instead of a generic "declined", so the user knows to fetch a fresh offer.
+const issuerDeclineMessage = async (resp, fallback) => {
+  const code = await resp
+    .json()
+    .then((b) => b?.error)
+    .catch(() => null);
+  if (code === 'invalid_grant' || code === 'invalid_token')
+    return 'This credential offer was already used or has expired — get a fresh one.';
+  return fallback;
+};
+
 export const receiveViaOffer = async (cryptoKey, offerInput) => {
   let offer;
   try {
@@ -490,7 +503,7 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
   } catch {
     throw new Error('Could not reach the issuer.');
   }
-  if (!tokenResp.ok) throw new Error('The issuer declined the offer.');
+  if (!tokenResp.ok) throw new Error(await issuerDeclineMessage(tokenResp, 'The issuer declined the offer.'));
   const { access_token, c_nonce, token_type } = await tokenResp.json().catch(() => ({}));
   if (!access_token) throw new Error('The issuer returned no access token.');
   const useDpop = String(token_type || '').toLowerCase() === 'dpop';
@@ -517,7 +530,7 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
   } catch {
     throw new Error('Could not reach the issuer.');
   }
-  if (!credResp.ok) throw new Error('The issuer declined to issue a credential.');
+  if (!credResp.ok) throw new Error(await issuerDeclineMessage(credResp, 'The issuer declined to issue a credential.'));
   const sdjwts = credentialsFrom(await credResp.json().catch(() => ({})));
   return storeBatch(cryptoKey, issuer, sdjwts, holderKeys);
 };

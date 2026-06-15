@@ -134,6 +134,13 @@ export default function CredentialsDemo({ onBack }) {
                 {copied ? 'Copied ✓' : 'Copy offer'}
               </button>
             </div>
+            <p className="text-[12px] text-faint mt-3">
+              This offer is single-use and expires shortly.{' '}
+              <button onClick={getOffer} className="text-accent hover:text-ink underline underline-offset-2">
+                Get a fresh offer
+              </button>{' '}
+              if it was already used.
+            </p>
           </div>
         )}
         {offerErr && <p className="text-[13px] text-danger mt-3">{offerErr}</p>}
