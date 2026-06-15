@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import QRCodeStyling from 'qr-code-styling';
+import { renderBrandedQr, b64url } from './qr.js';
 
 // The RP's identity. In production this is your real domain, hardcoded server-side.
 // Here it's the current origin (audience = hostname; callback is same-site via Hosting rewrite).
@@ -8,59 +8,8 @@ const CALLBACK_URL = `${window.location.origin}/kunji/callback`;
 const APP_NAME = 'kunji demo';
 const KUNJI_APP_URL = 'https://app.kunji.cc';
 
-// Brand-styled QR: extra-rounded modules + the kunji app-icon logo (amber tile + dark key),
-// centered with a cleared quiet area. Pure presentation — `data` is the QR payload unchanged.
-const APP_ICON =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">' +
-      '<rect width="512" height="512" rx="116" fill="#f59e0b"/>' +
-      '<g transform="rotate(-40 256 256)" fill="none" stroke="#1c1606" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">' +
-      '<circle cx="240" cy="172" r="56" fill="#1c1606"/>' +
-      '<path d="M240 172 V398"/><path d="M240 334 L300 314"/><path d="M240 334 L300 358"/>' +
-      '</g></svg>',
-  );
-// Canonical branded QR — mirror of the wallet's src/lib/brandedQr.js (separate bundle → copy, not
-// import). Overlay the amber logo as an <img> (img-src), not qr-code-styling's fetched `image`
-// (connect-src, which a strict CSP would blank); EC 'H' covers the occluded center; margin:0 +
-// the container's p-3 is the single quiet zone.
-const SIZE = 224;
-const renderBrandedQr = (el, data) => {
-  if (!el || !data) return;
-  const qr = new QRCodeStyling({
-    type: 'svg',
-    width: SIZE,
-    height: SIZE,
-    data,
-    margin: 0,
-    qrOptions: { errorCorrectionLevel: 'H' },
-    backgroundOptions: { color: '#ffffff' },
-    // roundSize:false — otherwise qr-code-styling floors the dot size and centers the pattern,
-    // baking a payload-length-dependent white margin inside the svg. Mirror of src/lib/brandedQr.js.
-    dotsOptions: { type: 'extra-rounded', color: '#1a1a18', roundSize: false },
-    cornersSquareOptions: { type: 'extra-rounded', color: '#1a1a18' },
-    cornersDotOptions: { color: '#1a1a18' },
-  });
-  el.replaceChildren();
-  qr.append(el);
-  // Pin the SVG to exactly SIZE + display:block so framing matches the wallet/widget pixel-for-pixel.
-  const svg = el.querySelector('svg');
-  if (svg) svg.style.cssText = `display:block;width:${SIZE}px;height:${SIZE}px`;
-  el.style.position = 'relative';
-  const logo = document.createElement('img');
-  logo.src = APP_ICON;
-  logo.alt = '';
-  // The amber tile on a generous white squircle = a cleared quiet zone, so the logo floats clear of
-  // the modules. Mirror of src/lib/brandedQr.js — keep byte-equal. EC 'H' covers what it occludes.
-  const halo = Math.round(SIZE * 0.05); // ~11px white border on each side
-  const plate = Math.round(SIZE * 0.21) + halo * 2; // amber tile ~47px + the halo
-  const radius = Math.round(SIZE * 0.085); // ~19px squircle
-  logo.style.cssText = `position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:${plate}px;height:${plate}px;padding:${halo}px;background:#fff;border-radius:${radius}px;box-sizing:border-box`;
-  el.appendChild(logo);
-};
-
-// base64url so it rides safely in a URL query param.
-const b64url = (s) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+// renderBrandedQr + b64url are shared from ./qr.js (the demo's single mirror of the wallet's
+// src/lib/brandedQr.js) — imported above, so there's no second copy to drift.
 
 // Same-device login navigates this tab away to the wallet; persist the pending
 // session id so we can resume (not restart) it when the user returns.
@@ -315,7 +264,7 @@ export default function LoginPage({ onSuccess }) {
               <p className="text-[15px] text-accent mb-6">Code expired.</p>
               <button
                 onClick={startFlow}
-                className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+                className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity"
               >
                 Show new code
               </button>

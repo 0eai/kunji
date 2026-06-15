@@ -19,6 +19,7 @@ export default function AgenticDemo({ onBack }) {
   const [tab, setTab] = useState('terminal');
   const [checked, setChecked] = useState(() => Object.fromEntries(AGENT_SCOPES.map((s) => [s.id, s.on])));
   const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(''); // 'sample' | 'live' | '' — which button is in flight
   const [io, setIo] = useState(null);
 
   const termRef = useRef(null);
@@ -103,6 +104,7 @@ export default function AgenticDemo({ onBack }) {
     if (busy) return;
     reset();
     setBusy(true);
+    setRunning('sample');
     termLine('tdim', '# recorded sample — real signed artifacts, no wallet needed');
     try {
       const data = await fetch('/agent-demo-replay.json').then((r) => r.json());
@@ -115,6 +117,7 @@ export default function AgenticDemo({ onBack }) {
       termLine('tac', '  ✗ could not load the sample');
     } finally {
       setBusy(false);
+      setRunning('');
     }
   }, [busy, reset, termLine, handleStep]);
 
@@ -128,6 +131,7 @@ export default function AgenticDemo({ onBack }) {
     setBusy(true);
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    setRunning('live');
     termLine('tdim', '# live — approve in your kunji wallet (Security → Authorize an agent)');
     try {
       const result = await window.kunjiAgentDemo.run({
@@ -144,6 +148,7 @@ export default function AgenticDemo({ onBack }) {
       if (statusRef.current) statusRef.current.textContent = 'Stopped: ' + (e.message || e);
     } finally {
       setBusy(false);
+      setRunning('');
     }
   }, [busy, reset, termLine, handleStep, checked]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -236,14 +241,14 @@ export default function AgenticDemo({ onBack }) {
           disabled={busy}
           className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity disabled:opacity-50"
         >
-          ▶ Play sample
+          {running === 'sample' ? 'Running…' : '▶ Play sample'}
         </button>
         <button
           onClick={runLive}
           disabled={busy}
           className="inline-flex items-center justify-center px-5 py-3 text-sm border border-line text-ink hover:border-accent hover:text-accent font-semibold rounded-full transition-colors disabled:opacity-50"
         >
-          Run it live (needs your wallet)
+          {running === 'live' ? 'Running…' : 'Run it live (needs your wallet)'}
         </button>
       </div>
       <p className="text-[12px] text-faint mt-3">

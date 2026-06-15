@@ -28,6 +28,12 @@ export default function CredentialsDemo({ onBack }) {
   const [result, setResult] = useState(null); // null | 'waiting' | { claims }
   const vpQrRef = useRef(null);
   const pollRef = useRef(null);
+  const resultRef = useRef(null);
+
+  // Move focus to the "verified" panel when it appears, so keyboard/SR users land on the result.
+  useEffect(() => {
+    if (result && result.claims) resultRef.current?.focus();
+  }, [result]);
 
   useEffect(() => {
     if (offerUri) renderBrandedQr(offerQrRef.current, offerUri);
@@ -262,7 +268,7 @@ export default function CredentialsDemo({ onBack }) {
         </div>
 
         {result && result.claims ? (
-          <div className="mt-5 rounded-xl bg-success/10 border border-success/30 p-4">
+          <div ref={resultRef} tabIndex={-1} className="mt-5 rounded-xl bg-success/10 border border-success/30 p-4 outline-none focus-visible:ring-2 focus-visible:ring-success/40">
             <p className="text-[15px] font-semibold text-success">Verified — over {result.threshold} ✓</p>
             <p className="text-[13px] text-muted mt-1">
               Disclosed: <span className="font-mono text-ink">{JSON.stringify(result.claims)}</span>

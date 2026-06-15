@@ -17,8 +17,13 @@ export default function StepUpDemo({ onBack }) {
   const linkRef = useRef(null);
   const statusRef = useRef(null);
   const abortRef = useRef(null);
+  const resultRef = useRef(null);
   // Stop the in-flight two-round flow (relay polling) if the user navigates away mid-run.
   useEffect(() => () => abortRef.current?.abort(), []);
+  // Move focus to the granted panel when it appears (keyboard/SR users land on the result).
+  useEffect(() => {
+    if (result?.profile) resultRef.current?.focus();
+  }, [result]);
 
   const termLine = useCallback((cls, text) => {
     const t = termRef.current;
@@ -167,7 +172,7 @@ export default function StepUpDemo({ onBack }) {
       </button>
 
       {result && result.profile && (
-        <div className="mt-5 rounded-xl bg-success/10 border border-success/30 p-4">
+        <div ref={resultRef} tabIndex={-1} className="mt-5 rounded-xl bg-success/10 border border-success/30 p-4 outline-none focus-visible:ring-2 focus-visible:ring-success/40">
           <p className="text-[15px] font-semibold text-success">Access granted after step-up ✓</p>
           <p className="text-[13px] text-muted mt-1">
             Scope: <span className="font-mono text-ink">{(result.scope || []).join(', ')}</span>

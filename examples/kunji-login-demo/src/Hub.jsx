@@ -25,7 +25,7 @@ const DEMOS = [
     href: '#login',
     title: 'Sign in with kunji',
     blurb: 'Passwordless, anonymous sign-in. Scan a QR or type a code; pick which scopes to request.',
-    tag: 'Login',
+    tag: 'Sign-in',
   },
   {
     href: '#rpjs',

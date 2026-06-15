@@ -413,32 +413,38 @@ export const issuerToken = onRequest(vcOpts([]), async (req, res) => {
 export const issuerCredential = onRequest(vcOpts([ISSUER_SIGNING_KEY]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const tok = /^(?:DPoP|Bearer) (.+)$/.exec(String(req.headers.authorization || ''))?.[1];
-  const consumed = await db.runTransaction(async (tx) => {
-    const ref = db.collection('oid4vciTokens').doc(String(tok || ''));
-    const snap = await tx.get(ref);
-    if (!snap.exists) return null;
-    tx.delete(ref); // single-use
-    return snap.data();
-  });
-  if (!consumed) return res.status(401).json({ error: 'invalid_token' });
   const fmt = req.body?.format;
   if (fmt && fmt !== 'vc+sd-jwt' && fmt !== 'dc+sd-jwt') return res.status(400).json({ error: 'unsupported_credential_format' });
   const typ = fmt === 'dc+sd-jwt' ? fmt : undefined;
-  const { secretKey } = issuerKey(ISSUER_SIGNING_KEY.value());
-
   // Batch (unlinkability v2): one one-time copy per holder key. `proof` is the pre-batch fallback.
   const batch = req.body?.proofs?.jwt;
   const proofs = Array.isArray(batch) && batch.length ? batch : req.body?.proof?.jwt ? [req.body.proof.jwt] : [];
   if (!proofs.length) return res.status(400).json({ error: 'invalid_proof' });
   if (proofs.length > MAX_BATCH) return res.status(400).json({ error: 'batch_too_large', max: MAX_BATCH });
-  const holderJwks = [];
-  for (const jwt of proofs) {
-    const v = verifyProofJwt({ proofJwt: jwt, audience: DEMO_ORIGIN, cNonce: consumed.cNonce });
-    if (!v.ok) return res.status(400).json({ error: 'invalid_proof', detail: v.error });
-    holderJwks.push(v.holderJwk);
-  }
-  const idxs = await allocStatusIdxs(holderJwks.length);
-  const creds = holderJwks.map((holderJwk, i) => mintAgeCredential({ secretKey, origin: DEMO_ORIGIN, holderJwk, idx: idxs[i], typ }));
+
+  // Verify the holder proof(s) INSIDE the consume transaction (verifyProofJwt is sync) and delete the
+  // single-use token only if they ALL pass — so a bad proof returns 400 WITHOUT burning the token (the
+  // holder can retry against the same token within its TTL). The proof is the holder's own PoP, so
+  // there's no grinding surface here; "consume on success" is friendlier than "consume on attempt".
+  const out = await db.runTransaction(async (tx) => {
+    const ref = db.collection('oid4vciTokens').doc(String(tok || ''));
+    const snap = await tx.get(ref);
+    if (!snap.exists) return { status: 401, error: 'invalid_token' };
+    const cNonce = snap.data().cNonce;
+    const holderJwks = [];
+    for (const jwt of proofs) {
+      const v = verifyProofJwt({ proofJwt: jwt, audience: DEMO_ORIGIN, cNonce });
+      if (!v.ok) return { status: 400, error: 'invalid_proof', detail: v.error }; // token NOT consumed
+      holderJwks.push(v.holderJwk);
+    }
+    tx.delete(ref); // consume only after every proof validates
+    return { holderJwks };
+  });
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.detail ? { detail: out.detail } : {}) });
+
+  const { secretKey } = issuerKey(ISSUER_SIGNING_KEY.value());
+  const idxs = await allocStatusIdxs(out.holderJwks.length);
+  const creds = out.holderJwks.map((holderJwk, i) => mintAgeCredential({ secretKey, origin: DEMO_ORIGIN, holderJwk, idx: idxs[i], typ }));
   res.json(Array.isArray(batch) && batch.length ? { credentials: creds } : { credential: creds[0] });
 });
 
