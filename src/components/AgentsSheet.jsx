@@ -8,6 +8,7 @@ import { scopeId } from '../lib/capability';
 import { useToast } from '../contexts/ToastContext';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
 
+const SOON_MS = 48 * 3_600_000; // "expiring soon" window — surfaced for re-authorization
 const expiryLabel = (expSeconds) => {
   if (!expSeconds) return '';
   const ms = expSeconds * 1000 - Date.now();
@@ -15,6 +16,14 @@ const expiryLabel = (expSeconds) => {
   const h = Math.round(ms / 3_600_000);
   if (h < 48) return `expires in ${Math.max(1, h)}h`;
   return `expires in ${Math.round(h / 24)}d`;
+};
+// Local-only urgency tone (no server tracks expiries — this is a client-side reminder).
+const expiryTone = (expSeconds) => {
+  if (!expSeconds) return 'text-faint';
+  const ms = expSeconds * 1000 - Date.now();
+  if (ms <= 0) return 'text-danger';
+  if (ms < SOON_MS) return 'text-accent';
+  return 'text-faint';
 };
 
 // Authorized agents: the active capabilities the user has issued (shared across linked devices,
@@ -31,7 +40,8 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
 
   const refresh = useCallback(() => {
     listAgents(masterKey)
-      .then(setAgents)
+      // Soonest-expiring (and already-expired) first, so what needs attention is on top.
+      .then((list) => setAgents([...list].sort((a, b) => (a.exp || Infinity) - (b.exp || Infinity))))
       .catch(() => setAgents([]));
   }, [masterKey]);
 
@@ -89,6 +99,15 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
         at apps that honor revocation.
       </p>
 
+      {(() => {
+        const soon = (agents || []).filter((a) => a.exp && a.exp * 1000 - Date.now() < SOON_MS).length;
+        return soon ? (
+          <p className="text-[12px] text-accent bg-accent-soft border border-line rounded-lg px-3 py-2 mb-4">
+            {soon === 1 ? '1 agent is' : `${soon} agents are`} expired or expiring soon — re-authorize to keep access.
+          </p>
+        ) : null;
+      })()}
+
       {agents === null ? (
         <p className="text-[13px] text-faint mb-5">Loading…</p>
       ) : agents.length === 0 ? (
@@ -101,7 +120,8 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] text-ink truncate">{a.audience}</p>
                 <p className="text-[11px] text-faint truncate">
-                  {(a.scope || []).map(scopeId).join(', ')} · {expiryLabel(a.exp)}
+                  {(a.scope || []).map(scopeId).join(', ')} ·{' '}
+                  <span className={expiryTone(a.exp)}>{expiryLabel(a.exp)}</span>
                 </p>
                 {supportsPush && (
                   <button
