@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 // Agent-authorization live demo. kunji-agent-demo.js is loaded globally in index.html (it defines
 // window.kunjiAgentDemo = { run, renderQr }); this drives a real authorization against the deployed demo RP
@@ -25,6 +25,9 @@ export default function AgenticDemo({ onBack }) {
   const codeRef = useRef(null);
   const statusRef = useRef(null);
   const qrRef = useRef(null);
+  const abortRef = useRef(null);
+  // Stop an in-flight live run (the relay poll loop) if the user navigates away mid-flow.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const termLine = useCallback((cls, text) => {
     const term = termRef.current;
@@ -58,7 +61,7 @@ export default function AgenticDemo({ onBack }) {
           if (statusRef.current) statusRef.current.textContent = 'Waiting for you to approve…';
           break;
         case 'await':
-          termLine('tdim', '  ⠿ awaiting approval in the wallet…');
+          termLine('tdim', '  ⠿ ' + (ev.label || 'awaiting approval in the wallet…'));
           break;
         case 'capability':
           termLine('tok', '  ✓ capability received & decrypted');
@@ -123,6 +126,8 @@ export default function AgenticDemo({ onBack }) {
     }
     reset();
     setBusy(true);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     termLine('tdim', '# live — approve in your kunji wallet (Security → Authorize an agent)');
     try {
       const result = await window.kunjiAgentDemo.run({
@@ -131,6 +136,7 @@ export default function AgenticDemo({ onBack }) {
         audience: 'kunji-demo.web.app',
         scope: selectedScope(),
         onStep: handleStep,
+        signal: abortRef.current.signal,
       });
       if (result?.io) setIo(JSON.stringify(result.io, null, 2));
     } catch (e) {
@@ -184,7 +190,7 @@ export default function AgenticDemo({ onBack }) {
             <span className="tdot r" /><span className="tdot y" /><span className="tdot g" />
             <span className="term-title">agent — kunji authorize</span>
           </div>
-          <pre className="term-body" ref={termRef}>
+          <pre className="term-body" ref={termRef} aria-live="polite">
             <span className="tdim">$ press “Play sample” or “Run it live”…</span>
           </pre>
         </div>
@@ -197,7 +203,7 @@ export default function AgenticDemo({ onBack }) {
           <div className="flex justify-center my-4 min-h-[200px] items-center">
             <div ref={qrRef} className="leading-[0]" />
           </div>
-          <p ref={statusRef} className="text-[13px] text-muted">Idle.</p>
+          <p ref={statusRef} className="text-[13px] text-muted" aria-live="polite">Idle.</p>
         </div>
       </div>
 

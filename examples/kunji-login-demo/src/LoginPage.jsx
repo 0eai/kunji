@@ -383,6 +383,21 @@ export default function LoginPage({ onSuccess }) {
                   Expires in <span className="font-mono tabular">{secondsLeft}s</span>
                 </p>
               )}
+
+              {qrData && (
+                <details className="mt-6">
+                  <summary className="text-[13px] text-muted cursor-pointer">Show the request payload</summary>
+                  <p className="text-[12px] text-faint mt-2">
+                    The v2 discoverable-login request encoded in the QR (all public). The wallet signs the{' '}
+                    <span className="font-mono text-ink">challenge</span> with your per-app key and POSTs the
+                    assertion straight to the callback — no kunji server in the path — and your resulting{' '}
+                    <span className="font-mono text-ink">sub</span> shows on the next screen.
+                  </p>
+                  <pre className="rounded-lg border border-line bg-white p-3 overflow-auto text-[12px] font-mono text-ink mt-2 whitespace-pre-wrap break-all">
+                    {(() => { try { return JSON.stringify(JSON.parse(qrData), null, 2); } catch { return qrData; } })()}
+                  </pre>
+                </details>
+              )}
             </>
           )}
         </div>

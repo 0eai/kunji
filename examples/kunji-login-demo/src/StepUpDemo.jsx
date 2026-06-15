@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 // Step-up authorization demo (push-relay.md Transport ①). Connect an agent with the narrow `login`
 // scope, hit a scope-gated RP action (/api/profile → 403 insufficient_scope), then re-authorize the
@@ -16,6 +16,9 @@ export default function StepUpDemo({ onBack }) {
   const qrRef = useRef(null);
   const linkRef = useRef(null);
   const statusRef = useRef(null);
+  const abortRef = useRef(null);
+  // Stop the in-flight two-round flow (relay polling) if the user navigates away mid-run.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const termLine = useCallback((cls, text) => {
     const t = termRef.current;
@@ -50,7 +53,7 @@ export default function StepUpDemo({ onBack }) {
           if (statusRef.current) statusRef.current.textContent = `Waiting for approval${rnd}…`;
           break;
         case 'await':
-          if (d.label) termLine('tdim', '  ⠿ ' + ev.label);
+          termLine('tdim', '  ⠿ ' + (ev.label || 'awaiting approval in the wallet…'));
           break;
         case 'capability':
           termLine('tok', '  ✓ capability received · scope ' + (d.capabilityClaims?.scope || []).join(','));
@@ -84,6 +87,8 @@ export default function StepUpDemo({ onBack }) {
     if (statusRef.current) statusRef.current.textContent = 'Idle.';
     setResult(null);
     setBusy(true);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     termLine('tdim', '# live — approve TWICE in your kunji wallet (connect, then step-up)');
     try {
       const r = await window.kunjiAgentDemo.runStepUp({
@@ -91,6 +96,7 @@ export default function StepUpDemo({ onBack }) {
         rpBase: 'https://kunji-demo.web.app',
         audience: 'kunji-demo.web.app',
         onStep: handleStep,
+        signal: abortRef.current.signal,
       });
       setResult(r);
       if (statusRef.current) statusRef.current.textContent = r.steppedUp ? 'Stepped up — access granted.' : 'Done.';
@@ -129,7 +135,7 @@ export default function StepUpDemo({ onBack }) {
           <span className="tdot r" /><span className="tdot y" /><span className="tdot g" />
           <span className="term-title">agent — kunji step-up</span>
         </div>
-        <pre className="term-body" ref={termRef}>
+        <pre className="term-body" ref={termRef} aria-live="polite">
           <span className="tdim">$ press “Run the step-up demo”…</span>
         </pre>
       </div>
@@ -149,7 +155,7 @@ export default function StepUpDemo({ onBack }) {
         >
           Open in kunji on this device
         </a>
-        <p ref={statusRef} className="text-[13px] text-muted mt-3">Idle.</p>
+        <p ref={statusRef} className="text-[13px] text-muted mt-3" aria-live="polite">Idle.</p>
       </div>
 
       <button
@@ -170,6 +176,20 @@ export default function StepUpDemo({ onBack }) {
             {JSON.stringify(result.profile, null, 2)}
           </pre>
         </div>
+      )}
+
+      {result?.io && (
+        <details className="mt-4">
+          <summary className="text-[13px] text-muted cursor-pointer">Show the raw request / response</summary>
+          <p className="text-[12px] text-faint mt-2">
+            The two capability claim-sets show the scope delta (<span className="font-mono">round1</span> →{' '}
+            <span className="font-mono">round2</span>); <span className="font-mono">need</span> is the 403's missing
+            scope. All public — no key material reaches this page.
+          </p>
+          <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink mt-2">
+            {JSON.stringify(result.io, null, 2)}
+          </pre>
+        </details>
       )}
 
       <section className="rounded-2xl border border-line p-6 mt-8">

@@ -117,6 +117,7 @@ export default function CredentialsDemo({ onBack }) {
   const fmtBtn = (id, label) => (
     <button
       onClick={() => pickFormat(id)}
+      aria-pressed={format === id}
       className={`px-4 py-2 text-[13px] font-semibold rounded-full transition-colors ${
         format === id ? 'bg-ink text-paper' : 'border border-line text-muted hover:text-ink'
       }`}
@@ -245,6 +246,7 @@ export default function CredentialsDemo({ onBack }) {
               <button
                 key={n}
                 onClick={() => setThreshold(n)}
+                aria-pressed={threshold === n}
                 className={`px-4 py-2 text-[13px] font-semibold rounded-full transition-colors ${
                   threshold === n ? 'bg-accent-fill text-ink' : 'border border-line text-muted hover:text-ink'
                 }`}
@@ -291,6 +293,36 @@ export default function CredentialsDemo({ onBack }) {
         )}
         {vpErr && <p className="text-[13px] text-danger mt-3">{vpErr}</p>}
       </section>
+
+      {(offerUri || vpUri || (result && result.claims)) && (
+        <details className="mt-6">
+          <summary className="text-[13px] text-muted cursor-pointer">Show the raw request / response</summary>
+          <p className="text-[12px] text-faint mt-2">
+            The standard OpenID4VC envelopes — all public (an offer URI / a signed presentation request / the
+            disclosed booleans). No date of birth, and nothing secret, ever appears here.
+          </p>
+          {offerUri && (
+            <div className="mt-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-1">OpenID4VCI offer</p>
+              <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink break-all whitespace-pre-wrap">{offerUri}</pre>
+            </div>
+          )}
+          {vpUri && (
+            <div className="mt-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-1">
+                OpenID4VP request · DCQL {`{ vct: "age", claims: ["age_over_${threshold}"], format: "${format === 'bbs' ? 'vc+bbs' : 'vc+sd-jwt'}" }`}
+              </p>
+              <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink break-all whitespace-pre-wrap">{vpUri}</pre>
+            </div>
+          )}
+          {result && result.claims && (
+            <div className="mt-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-1">Disclosed (the vp_token's revealed claims)</p>
+              <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink">{JSON.stringify(result.claims, null, 2)}</pre>
+            </div>
+          )}
+        </details>
+      )}
 
       <p className="text-[12px] text-faint mt-8 leading-relaxed">
         Demo issuer — it mints to anyone for the demo. A real issuer authenticates you first. The credential is

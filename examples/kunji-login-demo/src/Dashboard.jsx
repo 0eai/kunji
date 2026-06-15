@@ -18,6 +18,9 @@ export default function Dashboard({ sub, claims, onLogout }) {
       <header className="flex items-center gap-2 max-w-[26rem] w-full mx-auto px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
         <img src="/icon.svg" alt="" className="w-6 h-6" />
         <span className="text-[15px] font-medium text-faint">kunji · sign in</span>
+        <a href="#" className="ml-auto text-[13px] text-muted hover:text-ink underline-offset-2 hover:underline">
+          ← demos
+        </a>
       </header>
 
       <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise">

@@ -1,7 +1,7 @@
 import React from 'react';
 
-// The demo hub — the home of every live kunji demo (demo.kunji.cc). Each card links to one demo:
-// the SPA routes (#login, #credentials) and the two static playground pages (/agents, /try).
+// The demo hub — the home of every live kunji demo (demo.kunji.cc). Each card links to one of the
+// five SPA hash routes: #login, #rpjs, #credentials, #agentic, #stepup.
 const KeyMark = () => (
   <svg viewBox="0 0 512 512" width="18" height="18" aria-hidden="true">
     <g

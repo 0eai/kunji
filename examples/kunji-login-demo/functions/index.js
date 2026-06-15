@@ -139,6 +139,9 @@ const bumpGlobalFailure = async (windowMs = 60 * 1000) => {
 // sessions claiming an arbitrary domain.
 export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  // Bound the mint side (the lookup side is already limited): a loop here would burn the 6-digit code
+  // space + Firestore writes. Generous per-IP cap so legit demo traffic is unaffected.
+  if (await rateLimited(req.ip, 30, 60 * 1000, 'session')) return res.status(429).json({ error: 'rate_limited' });
   const { audience, callbackUrl } = req.body || {};
   if (!audience || !callbackUrl)
     return res.status(400).json({ error: 'audience and callbackUrl required' });
@@ -320,6 +323,7 @@ export const apiProfile = onRequest({ cors: true, maxInstances: 5, memory: '256M
   const snap = await sessionRef(String(req.query.sessionId || '')).get();
   const s = snap.exists ? snap.data() : null;
   if (!s || s.status !== 'approved') return res.status(401).json({ error: 'not_authenticated' });
+  if (Date.now() > s.expiresAt) return res.status(401).json({ error: 'session_expired' });
   if (!scopeSatisfies(s.scope || [], [{ id: 'read:profile' }]))
     return res.status(403).json({ error: 'insufficient_scope', need: 'read:profile', have: s.scope || [] });
   res.json({ profile: { name: 'Ada Lovelace', plan: 'demo', note: 'Released because the session holds read:profile.' }, sub: s.sub, scope: s.scope });
