@@ -68,8 +68,9 @@ agent ──▶ retries with the broader capability ──▶ 200
   capability. The RP-side loop (`403 insufficient_scope` → re-request the delta → await the broader
   capability → retry) is demonstrated end-to-end by `examples/kunji-agent-demo` (`agent-sim.js`
   headless, and the browser "Try a scope-gated action" showcase via `/agent/stepup`). Login-side VC
-  step-up reuses the existing `?approve=` deep link → `ApprovalModal` (now delta-aware) →
-  `submitDiscoverableAssertion`.
+  step-up (a regular **app** asks a returning user for a verified credential) reuses the existing
+  `?approve=` deep link → `ApprovalModal` (now delta-aware) → `submitDiscoverableAssertion`, and has a
+  live demo at `demo.kunji.cc/#appstepup` (the agent capability step-up is `#stepup`).
 - The request payload rides the deep link inline (it's not secret — public keys + scope); for a
   non-trivial payload it can instead be fetched by 6-digit code / `req` id from the existing agent
   request relay (`agentRequestRelay`) and decrypted client-side.

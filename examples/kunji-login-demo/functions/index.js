@@ -320,13 +320,32 @@ export const kunjiAgent = onRequest({ cors: true, maxInstances: 5, memory: '256M
 // enforcement (docs/scope.md) with the SAME `scopeSatisfies` the wallet uses — the agent must step up
 // (re-consent for the broader scope) to pass. `sessionId` is this demo's bearer handle (as elsewhere).
 export const apiProfile = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
-  const snap = await sessionRef(String(req.query.sessionId || '')).get();
+  const sessionId = String(req.query.sessionId || '');
+  if (!sessionId) return res.status(401).json({ error: 'not_authenticated' });
+  const snap = await sessionRef(sessionId).get();
   const s = snap.exists ? snap.data() : null;
   if (!s || s.status !== 'approved') return res.status(401).json({ error: 'not_authenticated' });
   if (Date.now() > s.expiresAt) return res.status(401).json({ error: 'session_expired' });
   if (!scopeSatisfies(s.scope || [], [{ id: 'read:profile' }]))
     return res.status(403).json({ error: 'insufficient_scope', need: 'read:profile', have: s.scope || [] });
   res.json({ profile: { name: 'Ada Lovelace', plan: 'demo', note: 'Released because the session holds read:profile.' }, sub: s.sub, scope: s.scope });
+});
+
+// A CREDENTIAL-gated resource for the APP step-up demo: returns the age-restricted resource only if the
+// login session presented a verified `age_over_18` (the human RP asked for it via a `vc:` scope at sign-in
+// and the wallet presented it — `kunjiCallback` stored the result in `session.verified`). Else 403
+// credential_required, and the app re-runs "Sign in with kunji" requesting the credential (the delta
+// re-consent). `sessionId` is this demo's bearer handle (as elsewhere).
+export const apiAgeGated = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
+  const sessionId = String(req.query.sessionId || '');
+  if (!sessionId) return res.status(401).json({ error: 'not_authenticated' });
+  const snap = await sessionRef(sessionId).get();
+  const s = snap.exists ? snap.data() : null;
+  if (!s || s.status !== 'approved') return res.status(401).json({ error: 'not_authenticated' });
+  if (Date.now() > s.expiresAt) return res.status(401).json({ error: 'session_expired' });
+  const proven = (s.verified || []).some((v) => v?.claims?.age_over_18 === true);
+  if (!proven) return res.status(403).json({ error: 'credential_required', need: 'age_over_18' });
+  res.json({ resource: { area: 'over-18 lounge', note: 'Released because you proved age_over_18 — your birthday was never shared.' }, sub: s.sub, verified: s.verified });
 });
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════

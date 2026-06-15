@@ -6,6 +6,7 @@ import CredentialsDemo from './CredentialsDemo.jsx';
 import RpjsDemo from './RpjsDemo.jsx';
 import AgenticDemo from './AgenticDemo.jsx';
 import StepUpDemo from './StepUpDemo.jsx';
+import StepUpAppDemo from './StepUpAppDemo.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(null); // { sub, claims }
@@ -15,7 +16,8 @@ export default function App() {
   //   #rpjs         → the drop-in rp.js widget demo
   //   #credentials  → the verified-credentials demo
   //   #agentic      → the agent-authorization demo
-  //   #stepup       → the step-up (ask-for-more-later) demo
+  //   #stepup       → the AGENT step-up demo (capability + delta re-consent)
+  //   #appstepup    → the APP step-up demo (login path: a returning RP asks for a credential)
   const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
     const onHash = () => setHash(window.location.hash);
@@ -39,6 +41,8 @@ export default function App() {
     view = <AgenticDemo onBack={toHub} />;
   } else if (hash === '#stepup') {
     view = <StepUpDemo onBack={toHub} />;
+  } else if (hash === '#appstepup') {
+    view = <StepUpAppDemo onBack={toHub} />;
   } else {
     view = <Hub />;
   }

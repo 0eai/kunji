@@ -1,7 +1,7 @@
 import React from 'react';
 
 // The demo hub — the home of every live kunji demo (demo.kunji.cc). Each card links to one of the
-// five SPA hash routes: #login, #rpjs, #credentials, #agentic, #stepup.
+// six SPA hash routes: #login, #rpjs, #credentials, #agentic, #stepup, #appstepup.
 const KeyMark = () => (
   <svg viewBox="0 0 512 512" width="18" height="18" aria-hidden="true">
     <g
@@ -47,9 +47,15 @@ const DEMOS = [
   },
   {
     href: '#stepup',
-    title: 'Step-up authorization',
-    blurb: 'Connect once with a narrow scope, then approve only the delta when an app asks for more later.',
-    tag: 'Step-up',
+    title: 'Agent step-up',
+    blurb: 'An agent connects with a narrow scope, then approve only the delta when it needs more — a holder-of-key capability.',
+    tag: 'Step-up · agent',
+  },
+  {
+    href: '#appstepup',
+    title: 'App step-up',
+    blurb: 'A signed-in app asks for a verified credential later — re-runs sign-in, you approve the delta and prove your age.',
+    tag: 'Step-up · app',
   },
 ];
 

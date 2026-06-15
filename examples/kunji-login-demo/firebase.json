@@ -13,6 +13,10 @@
         "function": { "functionId": "apiProfile", "region": "us-central1" }
       },
       {
+        "source": "/api/age-gated",
+        "function": { "functionId": "apiAgeGated", "region": "us-central1" }
+      },
+      {
         "source": "/kunji/session",
         "function": { "functionId": "lookupSession", "region": "us-central1" }
       },
