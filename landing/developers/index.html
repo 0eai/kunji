@@ -38,6 +38,7 @@
         <nav class="nav">
           <a class="navlink" href="/developers/firebase">Firebase</a>
           <a class="navlink" href="/developers/agents">Agents</a>
+          <a class="navlink" href="/developers/credentials">Credentials</a>
           <a class="navlink" href="/developers/try">Try it</a>
         </nav>
       </header>
@@ -386,6 +387,21 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
             (and its recovery key) becomes the root of access to every connected app, so it's
             load-bearing — back up the recovery key.
           </p>
+        </section>
+
+        <!-- Beyond login -->
+        <section class="sec">
+          <div class="sec-label">Beyond anonymous sign-in</div>
+          <p>
+            The same wallet can hold <b>verified credentials</b> and let a user prove a fact from one —
+            selective disclosure over standard <b>OpenID4VCI</b> / <b>OpenID4VP</b> (SD-JWT VC), unlinkable
+            and with no kunji backend in the path — or authorize an <b>AI agent</b> to act for them via a
+            scoped, expiring, holder-of-key capability.
+          </p>
+          <div class="cta-row" style="margin-top: 20px">
+            <a class="cta" href="/developers/credentials">Verified credentials →</a>
+            <a class="ghost" href="/developers/agents">Agents →</a>
+          </div>
         </section>
 
         <!-- Reference -->

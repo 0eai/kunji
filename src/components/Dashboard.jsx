@@ -38,6 +38,7 @@ import SecurityPanel from './SecurityPanel';
 import AgentsSheet from './AgentsSheet';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
 import PresentCredentialSheet from './PresentCredentialSheet';
+import ReceiveOfferSheet from './ReceiveOfferSheet';
 import CodeEntryModal from './CodeEntryModal';
 import CodePickerSheet from './CodePickerSheet';
 import Sheet from './ui/Sheet';
@@ -55,6 +56,7 @@ const Dashboard = ({
   incomingApproval,
   incomingAuthorize,
   incomingPresentation,
+  incomingOffer,
   incomingPush,
 }) => {
   const { showToast } = useToast();
@@ -70,6 +72,7 @@ const Dashboard = ({
   const [pendingSession, setPendingSession] = useState(null);
   const [pendingAuthorize, setPendingAuthorize] = useState(null); // raw agent request from ?authorize= deep link
   const [pendingPresentation, setPendingPresentation] = useState(null); // { request, query, matches } — OpenID4VP
+  const [pendingOffer, setPendingOffer] = useState(null); // openid-credential-offer:// URI — OpenID4VCI receive
   const [selectedApp, setSelectedApp] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null); // app awaiting remove confirmation
   const [codeApp, setCodeApp] = useState(null); // app awaiting a typed login code
@@ -78,6 +81,7 @@ const Dashboard = ({
   const incomingHandled = useRef(false);
   const authorizeHandled = useRef(false);
   const presentationHandled = useRef(false);
+  const offerHandled = useRef(false);
   const pushHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
@@ -158,6 +162,14 @@ const Dashboard = ({
     handlePresentationRequest(incomingPresentation);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, incomingPresentation]);
+
+  // Same-device deep-link: an OpenID4VCI credential offer (?offer=) opens the receive-offer sheet.
+  useEffect(() => {
+    if (!vaultId || !incomingOffer || offerHandled.current) return;
+    offerHandled.current = true;
+    handleCredentialOffer(incomingOffer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultId, incomingOffer]);
 
   // Web Push (push-relay.md Transport ②): a tapped notification points at a step-up request id (the
   // agent-relay code). Look it up and open the SAME re-consent sheet as the ?authorize= deep link.
@@ -243,15 +255,24 @@ const Dashboard = ({
     [cryptoKey, showToast],
   );
 
+  // OpenID4VCI: an issuer offered a credential (scanned or via the ?offer= deep link). Open the
+  // receive-offer consent sheet; on approve the wallet redeems it via receiveViaOffer. [docs/oid4vc.md]
+  const handleCredentialOffer = useCallback((raw) => {
+    setShowScanner(false);
+    setPendingOffer(raw);
+  }, []);
+
   // useCallback so QRScannerOverlay's [onScan] effect doesn't tear down the camera
   // on every parent re-render.
   const handleQRScan = useCallback(
     async (rawValue, origin = 'qr') => {
       setShowScanner(false);
 
-      // An OpenID4VP request (scanned or via the ?vp= deep link) routes to the present sheet, not login.
+      // An OpenID4VP request / OpenID4VCI offer (scanned or via the ?vp= / ?offer= deep link) routes to its
+      // own sheet, not login.
       const raw = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
       if (typeof raw === 'string' && raw.startsWith('openid4vp://')) return handlePresentationRequest(raw);
+      if (typeof raw === 'string' && raw.startsWith('openid-credential-offer://')) return handleCredentialOffer(raw);
 
       try {
         const qr = parseQRPayload(rawValue);
@@ -309,7 +330,7 @@ const Dashboard = ({
         showToast(msg, 'error');
       }
     },
-    [vaultId, cryptoKey, showToast, handlePresentationRequest],
+    [vaultId, cryptoKey, showToast, handlePresentationRequest, handleCredentialOffer],
   );
 
   const handleApprove = async ({ shareProfile, credentials = [] } = {}) => {
@@ -615,6 +636,10 @@ const Dashboard = ({
           masterKey={cryptoKey}
           onClose={() => setPendingPresentation(null)}
         />
+      )}
+
+      {pendingOffer && (
+        <ReceiveOfferSheet offer={pendingOffer} masterKey={cryptoKey} onClose={() => setPendingOffer(null)} />
       )}
 
       {showCodePicker && (

@@ -129,5 +129,7 @@ describe('OpenID4VC parity (wallet lib ↔ demo Node port)', () => {
     const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
     const node = read('../examples/kunji-node-demo/oid4vc.js');
     expect(read('../examples/kunji-issuer-demo/oid4vc.js')).toBe(node);
+    // kunji-demo.web.app (the deployed RP) also runs this port for its live issuer + verifier.
+    expect(read('../examples/kunji-login-demo/functions/oid4vc.js')).toBe(node);
   });
 });

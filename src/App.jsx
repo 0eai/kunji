@@ -21,22 +21,25 @@ function decodeB64urlParam(name) {
   }
 }
 
-// Same-device deep links an RP/agent/verifier can open:
+// Same-device deep links an RP/agent/verifier/issuer can open:
 //   app.kunji.cc/?approve=<base64url(JSON login QR)>        → the login approval modal
 //   app.kunji.cc/?authorize=<base64url(JSON agent request)> → the agent re-consent sheet (step-up)
 //   app.kunji.cc/?vp=<url-encoded openid4vp:// request>     → the OpenID4VP present sheet
+//   app.kunji.cc/?offer=<url-encoded openid-credential-offer:// uri> → the OpenID4VCI receive-offer sheet
 // Decode once at startup; clear the query so a refresh doesn't replay it.
 function readIncomingLinks() {
   const approve = decodeB64urlParam('approve');
   const authorize = decodeB64urlParam('authorize');
-  // The OpenID4VP request is a URI (not JSON); URLSearchParams decodes the single `vp` value for us.
+  // The OpenID4VP request / OpenID4VCI offer are URIs (not JSON); URLSearchParams decodes the value for us.
   const vpRaw = new URLSearchParams(window.location.search).get('vp');
   const vp = vpRaw && vpRaw.startsWith('openid4vp://') ? vpRaw : null;
+  const offerRaw = new URLSearchParams(window.location.search).get('offer');
+  const offer = offerRaw && offerRaw.startsWith('openid-credential-offer://') ? offerRaw : null;
   // A Web Push notification opens app.kunji.cc/?push=<requestId> (the agent-request relay code).
   const pushRaw = new URLSearchParams(window.location.search).get('push');
   const push = pushRaw && /^\d{6}$/.test(pushRaw) ? pushRaw : null;
-  if (approve || authorize || vp || push) history.replaceState(null, '', window.location.pathname);
-  return { approve, authorize, vp, push };
+  if (approve || authorize || vp || offer || push) history.replaceState(null, '', window.location.pathname);
+  return { approve, authorize, vp, offer, push };
 }
 
 export default function App() {
@@ -169,6 +172,7 @@ export default function App() {
       incomingApproval={incoming.approve}
       incomingAuthorize={incoming.authorize}
       incomingPresentation={incoming.vp}
+      incomingOffer={incoming.offer}
       incomingPush={incoming.push}
       onLock={() => {
         logActivity(user.uid, 'Vault Locked', 'info', 'Lock', cryptoKey);

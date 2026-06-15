@@ -24,6 +24,50 @@
         "source": "/kunji/agent",
         "function": { "functionId": "kunjiAgent", "region": "us-central1" }
       },
+      {
+        "source": "/.well-known/openid-credential-issuer",
+        "function": { "functionId": "issuerMetadata", "region": "us-central1" }
+      },
+      {
+        "source": "/.well-known/oauth-authorization-server",
+        "function": { "functionId": "oauthMetadata", "region": "us-central1" }
+      },
+      {
+        "source": "/.well-known/kunji-issuer.json",
+        "function": { "functionId": "issuerWellKnownFn", "region": "us-central1" }
+      },
+      {
+        "source": "/.well-known/kunji-verifier.json",
+        "function": { "functionId": "verifierWellKnownFn", "region": "us-central1" }
+      },
+      {
+        "source": "/credential-offer",
+        "function": { "functionId": "credentialOffer", "region": "us-central1" }
+      },
+      {
+        "source": "/token",
+        "function": { "functionId": "issuerToken", "region": "us-central1" }
+      },
+      {
+        "source": "/credential",
+        "function": { "functionId": "issuerCredential", "region": "us-central1" }
+      },
+      {
+        "source": "/status/1",
+        "function": { "functionId": "issuerStatus", "region": "us-central1" }
+      },
+      {
+        "source": "/oid4vp/request",
+        "function": { "functionId": "oid4vpRequest", "region": "us-central1" }
+      },
+      {
+        "source": "/oid4vp/response",
+        "function": { "functionId": "oid4vpResponse", "region": "us-central1" }
+      },
+      {
+        "source": "/oid4vp/result",
+        "function": { "functionId": "oid4vpResult", "region": "us-central1" }
+      },
       { "source": "**", "destination": "/index.html" }
     ],
     "headers": [
@@ -33,6 +77,10 @@
           { "key": "X-Frame-Options", "value": "DENY" },
           { "key": "X-Content-Type-Options", "value": "nosniff" },
           { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+          },
           {
             "key": "Strict-Transport-Security",
             "value": "max-age=31536000; includeSubDomains; preload"
