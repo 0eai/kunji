@@ -106,13 +106,116 @@
       "public": "redirect-xyz",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "redirects": [{ "source": "**", "destination": "https://kunji.cc", "type": 301 }]
+    },
+    {
+      "target": "issuer",
+      "public": "issuer-public",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [
+        {
+          "source": "/.well-known/openid-credential-issuer",
+          "function": { "functionId": "issuerOidcMetadata", "region": "us-central1" }
+        },
+        {
+          "source": "/.well-known/oauth-authorization-server",
+          "function": { "functionId": "issuerOauthMetadata", "region": "us-central1" }
+        },
+        {
+          "source": "/.well-known/kunji-issuer.json",
+          "function": { "functionId": "issuerKeys", "region": "us-central1" }
+        },
+        {
+          "source": "/idv/start",
+          "function": { "functionId": "issuerIdvStart", "region": "us-central1" }
+        },
+        {
+          "source": "/idv/webhook",
+          "function": { "functionId": "issuerIdvWebhook", "region": "us-central1" }
+        },
+        {
+          "source": "/idv/status",
+          "function": { "functionId": "issuerIdvStatus", "region": "us-central1" }
+        },
+        {
+          "source": "/credential-offer",
+          "function": { "functionId": "issuerOffer", "region": "us-central1" }
+        },
+        {
+          "source": "/token",
+          "function": { "functionId": "issuerTokenEndpoint", "region": "us-central1" }
+        },
+        {
+          "source": "/credential",
+          "function": { "functionId": "issuerCredentialEndpoint", "region": "us-central1" }
+        },
+        {
+          "source": "/status/1",
+          "function": { "functionId": "issuerStatusEndpoint", "region": "us-central1" }
+        }
+      ],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Permissions-Policy",
+              "value": "camera=(), microphone=(), geolocation=(), payment=()"
+            },
+            { "key": "X-Frame-Options", "value": "DENY" },
+            { "key": "X-Content-Type-Options", "value": "nosniff" },
+            { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+            {
+              "key": "Strict-Transport-Security",
+              "value": "max-age=31536000; includeSubDomains; preload"
+            },
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://kunji.cc; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "admin",
+      "public": "admin-public",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Permissions-Policy",
+              "value": "camera=(), microphone=(), geolocation=(), payment=()"
+            },
+            { "key": "X-Frame-Options", "value": "DENY" },
+            { "key": "X-Content-Type-Options", "value": "nosniff" },
+            { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+            {
+              "key": "Strict-Transport-Security",
+              "value": "max-age=31536000; includeSubDomains; preload"
+            },
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://kunji.cc; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            }
+          ]
+        }
+      ]
     }
   ],
   "firestore": {
     "rules": "firestore.rules"
   },
-  "functions": {
-    "source": "functions",
-    "codebase": "app"
-  }
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "app"
+    },
+    {
+      "source": "issuer-functions",
+      "codebase": "issuer"
+    }
+  ]
 }

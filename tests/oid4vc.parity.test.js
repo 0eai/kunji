@@ -131,5 +131,7 @@ describe('OpenID4VC parity (wallet lib ↔ demo Node port)', () => {
     expect(read('../examples/kunji-issuer-demo/oid4vc.js')).toBe(node);
     // kunji-demo.web.app (the deployed RP) also runs this port for its live issuer + verifier.
     expect(read('../examples/kunji-login-demo/functions/oid4vc.js')).toBe(node);
+    // issuer.kunji.cc (the real issuer) ships the same Node port.
+    expect(read('../issuer-functions/oid4vc.js')).toBe(node);
   });
 });

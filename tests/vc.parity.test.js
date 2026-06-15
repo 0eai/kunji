@@ -76,6 +76,8 @@ describe('VC parity (wallet lib ↔ demo Node port)', () => {
     const node = read('../examples/kunji-node-demo/vc.js');
     expect(read('../examples/kunji-issuer-demo/vc.js')).toBe(node);
     expect(read('../examples/kunji-login-demo/functions/vc.js')).toBe(node);
+    // issuer.kunji.cc (the real issuer) ships the same Node port.
+    expect(read('../issuer-functions/vc.js')).toBe(node);
   });
 
   it('issuer → wallet credential relay: ECDH-encrypt then decrypt round-trips the SD-JWT', async () => {

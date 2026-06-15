@@ -81,6 +81,13 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `src/services/identity.js` — QR parsing, callback safety (`isSafeReturnUrl`), assertion submit,
   app register/delete, legacy migration.
 - `functions/` — `vaultWrite` Cloud Function (codebase `app`, Node 20).
+- `issuer-functions/` — the **real age-credential issuer** (`issuer.kunji.cc`), Functions **codebase `issuer`**
+  (Node 20). OpenID4VCI offer/token/credential + `.well-known` key SET (rotation) + StatusList revocation,
+  signed by its OWN secret `KUNJI_ISSUER_SIGNING_KEY` (distinct from the demo's). Issuance is gated CLOSED
+  (`ISSUER_OPEN_MINT`) until the IDV proofing gate lands. Booleans-only, no DOB/PII at rest; namespaced
+  `issuer*`/`idv*` Firestore. `issuer-public/` + `admin-public/` are its static frontends. SD-JWT core +
+  OID4VCI helpers reused via byte-identical ports `issuer-functions/{vc.js,oid4vc.js}` (parity-guarded). See
+  `docs/issuer.md`. **A trusted-third-party role — the opposite posture from the zero-knowledge wallet.**
 - `landing/` — marketing site + `rp.js` (the built drop-in "Sign in with kunji" widget).
 - `widget/` — `rp.js` source (built with esbuild into `landing/`).
 - `examples/` — reference relying parties: `kunji-login-demo` (Firebase; same project `kunji-cc`,
@@ -192,12 +199,15 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 
 ## Deploy topology (see the `deploy` skill for the procedure)
 
-Firebase project `kunji-cc`, three root Hosting targets: `app` → `app-kunji-cc` (app.kunji.cc),
-`landing` → `kunji-cc` (kunji.cc), `redirect` → `kunji-xyz` (301 to kunji.cc). The app's `vaultWrite`
-lives in Functions **codebase `app`**. The demo (`examples/kunji-login-demo/`) is in the **same
-project** but deploys from its own `firebase.json` (`cd` into it): Hosting site `kunji-demo`, and its
-four functions in the **default** codebase — codebase-isolated from `app`, so deploying one never
-prunes the other. That isolation is load-bearing: always deploy functions with explicit `--only`.
+Firebase project `kunji-cc`, five root Hosting targets: `app` → `app-kunji-cc` (app.kunji.cc),
+`landing` → `kunji-cc` (kunji.cc), `redirect` → `kunji-xyz` (301 to kunji.cc), `issuer` →
+`issuer-kunji-cc` (issuer.kunji.cc), `admin` → `admin-kunji-cc` (admin.kunji.cc). The app's `vaultWrite`
+lives in Functions **codebase `app`**; the real age issuer's functions live in **codebase `issuer`**
+(`issuer-functions/`) — both in the root `firebase.json` `functions` array, codebase-isolated. The demo
+(`examples/kunji-login-demo/`) is in the **same project** but deploys from its own `firebase.json` (`cd`
+into it): Hosting site `kunji-demo`, and its four functions in the **default** codebase — codebase-isolated
+from `app`/`issuer`, so deploying one never prunes the other. That isolation is load-bearing: always deploy
+functions with explicit `--only` (e.g. `--only functions:issuer,hosting:issuer,hosting:admin`).
 
 ## Workflow norms
 
