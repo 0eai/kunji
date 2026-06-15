@@ -20,165 +20,14 @@
       content="Authorize an AI agent to act for you at an app — scoped, expiring, revocable, holder-of-key, never holding your keys."
     />
     <meta property="og:image" content="https://kunji.cc/brand/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:url" content="https://kunji.cc/developers/agents/" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://kunji.cc/brand/og.png" />
 
     <link rel="stylesheet" href="/style.css" />
-    <style>
-      .dtabs {
-        display: flex;
-        gap: 20px;
-        border-bottom: 1px solid var(--line);
-        margin: 18px 0 16px;
-      }
-      .dtab {
-        background: none;
-        border: 0;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -1px;
-        padding: 0 0 9px;
-        cursor: pointer;
-        font: inherit;
-        font-size: 14px;
-        font-weight: 600;
-        color: #a8a59c;
-      }
-      .dtab:hover {
-        color: var(--muted);
-      }
-      .dtab.on {
-        color: var(--ink);
-        border-color: var(--accent);
-      }
-      .term {
-        border: 1px solid #2a2a28;
-        border-radius: 12px;
-        overflow: hidden;
-        background: #161614;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-      }
-      .term-bar {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        padding: 9px 12px;
-        background: #201f1d;
-        border-bottom: 1px solid #2a2a28;
-      }
-      .tdot {
-        width: 11px;
-        height: 11px;
-        border-radius: 999px;
-        display: inline-block;
-      }
-      .tdot.r {
-        background: #ff5f57;
-      }
-      .tdot.y {
-        background: #febc2e;
-      }
-      .tdot.g {
-        background: #28c840;
-      }
-      .term-title {
-        margin-left: 8px;
-        font-size: 12px;
-        color: #a6a59d;
-        font-family: ui-monospace, Menlo, monospace;
-      }
-      .term-body {
-        margin: 0;
-        padding: 16px;
-        min-height: 280px;
-        max-height: 380px;
-        overflow: auto;
-        font-family: ui-monospace, Menlo, monospace;
-        font-size: 12.5px;
-        line-height: 1.65;
-        /* The terminal is always dark — override the global light `pre` background/border
-           (style.css `pre { background: var(--code) }`), else the dark-tuned text is invisible
-           on the light page theme. */
-        background: #161614;
-        border: 0;
-        border-radius: 0;
-        color: #e8e6e0;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      .term-body .tdim {
-        color: #b9b8ae;
-      }
-      .term-body .tok {
-        color: #28c840;
-      }
-      .term-body .tac {
-        color: #febc2e;
-      }
-      .term-body .tinfo {
-        color: #69b7ff;
-      }
-      .dcard {
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 22px;
-        background: #fff;
-        text-align: center;
-      }
-      .dcard-lbl {
-        font-size: 12px;
-        color: var(--muted);
-        margin: 0 0 12px;
-      }
-      .dcard-code {
-        font-family: ui-monospace, Menlo, monospace;
-        font-variant-numeric: tabular-nums;
-        font-size: 34px;
-        font-weight: 700;
-        letter-spacing: 0.3em;
-        color: var(--ink);
-      }
-      .dcard-qr {
-        display: flex;
-        justify-content: center;
-        margin: 16px 0 6px;
-        min-height: 200px;
-        align-items: center;
-      }
-      .dcard-qr > div {
-        line-height: 0;
-      }
-      .dcard-status {
-        font-size: 13px;
-        color: var(--muted);
-        margin: 8px 0 0;
-      }
-      #demoReplay {
-        border: 0;
-        cursor: pointer;
-      }
-      #demoLive {
-        font: inherit;
-        font-size: 15px;
-        font-weight: 600;
-        cursor: pointer;
-        background: #fff;
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 12px 22px;
-      }
-      #demoLive:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      #demoReplay:disabled,
-      #demoLive:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
-    </style>
   </head>
 
   <body>
@@ -192,7 +41,7 @@
           <a class="navlink" href="/developers">Developers</a>
           <a class="navlink" href="/developers/firebase">Firebase</a>
           <a class="navlink" href="/developers/credentials">Credentials</a>
-          <a class="navlink" href="/developers/try">Try it</a>
+          <a class="navlink" href="https://demo.kunji.cc" target="_blank" rel="noopener">Demo ↗</a>
         </nav>
       </header>
 
@@ -207,59 +56,35 @@
           Human approval stays the root of trust.
         </p>
 
-        <!-- Live demo -->
+        <!-- Live demo (interactive) lives on the demo site -->
         <section class="sec" id="livedemo">
-          <div class="sec-label">Live demo — watch an agent get authorized</div>
+          <h2 class="sec-label">Live demo — watch an agent get authorized</h2>
           <p>
-            This runs the <b>real</b> flow against the deployed demo RP
-            (<code class="k">kunji-demo.web.app</code>) and the kunji relay — a genuine code + QR, a
-            real capability received &amp; decrypted in your browser, a real login. Watch the recorded
-            sample, or run it live and approve in your own wallet. Same agent, two skins.
+            See the <b>real</b> flow run against the deployed demo RP
+            (<code class="k">demo.kunji.cc</code>) and the kunji relay — a genuine code + QR, a real
+            capability received &amp; decrypted in your browser, a real login. Watch the recorded sample,
+            or run it live and approve in your own wallet.
           </p>
-
-          <div class="dtabs">
-            <button class="dtab on" data-skin="terminal">Terminal</button>
-            <button class="dtab" data-skin="card">Card</button>
-          </div>
-
-          <!-- terminal skin -->
-          <div id="skin-terminal">
-            <div class="term">
-              <div class="term-bar">
-                <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
-                <span class="term-title">agent — kunji authorize</span>
-              </div>
-              <pre class="term-body" id="termBody"><span class="tdim">$ </span><span class="tdim">press “Play sample” or “Run it live”…</span></pre>
-            </div>
-          </div>
-
-          <!-- card skin -->
-          <div id="skin-card" hidden>
-            <div class="dcard">
-              <p class="dcard-lbl">In your wallet → Security → Authorize an agent → type the code</p>
-              <div class="dcard-code" id="cardCode">— — —</div>
-              <div class="dcard-qr"><div id="cardQr"></div></div>
-              <p class="dcard-status" id="cardStatus">Idle.</p>
-            </div>
-          </div>
-
           <div class="cta-row" style="margin-top: 16px">
-            <button class="cta" id="demoReplay" type="button">▶ Play sample</button>
-            <button id="demoLive" type="button">Run it live (needs your wallet)</button>
+            <a class="cta" href="https://demo.kunji.cc/#agentic" target="_blank" rel="noopener">
+              Watch it live
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </a>
           </div>
-          <p class="note" id="demoHint" style="margin-top: 10px">
-            “Play sample” replays a recorded run (real, signed artifacts — verifiable below; no wallet
-            needed). “Run it live” performs a brand-new authorization you approve in the kunji app.
-          </p>
-          <details id="demoIo" hidden style="margin-top: 12px">
-            <summary class="note" style="cursor: pointer">Show the raw request / response</summary>
-            <pre><code id="demoIoPre"></code></pre>
-          </details>
         </section>
 
         <!-- What it is -->
         <section class="sec">
-          <div class="sec-label">What it is</div>
+          <h2 class="sec-label">What it is</h2>
           <p>
             A normal sign-in is a person tapping <em>Approve</em>. A delegated sign-in is a person
             authorizing an <b>agent</b> to sign in for them — once, with a capability that is bound to
@@ -272,7 +97,7 @@
 
         <!-- The capability -->
         <section class="sec">
-          <div class="sec-label">The capability</div>
+          <h2 class="sec-label">The capability</h2>
           <p>
             An EdDSA <b>JWT signed by the user's per-app key</b> (the key behind their
             <code class="k">sub</code>), bound to the agent's public key via the
@@ -296,7 +121,7 @@
 
         <!-- How it works -->
         <section class="sec">
-          <div class="sec-label">How it works</div>
+          <h2 class="sec-label">How it works</h2>
           <ol class="flow">
             <li>
               <span
@@ -337,9 +162,38 @@
           </p>
         </section>
 
+        <!-- Step-up + notifications -->
+        <section class="sec">
+          <h2 class="sec-label">Connect once, ask for more later</h2>
+          <p>
+            An agent shouldn't over-ask up front. Start with a narrow scope (say
+            <code class="k">login</code>); when an action later needs more, your app returns
+            <code class="k">403 insufficient_scope</code> and the agent <b>steps up</b> — it re-requests
+            with the broader scope, and the wallet shows a <b>delta-aware re-consent</b>: "already
+            connected" + only the new permission to approve. No new kunji infrastructure — it reuses the
+            same deep link (<code class="k">app.kunji.cc/?authorize=…</code>) and return relay as the
+            first authorization.
+            <a class="back" href="https://demo.kunji.cc/#stepup" target="_blank" rel="noopener">See it live →</a>
+          </p>
+          <p class="note">
+            <b>Opt-in notifications.</b> A channel-less agent (no way to reach you in the moment) can ask
+            you to enable <b>per-app notifications</b> at first consent. Then it pings the wallet via
+            <b>Web Push</b> when it needs a step-up — the push carries only an <b>opaque pointer</b>
+            (a request id), never the scope or request; the wallet fetches + shows it, you approve. Off by
+            default, revocable per app, and kunji never becomes a user directory. Design:
+            <a
+              class="back"
+              href="https://github.com/0eai/kunji/blob/HEAD/docs/push-relay.md"
+              target="_blank"
+              rel="noopener"
+              >docs/push-relay.md</a
+            >.
+          </p>
+        </section>
+
         <!-- For relying parties -->
         <section class="sec">
-          <div class="sec-label">For relying parties</div>
+          <h2 class="sec-label">For relying parties</h2>
           <p>
             Add one endpoint that verifies a capability + proof against a session, then approves it.
             The verifier is the same EdDSA/JWT scheme as the assertion — drop in the reference
@@ -373,7 +227,7 @@ app.post('/kunji/agent', async (req, res) =&gt; {
 
         <!-- MCP bridge -->
         <section class="sec">
-          <div class="sec-label">The MCP bridge — drive it from an AI runtime</div>
+          <h2 class="sec-label">The MCP bridge — drive it from an AI runtime</h2>
           <p>
             <code class="k">examples/kunji-mcp</code> is a local
             <a class="back" href="https://modelcontextprotocol.io" target="_blank" rel="noopener"
@@ -385,15 +239,18 @@ app.post('/kunji/agent', async (req, res) =&gt; {
           <pre><code>claude mcp add kunji -- node /path/to/examples/kunji-mcp/server.js</code></pre>
           <ul class="checklist">
             <li><span><code class="k">kunji_authorize(audience, scope)</code> — returns the request you approve in the wallet.</span></li>
+            <li><span><code class="k">kunji_await_capability</code> — blocks until you approve, then loads the capability over the relay.</span></li>
             <li><span><code class="k">kunji_set_capability(capability)</code> — stores it (validated: holder-of-key + expiry).</span></li>
             <li><span><code class="k">kunji_login(baseUrl)</code> — signs in at the app as the authorized agent.</span></li>
+            <li><span><code class="k">kunji_stepup(scope)</code> — on a <code class="k">403 insufficient_scope</code>, re-requests a broader scope or a <code class="k">vc:</code> credential to present.</span></li>
+            <li><span><code class="k">kunji_request_via_push</code> — Transport ② for a channel-less agent (the opt-in Web Push relay).</span></li>
             <li><span><code class="k">kunji_status</code> — the agent's public key + the loaded capability.</span></li>
           </ul>
         </section>
 
         <!-- Reference -->
         <section class="sec">
-          <div class="sec-label">Reference</div>
+          <h2 class="sec-label">Reference</h2>
           <p class="note">
             Full design + threat model:
             <a
@@ -414,11 +271,13 @@ app.post('/kunji/agent', async (req, res) =&gt; {
             <code class="k">kunji-login-demo/functions/capability.js</code> (RP verifier),
             <code class="k">examples/kunji-agent-demo</code> (a plain-Node RP you can run — no
             Firebase — that accepts agent logins via <code class="k">POST /kunji/agent</code>), and
-            <code class="k">examples/kunji-mcp</code> (the bridge). The scope vocabulary and transport
-            are still settling.
+            <code class="k">examples/kunji-mcp</code> (the bridge). The scope grammar
+            (<code class="k">docs/scope.md</code>) and both delivery transports
+            (<code class="k">docs/push-relay.md</code> — same-device step-up and the opt-in Web Push relay)
+            are implemented; the scope vocabulary may still grow.
           </p>
           <div class="cta-row" style="margin-top: 20px">
-            <a class="cta" href="https://app.kunji.cc">
+            <a class="cta" href="https://app.kunji.cc" target="_blank" rel="noopener">
               Open kunji
               <svg
                 viewBox="0 0 24 24"
@@ -449,164 +308,13 @@ app.post('/kunji/agent', async (req, res) =&gt; {
         <span class="sep">·</span>
         <a href="https://x.com/kunji_cc" target="_blank" rel="noopener">X</a>
         <span class="sep">·</span>
-        <a href="https://app.kunji.cc">app.kunji.cc</a>
+        <a href="https://app.kunji.cc" target="_blank" rel="noopener">app.kunji.cc</a>
+        <span class="sep">·</span>
+        <a href="https://demo.kunji.cc" target="_blank" rel="noopener">demo</a>
+        <span class="sep">·</span>
+        <a href="https://issuer.kunji.cc" target="_blank" rel="noopener">issuer</a>
       </footer>
     </div>
 
-    <script src="/kunji-agent-demo.js"></script>
-    <script>
-      (function () {
-        const $ = (id) => document.getElementById(id);
-        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-        const short = (s, n = 12) => (s ? String(s).slice(0, n) + '…' : '');
-        const fmtCode = (c) => (c && c.length === 6 ? c.slice(0, 3) + ' ' + c.slice(3) : c || '— — —');
-        const escapeHtml = (s) =>
-          String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
-
-        const termBody = $('termBody');
-        const cardCode = $('cardCode');
-        const cardStatus = $('cardStatus');
-        let lastRequest = null;
-        let running = false;
-
-        // ── tabs ──
-        document.querySelectorAll('.dtab').forEach((b) => {
-          b.onclick = () => {
-            document.querySelectorAll('.dtab').forEach((x) => x.classList.toggle('on', x === b));
-            $('skin-terminal').hidden = b.dataset.skin !== 'terminal';
-            $('skin-card').hidden = b.dataset.skin !== 'card';
-          };
-        });
-
-        const termLine = (cls, text) => {
-          const span = document.createElement('span');
-          if (cls) span.className = cls;
-          span.textContent = text + '\n';
-          termBody.appendChild(span);
-          termBody.scrollTop = termBody.scrollHeight;
-        };
-
-        // Map a step event to terminal lines + card updates. Same stream drives both skins.
-        const handleStep = (ev) => {
-          const d = ev.data || {};
-          switch (ev.step) {
-            case 'keygen':
-              termLine('tdim', '$ agent keygen');
-              termLine('', '  → agent key ' + short(d.agentPub, 16));
-              break;
-            case 'request':
-              lastRequest = d.request;
-              termLine('tdim', '$ agent authorize --audience ' + d.request.audience + ' --scope ' + d.request.scope.join(','));
-              if (window.kunjiAgentDemo && $('cardQr')) window.kunjiAgentDemo.renderQr($('cardQr'), d.request);
-              break;
-            case 'code':
-              termLine('tac', '  → code ' + fmtCode(d.code) + '   — type this in your wallet');
-              termLine('tdim', '    (or scan the QR in the “Card” tab)');
-              cardCode.textContent = fmtCode(d.code);
-              cardStatus.textContent = 'Waiting for you to approve…';
-              break;
-            case 'await':
-              termLine('tdim', '  ⠿ awaiting approval in the wallet…');
-              break;
-            case 'capability':
-              termLine('tok', '  ✓ capability received & decrypted');
-              termLine(
-                'tdim',
-                '    jti ' + short(d.capabilityClaims.jti, 12) + ' · scope ' + d.capabilityClaims.scope.join(',') +
-                  ' · exp ' + new Date(d.capabilityClaims.exp * 1000).toISOString().replace('T', ' ').slice(0, 19) + 'Z',
-              );
-              cardStatus.textContent = 'Capability received — logging in…';
-              break;
-            case 'session':
-              termLine('', '  → session ' + short(d.sessionId, 10) + ' · challenge ' + short(d.challenge, 10));
-              break;
-            case 'proof':
-              termLine('tok', '  ✓ signed holder-of-key proof');
-              break;
-            case 'login':
-              termLine('', '  → POST /kunji/agent → ' + JSON.stringify(d.agentResponse));
-              break;
-            case 'status':
-              termLine('tok', '  ✓ logged in as ' + short(d.status.sub, 16) + '  scope=' + (d.status.scope || []).join(',') + ' agent=' + d.status.agent);
-              cardCode.textContent = '✓';
-              cardStatus.textContent = 'Signed in as ' + short(d.status.sub, 16) + ' · scope ' + (d.status.scope || []).join(',');
-              break;
-          }
-        };
-
-        const finish = (result) => {
-          if (result && result.io) {
-            $('demoIoPre').textContent = JSON.stringify(result.io, null, 2);
-            $('demoIo').hidden = false;
-          }
-        };
-
-        const reset = () => {
-          termBody.textContent = '';
-          cardCode.textContent = '— — —';
-          $('cardQr').replaceChildren();
-          cardStatus.textContent = 'Idle.';
-          $('demoIo').hidden = true;
-          lastRequest = null;
-        };
-        const setBusy = (on) => {
-          running = on;
-          $('demoReplay').disabled = on;
-          $('demoLive').disabled = on;
-        };
-
-        // ── recorded sample (real, signed artifacts) ──
-        let replayCache = null;
-        const loadReplay = async () => {
-          if (!replayCache) replayCache = await fetch('/agent-demo-replay.json').then((r) => r.json());
-          return replayCache;
-        };
-        $('demoReplay').onclick = async () => {
-          if (running) return;
-          reset();
-          setBusy(true);
-          termLine('tdim', '# recorded sample — real signed artifacts, no wallet needed');
-          try {
-            const data = await loadReplay();
-            for (const ev of data.steps) {
-              handleStep(ev);
-              await sleep(ev.step === 'await' ? 1700 : 600);
-            }
-            finish(data.result);
-          } catch {
-            termLine('tac', '  ✗ could not load the sample');
-          } finally {
-            setBusy(false);
-          }
-        };
-
-        // ── live (real authorization against the deployed RP + relay) ──
-        $('demoLive').onclick = async () => {
-          if (running) return;
-          if (!window.kunjiAgentDemo) {
-            termLine('tac', '  ✗ demo module failed to load');
-            return;
-          }
-          reset();
-          setBusy(true);
-          termLine('tdim', '# live — approve in your kunji wallet (Security → Authorize an agent)');
-          try {
-            const result = await window.kunjiAgentDemo.run({
-              relayUrl: 'https://app.kunji.cc',
-              rpBase: 'https://kunji-demo.web.app',
-              audience: 'kunji-demo.web.app',
-              scope: ['login'],
-              onStep: handleStep,
-            });
-            finish(result);
-          } catch (e) {
-            termLine('tac', '  ✗ ' + escapeHtml(e.message || String(e)));
-            cardStatus.textContent = 'Stopped: ' + (e.message || e);
-          } finally {
-            setBusy(false);
-          }
-        };
-      })();
-    </script>
   </body>
 </html>

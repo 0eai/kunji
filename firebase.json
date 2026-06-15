@@ -86,6 +86,9 @@
       "target": "landing",
       "public": "landing",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "redirects": [
+        { "source": "/developers/try{,/**}", "destination": "https://demo.kunji.cc/#rpjs", "type": 301 }
+      ],
       "headers": [
         {
           "source": "**",

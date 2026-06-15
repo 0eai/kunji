@@ -20,6 +20,8 @@
       content="Passwordless, per-app identity for your app. No shared database, no kunji backend in the login path."
     />
     <meta property="og:image" content="https://kunji.cc/brand/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:url" content="https://kunji.cc/developers/" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -39,7 +41,7 @@
           <a class="navlink" href="/developers/firebase">Firebase</a>
           <a class="navlink" href="/developers/agents">Agents</a>
           <a class="navlink" href="/developers/credentials">Credentials</a>
-          <a class="navlink" href="/developers/try">Try it</a>
+          <a class="navlink" href="https://demo.kunji.cc" target="_blank" rel="noopener">Demo ↗</a>
         </nav>
       </header>
 
@@ -76,7 +78,7 @@
             <code class="k">data-redirect</code> and listen for
             <code class="k">kunji:success</code> (<code class="k">e.detail.sub</code>). On Firebase?
             <a class="back" href="/developers/firebase">Use the Firebase guide →</a> ·
-            <a class="back" href="/developers/try">try the button →</a>
+            <a class="back" href="https://demo.kunji.cc/#rpjs" target="_blank" rel="noopener">try the button →</a>
           </p>
           <p class="note">
             You still implement the three endpoints below (session · callback · status) and verify
@@ -421,7 +423,7 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
             one live:
           </p>
           <div class="cta-row" style="margin-top: 20px">
-            <a class="cta" href="https://kunji-demo.web.app">
+            <a class="cta" href="https://demo.kunji.cc/" target="_blank" rel="noopener">
               Open the demo
               <svg
                 viewBox="0 0 24 24"
@@ -452,7 +454,11 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
         <span class="sep">·</span>
         <a href="https://x.com/kunji_cc" target="_blank" rel="noopener">X</a>
         <span class="sep">·</span>
-        <a href="https://app.kunji.cc">app.kunji.cc</a>
+        <a href="https://app.kunji.cc" target="_blank" rel="noopener">app.kunji.cc</a>
+        <span class="sep">·</span>
+        <a href="https://demo.kunji.cc" target="_blank" rel="noopener">demo</a>
+        <span class="sep">·</span>
+        <a href="https://issuer.kunji.cc" target="_blank" rel="noopener">issuer</a>
       </footer>
     </div>
   </body>
