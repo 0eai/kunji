@@ -8,3 +8,7 @@ dist
 
 # Internal audit reports — not committed
 reports/
+
+# Service-account / Admin SDK keys — NEVER commit (powerful credentials)
+*-firebase-adminsdk-*.json
+*service-account*.json

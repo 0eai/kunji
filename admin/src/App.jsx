@@ -51,8 +51,14 @@ function SignIn() {
           setErr('');
           try {
             await signInWithPopup(auth, googleProvider);
-          } catch {
-            setErr('Sign-in failed.');
+          } catch (e) {
+            // Surface the underlying cause. auth/internal-error wraps the Identity Toolkit response in
+            // customData.serverResponse (e.g. CONFIGURATION_NOT_FOUND, API key / referrer block) — that's
+            // the real signal. Also log the full error for the console.
+            console.error('sign-in error', e);
+            const sr = e?.customData?.serverResponse;
+            const extra = sr ? (typeof sr === 'string' ? sr : JSON.stringify(sr)) : '';
+            setErr(`${e?.code || 'error'}${extra ? ' · ' + extra : ''}${e?.message ? ' · ' + e.message : ''}`.slice(0, 600));
           }
         }}
       >
