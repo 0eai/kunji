@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 // The issuer's pluggable framework: a credential TYPE registry (credentials.js) × a verification METHOD
 // registry (verify/). Guard the age claim boundaries (an off-by-one would let a minor present age_over_18 or
 // block an adult), the registry lookups, and the document-upload validation. All pure (no Firestore/Storage).
@@ -51,5 +53,12 @@ describe('issuer verification-method registry — document-review', () => {
     expect(documentReview.validateUpload({ contentType: 'application/pdf', bytes: 1000 })).toBe(false);
     expect(documentReview.validateUpload({ contentType: 'image/jpeg', bytes: MAX_DOC_BYTES + 1 })).toBe(false);
     expect(documentReview.validateUpload({ contentType: 'image/jpeg', bytes: 0 })).toBe(false);
+  });
+});
+
+describe('issuer login verifier — byte-identical to the login-demo verify.js (security-critical)', () => {
+  it('loginVerify.js matches the proven assertion verifier', () => {
+    const read = (p) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
+    expect(read('../issuer-functions/loginVerify.js')).toBe(read('../examples/kunji-login-demo/functions/verify.js'));
   });
 });

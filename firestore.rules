@@ -121,5 +121,8 @@ service cloud.firestore {
     match /issuerRateLimits/{d} { allow read, write: if false; }
     match /verificationSessions/{d} { allow read, write: if false; }
     match /issuerAdmins/{d} { allow read, write: if false; }
+    match /issuerLoginSessions/{d} { allow read, write: if false; }
+    match /issuerSessions/{d} { allow read, write: if false; }
+    match /issuerUsers/{d} { allow read, write: if false; }
   }
 }

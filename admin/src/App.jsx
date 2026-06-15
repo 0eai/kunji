@@ -122,6 +122,15 @@ function Dashboard() {
     load();
   }, [load]);
 
+  // Live refresh: poll every 10s while the dashboard is visible (not in a backgrounded tab, not mid-review).
+  useEffect(() => {
+    if (reviewSid) return undefined;
+    const id = setInterval(() => {
+      if (!document.hidden) load();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [reviewSid, load]);
+
   if (reviewSid)
     return (
       <ReviewPanel
@@ -145,6 +154,9 @@ function Dashboard() {
 
   return (
     <div className="space-y-10">
+      <div className="flex justify-end -mt-2">
+        <button onClick={load} className="text-[13px] text-muted hover:text-ink transition-colors">↻ Refresh</button>
+      </div>
       {err && <p className="text-[13px] text-danger">{err}</p>}
 
       {stats && (

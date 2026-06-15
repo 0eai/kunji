@@ -1,12 +1,33 @@
-// Same-origin calls to the issuer Functions (issuer.kunji.cc). No auth — this is the public verify flow.
+// Same-origin calls to the issuer Functions (issuer.kunji.cc). A login session token (from "Sign in with
+// kunji") is held in localStorage so a verification is recoverable across refresh / tab-close / device.
+const SESSION_KEY = 'kunji_issuer_session';
+export const getToken = () => localStorage.getItem(SESSION_KEY) || '';
+export const setToken = (t) => (t ? localStorage.setItem(SESSION_KEY, t) : localStorage.removeItem(SESSION_KEY));
+
 const j = async (r) => {
-  if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || 'request_failed');
+  if (!r.ok) {
+    const e = new Error((await r.json().catch(() => ({})))?.error || 'request_failed');
+    e.status = r.status; // callers distinguish 401 (re-login) / 404 (gone) from transient errors
+    throw e;
+  }
   return r.json();
 };
-const post = (path, body) =>
-  fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(j);
+const authHeaders = () => {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
+const post = (path, body, auth = false) =>
+  fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? authHeaders() : {}) }, body: JSON.stringify(body) }).then(j);
+const get = (path, auth = false) => fetch(path, { headers: auth ? authHeaders() : {} }).then(j);
 
-export const startVerify = () => post('/verify/start', { type: 'age', method: 'document-review' });
-export const uploadDoc = (sid, image, contentType) => post('/verify/upload', { sid, image, contentType });
-export const checkStatus = (sid) => fetch(`/verify/status?sid=${encodeURIComponent(sid)}`).then(j);
-export const getOffer = (sid) => fetch(`/credential-offer?sid=${encodeURIComponent(sid)}`).then(j);
+// Catalog + login (no auth)
+export const fetchCatalog = () => get('/catalog');
+export const loginSession = () => post('/kunji/session', {});
+export const loginStatus = (sessionId) => get(`/kunji/status?sessionId=${encodeURIComponent(sessionId)}`);
+
+// Verification (authed by the session token)
+export const myVerifications = () => get('/verify/mine', true);
+export const startVerify = (type, method) => post('/verify/start', { type, method }, true);
+export const uploadDoc = (sid, image, contentType) => post('/verify/upload', { sid, image, contentType }, true);
+export const checkStatus = (sid) => get(`/verify/status?sid=${encodeURIComponent(sid)}`);
+export const getOffer = (sid) => get(`/credential-offer?sid=${encodeURIComponent(sid)}`, true);

@@ -109,7 +109,7 @@ const credentialVaultWrite = async (cryptoKey, op, credId, docPayload) => {
  * and `oneTime:true` (spent on presentation). A v1 credential omits these (its holder key is re-derived
  * from the issuer; reusable). Back-compat: legacy records simply have none of the three fields.
  */
-export const storeCredential = async (cryptoKey, { vct, iss, sdjwt, bbs, format, holderSk, poolId, oneTime }) => {
+export const storeCredential = async (cryptoKey, { vct, iss, sdjwt, bbs, format, holderSk, poolId, oneTime, brand, verifiedVia }) => {
   const credId = randomCredId();
   const record = { vct, iss, receivedAt: Math.floor(Date.now() / 1000) };
   if (format) record.format = format; // absent ⇒ SD-JWT (v1/v2); 'bbs' ⇒ unlinkable (v3)
@@ -118,6 +118,10 @@ export const storeCredential = async (cryptoKey, { vct, iss, sdjwt, bbs, format,
   if (holderSk) record.holderSk = holderSk;
   if (poolId) record.poolId = poolId;
   if (oneTime) record.oneTime = true;
+  // Issuer display, captured ONCE at receipt + shown locally (so viewing a held credential needs no network
+  // call — a per-view fetch would let the issuer see when you hold/view it). See fetchIssuerDisplay.
+  if (brand) record.brand = brand;
+  if (verifiedVia) record.verifiedVia = verifiedVia;
   const payload = await encryptData(record, cryptoKey);
   await credentialVaultWrite(cryptoKey, 'set', credId, payload);
   return { credId, vct, iss, poolId, format };
@@ -152,13 +156,15 @@ const storeBatch = async (cryptoKey, origin, sdjwts, holderKeys) => {
   const poolId = randomCredId();
   let count = 0;
   let vct;
+  let display = null;
   for (const sdjwt of sdjwts) {
     const { issuerClaims } = parseSdJwt(sdjwt);
     if (issuerClaims.iss !== origin) throw new Error('Issuer identity mismatch — cannot bind credential.');
     const h = byX.get(issuerClaims.cnf?.jwk?.x);
     if (!h) throw new Error('Issuer bound a credential to a key we did not offer.');
     byX.delete(issuerClaims.cnf.jwk.x); // each holder key is used at most once
-    await storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: origin, sdjwt, holderSk: h.skB64, poolId, oneTime });
+    if (!display) display = await fetchIssuerDisplay(origin, issuerClaims.vct); // once per batch, best-effort
+    await storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: origin, sdjwt, holderSk: h.skB64, poolId, oneTime, brand: display?.brand, verifiedVia: display?.verifiedVia });
     vct = issuerClaims.vct;
     count++;
   }
@@ -175,7 +181,7 @@ export const groupByPool = (held) => {
     const key = c.poolId || c.credId;
     let g = groups.get(key);
     if (!g) {
-      g = { key, vct: c.vct, iss: c.iss, oneTime: false, unlinkable: false, copies: [] };
+      g = { key, vct: c.vct, iss: c.iss, brand: c.brand || null, verifiedVia: c.verifiedVia || null, oneTime: false, unlinkable: false, copies: [] };
       groups.set(key, g);
     }
     if (c.oneTime) g.oneTime = true;
@@ -297,7 +303,8 @@ export const receiveViaRelay = async (cryptoKey, issuerOrigin, { tries = 60, int
     if (sdjwt) {
       const { issuerClaims } = parseSdJwt(sdjwt);
       if (issuerClaims.iss !== origin) throw new Error('Issuer identity mismatch — cannot bind credential.');
-      return storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: issuerClaims.iss, sdjwt });
+      const display = await fetchIssuerDisplay(origin, issuerClaims.vct);
+      return storeCredential(cryptoKey, { vct: issuerClaims.vct, iss: issuerClaims.iss, sdjwt, brand: display?.brand, verifiedVia: display?.verifiedVia });
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
@@ -348,7 +355,8 @@ export const receiveBbsFromIssuer = async (cryptoKey, issuerOrigin) => {
   const { credential } = await resp.json().catch(() => ({}));
   if (credential?.format !== 'bbs') throw new Error('The issuer did not return an unlinkable credential.');
   if (credential.iss !== origin) throw new Error('Issuer identity mismatch — cannot trust credential.');
-  return storeCredential(cryptoKey, { vct: credential.vct, iss: credential.iss, format: 'bbs', bbs: credential });
+  const display = await fetchIssuerDisplay(origin, credential.vct);
+  return storeCredential(cryptoKey, { vct: credential.vct, iss: credential.iss, format: 'bbs', bbs: credential, brand: display?.brand, verifiedVia: display?.verifiedVia });
 };
 
 /**
@@ -379,6 +387,26 @@ const httpsOrLoopback = (urlStr) => {
   }
   if (u.protocol !== 'https:' && !isLoopbackHost(u.hostname)) return null;
   return u;
+};
+
+// Capture an issuer's display info ONCE at receipt: the brand name + the verification method for this vct,
+// from the issuer's published OpenID4VCI metadata. Stored on the credential record so the wallet can show
+// "Issued by {brand} · verified via {method}" with NO network call when the user later views it (a per-view
+// fetch would leak hold/view timing to the issuer). Best-effort — null on any failure (UI falls back to host).
+const fetchIssuerDisplay = async (origin, vct) => {
+  const u = httpsOrLoopback(origin);
+  if (!u) return null;
+  try {
+    const resp = await fetch(`${u.origin}/.well-known/openid-credential-issuer`);
+    if (!resp.ok) return null;
+    const meta = await resp.json();
+    const brand = meta?.brand?.name || null;
+    const methods = meta?.credential_configurations_supported?.[vct]?.verification_methods;
+    const verifiedVia = Array.isArray(methods) && methods.length ? methods[0] : null;
+    return brand || verifiedVia ? { brand, verifiedVia } : null;
+  } catch {
+    return null;
+  }
 };
 
 /**

@@ -18,8 +18,9 @@ import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
 import { verifyProofJwt } from './oid4vc.js';
 import { loadKeySet, issuerWellKnown, credentialIssuerMetadata, authServerMetadata, mintTypedCredential, MAX_BATCH } from './issuer.js';
-import { getType } from './credentials.js';
+import { ISSUER_BRAND, CREDENTIAL_TYPES, getType } from './credentials.js';
 import { getMethod } from './verify/index.js';
+import { verifyAssertion } from './loginVerify.js';
 
 const ISSUER_ORIGIN = process.env.ISSUER_ORIGIN || 'https://issuer-kunji-cc.web.app';
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET || 'kunji-cc.firebasestorage.app';
@@ -33,9 +34,18 @@ const ISSUER_SIGNING_KEY = defineSecret('KUNJI_ISSUER_SIGNING_KEY');
 // Dev-only escape: mint without a verification (default OFF). Production issues only after a verified session.
 const OPEN_MINT = process.env.ISSUER_OPEN_MINT === 'true';
 
+const ISSUER_HOST = (() => {
+  try {
+    return new URL(ISSUER_ORIGIN).host;
+  } catch {
+    return 'issuer.kunji.cc';
+  }
+})();
 const VC_TTL_MS = 5 * 60 * 1000;
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000; // a verification session (incl. pending review) lives a day
 const DOC_MAX_AGE_MS = 24 * 60 * 60 * 1000; // abandoned ID images are swept after this
+const LOGIN_TTL_MS = 5 * 60 * 1000; // a kunji-login session
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // an issuer session (bearer → sub) lives 30 days
 const vcOpts = (secrets) => ({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets });
 const ttlAfter = (ms) => Timestamp.fromMillis(Date.now() + ms + 5 * 60 * 1000);
 const token = (n) => randomBytes(n).toString('base64url');
@@ -75,19 +85,126 @@ const rateLimited = async (ip, max = 30, windowMs = 60 * 1000) => {
   });
 };
 
+// ── Catalog (drives the multi-credential UI) — type → provider, from the registries ──
+// UI-shaped (separate from the OID4VCI .well-known, which stays spec-clean). `coming_soon` entries are
+// display-only (never startable — /verify/start validates against the registered methods).
+const catalog = () => ({
+  brand: ISSUER_BRAND,
+  types: Object.entries(CREDENTIAL_TYPES).map(([id, t]) => ({
+    id,
+    label: t.label,
+    description: t.description || null,
+    methods: [
+      ...t.methods.map((mid) => {
+        const m = getMethod(mid) || {};
+        return { id: mid, label: m.label || mid, description: m.description || null, region: m.region || 'global', kind: m.kind || 'manual', status: m.status || 'available' };
+      }),
+      ...(t.comingSoon || []).map((c) => ({ id: c.id, label: c.label, description: c.description || null, region: c.region || 'global', status: 'coming_soon' })),
+    ],
+  })),
+});
+export const issuerCatalog = onRequest(vcOpts([]), (_req, res) => res.json(catalog()));
+
+// ── Login with kunji (RP) — bind a verification to the user's per-app `sub` so it survives refresh /
+// tab-close / device change. Reuses the discoverable-login assertion verifier (loginVerify.js); the
+// audience is HARDCODED to this issuer's host (never read from the request body). See docs/discoverable-login.md.
+const loginRef = (id) => db.collection('issuerLoginSessions').doc(id);
+
+// A globally-unique 6-digit code (equality query → single-field index).
+const freshCode = async () => {
+  for (let i = 0; i < 8; i++) {
+    const code = String(Math.floor(100000 + (randomBytes(4).readUInt32BE(0) % 900000)));
+    const dup = await db.collection('issuerLoginSessions').where('code', '==', code).limit(1).get();
+    if (dup.empty) return code;
+  }
+  throw new Error('code_alloc_failed');
+};
+
+// Bearer issuer-session token (minted on login approval) → the user's per-app `sub` (or null).
+const requireUser = async (req) => {
+  const m = /^Bearer (.+)$/.exec(String(req.headers.authorization || ''));
+  if (!m) return null;
+  const snap = await db.collection('issuerSessions').doc(m[1]).get();
+  const d = snap.exists ? snap.data() : null;
+  if (!d || (d.expiresAt && Date.now() > d.expiresAt)) return null;
+  return d.sub || null;
+};
+
+// /kunji/session — POST creates a login session (the issuer page renders its QR + 6-digit code; audience
+// HARDCODED to ISSUER_HOST). GET ?code= is the wallet's device-authorization lookup (it calls
+// GET https://{domain}/kunji/session?code= per identity.js lookupSessionByCode) → resolves the code.
+export const kunjiLoginSession = onRequest(vcOpts([]), async (req, res) => {
+  if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
+  if (req.method === 'GET') {
+    const code = String(req.query.code || '');
+    if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: 'bad_code' });
+    const q = await db.collection('issuerLoginSessions').where('code', '==', code).limit(1).get();
+    const doc = q.docs[0];
+    const s = doc?.data();
+    if (!doc || s.status !== 'pending') return res.status(404).json({ error: 'invalid_code' });
+    if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_code' });
+    return res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: `${ISSUER_ORIGIN}/kunji/callback`, expiresAt: s.expiresAt });
+  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  const sessionId = token(16);
+  const challenge = token(32);
+  const code = await freshCode();
+  const expiresAt = Date.now() + LOGIN_TTL_MS;
+  await loginRef(sessionId).set({ challenge, audience: ISSUER_HOST, code, status: 'pending', expiresAt, ttl: ttlAfter(LOGIN_TTL_MS) });
+  res.json({ sessionId, challenge, audience: ISSUER_HOST, code, expiresAt, callbackUrl: `${ISSUER_ORIGIN}/kunji/callback` });
+});
+
+// POST /kunji/callback ← the wallet's signed assertion. §6 verify (audience hardcoded) + consume, then mint
+// an issuer-session token (bearer → sub).
+export const kunjiLoginCallback = onRequest(vcOpts([]), async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  const assertion = req.body || {};
+  const sessionId = assertion?.signedPayload?.sessionId;
+  if (!sessionId) return res.status(400).json({ error: 'malformed_assertion' });
+  const ref = loginRef(sessionId);
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const session = snap.exists ? snap.data() : null;
+      const r = verifyAssertion({ assertion, session, audience: ISSUER_HOST }); // §6; audience hardcoded
+      if (!r.ok) return r;
+      if (session.status !== 'pending') return { ok: false, error: 'session_consumed' };
+      const sessionToken = token(24);
+      tx.update(ref, { status: 'approved', sub: r.sub, sessionToken });
+      tx.set(db.collection('issuerSessions').doc(sessionToken), { sub: r.sub, expiresAt: Date.now() + SESSION_TTL_MS, ttl: ttlAfter(SESSION_TTL_MS) });
+      tx.set(db.collection('issuerUsers').doc(r.sub), { lastLoginAt: Date.now() }, { merge: true });
+      return r;
+    });
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ status: 'ok' });
+  } catch {
+    res.status(500).json({ error: 'callback_failed' });
+  }
+});
+
+// GET /kunji/status?sessionId → poll; returns the issuer-session token once approved.
+export const kunjiLoginStatus = onRequest(vcOpts([]), async (req, res) => {
+  const snap = await loginRef(String(req.query.sessionId || '')).get();
+  if (!snap.exists) return res.status(404).json({ error: 'unknown_session' });
+  const s = snap.data();
+  res.json({ status: s.status, sessionToken: s.status === 'approved' ? s.sessionToken : null });
+});
+
 // ── Verification flow (kunji's own) — start → (method-specific) → verified ──
 // POST /verify/start { type, method } → create a session. A 'manual' method (document-review) awaits an
 // upload ('collecting'); future 'redirect'/'inline' methods would start the provider and return a url.
 export const issuerVerifyStart = onRequest(vcOpts([]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
+  const sub = await requireUser(req);
+  if (!sub) return res.status(401).json({ error: 'login_required' });
   const { type, method } = req.body || {};
   const t = getType(type);
   const m = getMethod(method);
   if (!t || !m || !t.methods.includes(method)) return res.status(400).json({ error: 'unsupported' });
   const sid = token(24);
   const status = m.kind === 'manual' ? 'collecting' : 'pending_review';
-  await db.collection('verificationSessions').doc(sid).set({ type, method, status, ttl: ttlAfter(VERIFY_TTL_MS) });
+  await db.collection('verificationSessions').doc(sid).set({ sub, type, method, status, ttl: ttlAfter(VERIFY_TTL_MS) });
   res.json({ sid, kind: m.kind });
 });
 
@@ -96,11 +213,13 @@ export const issuerVerifyStart = onRequest(vcOpts([]), async (req, res) => {
 export const issuerVerifyUpload = onRequest(vcOpts([]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   if (await rateLimited(req.ip, 10)) return res.status(429).json({ error: 'rate_limited' });
+  const sub = await requireUser(req);
+  if (!sub) return res.status(401).json({ error: 'login_required' });
   const { sid, image, contentType } = req.body || {};
   const ref = db.collection('verificationSessions').doc(String(sid || ''));
   const snap = await ref.get();
   const session = snap.exists ? snap.data() : null;
-  if (!session || session.status !== 'collecting') return res.status(409).json({ error: 'bad_session' });
+  if (!session || session.status !== 'collecting' || session.sub !== sub) return res.status(409).json({ error: 'bad_session' });
   const m = getMethod(session.method);
   if (!m || m.kind !== 'manual') return res.status(400).json({ error: 'unsupported' });
   let buf;
@@ -123,6 +242,19 @@ export const issuerVerifyStatus = onRequest(vcOpts([]), async (req, res) => {
   res.json({ status: snap.data().status || 'collecting' });
 });
 
+// GET /verify/mine → the signed-in user's active verifications, so a returning user resumes (across refresh /
+// tab-close / device — re-login yields the same `sub`). Authed.
+export const issuerVerifyMine = onRequest(vcOpts([]), async (req, res) => {
+  const sub = await requireUser(req);
+  if (!sub) return res.status(401).json({ error: 'login_required' });
+  const snap = await db.collection('verificationSessions').where('sub', '==', sub).limit(20).get();
+  const items = snap.docs
+    .map((d) => ({ sid: d.id, ...d.data() }))
+    .filter((x) => ['collecting', 'pending_review', 'verified'].includes(x.status))
+    .map((x) => ({ sid: x.sid, type: x.type, method: x.method, status: x.status }));
+  res.json({ items });
+});
+
 // ── Issuer metadata + trust anchor (the key SET + brand a verifier fetches cross-origin) ──
 export const issuerOidcMetadata = onRequest(vcOpts([]), (_req, res) => res.json(credentialIssuerMetadata(ISSUER_ORIGIN)));
 export const issuerOauthMetadata = onRequest(vcOpts([]), (_req, res) => res.json(authServerMetadata(ISSUER_ORIGIN)));
@@ -139,11 +271,13 @@ export const issuerOffer = onRequest(vcOpts([]), async (req, res) => {
   let type = null;
   let claims = null;
   if (sid) {
+    const sub = await requireUser(req);
+    if (!sub) return res.status(401).json({ error: 'login_required' });
     const verified = await db.runTransaction(async (tx) => {
       const ref = db.collection('verificationSessions').doc(sid);
       const snap = await tx.get(ref);
       const d = snap.exists ? snap.data() : null;
-      if (!d || d.status !== 'verified') return null;
+      if (!d || d.status !== 'verified' || d.sub !== sub) return null;
       tx.delete(ref); // consume: one verified session ⇒ one offer/batch
       return d;
     });

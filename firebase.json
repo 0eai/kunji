@@ -137,6 +137,26 @@
           "function": { "functionId": "issuerVerifyStatus", "region": "us-central1" }
         },
         {
+          "source": "/verify/mine",
+          "function": { "functionId": "issuerVerifyMine", "region": "us-central1" }
+        },
+        {
+          "source": "/catalog",
+          "function": { "functionId": "issuerCatalog", "region": "us-central1" }
+        },
+        {
+          "source": "/kunji/session",
+          "function": { "functionId": "kunjiLoginSession", "region": "us-central1" }
+        },
+        {
+          "source": "/kunji/callback",
+          "function": { "functionId": "kunjiLoginCallback", "region": "us-central1" }
+        },
+        {
+          "source": "/kunji/status",
+          "function": { "functionId": "kunjiLoginStatus", "region": "us-central1" }
+        },
+        {
           "source": "/credential-offer",
           "function": { "functionId": "issuerOffer", "region": "us-central1" }
         },

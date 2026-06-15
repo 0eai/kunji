@@ -6,7 +6,10 @@ const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export const documentReview = {
   id: 'document-review',
-  label: 'Government ID (manual review)',
+  label: 'Government ID',
+  description: 'Upload a government ID; a kunji operator reviews it. Works worldwide.',
+  region: 'global',
+  status: 'available',
   kind: 'manual', // resolved by an admin via the review API — no automated provider callback
   validateUpload: ({ contentType, bytes }) =>
     ALLOWED.has(String(contentType)) && Number(bytes) > 0 && Number(bytes) <= MAX_DOC_BYTES,

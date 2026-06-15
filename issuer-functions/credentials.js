@@ -26,8 +26,14 @@ export const CREDENTIAL_TYPES = {
   age: {
     vct: 'age',
     label: 'Age',
+    description: 'Prove you are over an age threshold (over 18, …) — boolean only, never your date of birth.',
     ttlSeconds: 365 * DAY,
-    methods: ['document-review'], // future: 'pass', 'aadhaar', …
+    methods: ['document-review'], // AVAILABLE (registered in verify/); validated by /verify/start
+    // Display-only roadmap (never startable until they ship as real verify/ modules) — drives the chooser.
+    comingSoon: [
+      { id: 'pass', label: 'PASS (Korea)', description: 'Korean mobile-carrier identity verification.', region: 'KR' },
+      { id: 'aadhaar', label: 'Aadhaar (India)', description: 'Indian eID (Aadhaar) verification.', region: 'IN' },
+    ],
     // Disclosable claims from the verified data a method produced. For age: the reviewer-confirmed DOB (or a
     // provider-verified integer age) → boolean thresholds. The DOB is NEVER stored or returned. null = invalid.
     buildClaims: ({ dob, age } = {}) => {

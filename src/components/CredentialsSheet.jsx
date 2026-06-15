@@ -33,6 +33,18 @@ const issuerLabel = (iss) => {
     return iss;
   }
 };
+// A kunji-operated issuer → show the bundled (same-origin) kunji mark; no external logo fetch (privacy).
+const isKunjiIssuer = (iss) => {
+  try {
+    const h = new URL(iss).host;
+    return h === 'kunji.cc' || h.endsWith('.kunji.cc') || h === 'issuer-kunji-cc.web.app';
+  } catch {
+    return false;
+  }
+};
+const methodLabel = (m) => (m ? String(m).replace(/[-_]/g, ' ') : null); // 'document-review' → 'document review'
+// Issuer brand captured at receipt (record.brand), else the host. No network on view.
+const issuerName = (g) => g.brand || issuerLabel(g.iss);
 
 // Verified credentials the user holds (issued by trusted issuers, stored encrypted, shared across
 // linked devices). Receive one from an issuer, see what you hold, remove any. Presenting them happens
@@ -147,11 +159,12 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
         <div className="divide-y divide-line border-y border-line mb-5">
           {pools.map((g) => (
             <div key={g.key} className="flex items-center gap-3 py-3">
-              <Monogram name={issuerLabel(g.iss)} seed={g.iss} size="sm" />
+              <Monogram name={issuerName(g)} seed={g.iss} size="sm" src={isKunjiIssuer(g.iss) ? '/icons/icon.svg' : undefined} />
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] text-ink truncate">{g.vct}</p>
                 <p className="text-[11px] text-faint truncate">
-                  {claimNamesOf(g.sample).join(', ')} · from {issuerLabel(g.iss)}
+                  {claimNamesOf(g.sample).join(', ')} · Issued by {issuerName(g)}
+                  {g.verifiedVia ? ` · verified via ${methodLabel(g.verifiedVia)}` : ''}
                 </p>
                 {g.unlinkable && (
                   <p className="text-[11px] text-accent mt-0.5">unlinkable · a fresh proof each time</p>
@@ -240,7 +253,7 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
           </div>
           <p className="text-[14px] text-muted leading-relaxed mb-5">
             You'll no longer be able to present <span className="font-mono text-ink">{confirm.vct}</span> from{' '}
-            {issuerLabel(confirm.iss)}. You can receive it again from the issuer.
+            {issuerName(confirm)}. You can receive it again from the issuer.
           </p>
           <div className="flex items-center justify-end gap-1">
             <Btn variant="quiet" onClick={() => setConfirm(null)} disabled={!!deleting}>
