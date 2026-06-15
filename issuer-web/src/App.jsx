@@ -6,24 +6,26 @@ const WALLET = 'https://app.kunji.cc';
 const SID_KEY = 'kunji_verify_sid';
 
 // Resize + re-encode to JPEG client-side: shrinks the upload and strips EXIF/GPS before it leaves the device.
+// Loads the file via a data: URL (FileReader) rather than a blob: object URL, so the issuer's CSP can stay
+// `img-src 'self' data:` (no blob: needed).
 const fileToDataUrl = (file, max = 1600, quality = 0.85) =>
   new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * scale);
-      c.height = Math.round(img.height * scale);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      resolve(c.toDataURL('image/jpeg', quality));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('bad_image'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('bad_image'));
+      img.src = reader.result;
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('bad_image'));
-    };
-    img.src = url;
+    reader.readAsDataURL(file);
   });
 
 const Header = () => (
