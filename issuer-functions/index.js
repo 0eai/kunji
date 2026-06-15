@@ -10,6 +10,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import { randomBytes } from 'node:crypto';
 import { verifyProofJwt } from './oid4vc.js';
 import {
@@ -21,7 +22,7 @@ import {
   ageClaimsFromAge,
   MAX_BATCH,
 } from './issuer.js';
-import { makeIdv } from './idv/stripe.js';
+import { makeIdv } from './idv/persona.js';
 
 initializeApp();
 const db = getFirestore();
@@ -30,10 +31,11 @@ const db = getFirestore();
 // live in kunji-cc, so reusing that name would make the REAL issuer sign with the demo's (mints-to-anyone)
 // key. This is the real issuer's own key (a rotation-capable set — see issuer.js loadKeySet).
 const ISSUER_SIGNING_KEY = defineSecret('KUNJI_ISSUER_SIGNING_KEY');
-// IDV vendor (Stripe Identity) — the age-proofing trust root. The webhook secret verifies that a "verified"
-// event genuinely came from Stripe (a forged one would mint a false age credential).
-const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
-const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
+// IDV vendor (Persona) — the age-proofing trust root. The webhook secret verifies a "verified" event
+// genuinely came from Persona (a forged one would mint a false age credential). The inquiry template id is
+// non-secret config (env PERSONA_INQUIRY_TEMPLATE_ID); env PERSONA_VERSION optionally pins the API version.
+const PERSONA_API_KEY = defineSecret('PERSONA_API_KEY');
+const PERSONA_WEBHOOK_SECRET = defineSecret('PERSONA_WEBHOOK_SECRET');
 // The issuer's public origin — the `credential_issuer`/`iss` the wallet fetches + binds to, and the origin a
 // verifier resolves keys from. Defaults to the Hosting `.web.app` URL so the cross-origin path works before
 // the issuer.kunji.cc custom domain's DNS is live; flip to https://issuer.kunji.cc via env when DNS lands.
@@ -84,62 +86,56 @@ const rateLimited = async (ip, max = 30, windowMs = 60 * 1000) => {
   });
 };
 
-// ── IDV proofing gate (Stripe Identity) — verify age once, then allow ONE credential offer ──
+// ── IDV proofing gate (Persona) — verify age once, then allow ONE credential offer ──
 // The vendor holds the document/biometric + liability; we receive only a verified age, store the derived
-// `age_over_N` booleans + the vendor session id (audit), and NEVER persist the DOB. See docs/issuer.md.
+// `age_over_N` booleans + the vendor session id (audit), and NEVER persist the DOB. The adapter
+// (idv/persona.js) keeps a vendor-neutral interface so the provider stays swappable. See docs/issuer.md.
+const PERSONA_VERSION = process.env.PERSONA_VERSION;
+const PERSONA_TEMPLATE_ID = process.env.PERSONA_INQUIRY_TEMPLATE_ID;
 
 // POST /idv/start → create a hosted verification session; the page stashes `sid` + redirects to `url`.
 // Rate-limited (each session may bill).
-export const issuerIdvStart = onRequest(vcOpts([STRIPE_SECRET_KEY]), async (req, res) => {
+export const issuerIdvStart = onRequest(vcOpts([PERSONA_API_KEY]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   if (await rateLimited(req.ip, 10)) return res.status(429).json({ error: 'rate_limited' });
   try {
-    const idv = makeIdv(STRIPE_SECRET_KEY.value());
+    const idv = makeIdv({ apiKey: PERSONA_API_KEY.value(), templateId: PERSONA_TEMPLATE_ID, version: PERSONA_VERSION });
     const sid = token(24);
-    const { stripeSessionId, url } = await idv.createSession({ returnUrl: `${ISSUER_ORIGIN}/`, sid });
-    await db.collection('idvSessions').doc(sid).set({ status: 'pending', stripeSessionId, ttl: ttlAfter(IDV_TTL_MS) });
+    const { vendorSessionId, url } = await idv.createSession({ returnUrl: `${ISSUER_ORIGIN}/`, sid });
+    await db.collection('idvSessions').doc(sid).set({ status: 'pending', vendorSessionId, ttl: ttlAfter(IDV_TTL_MS) });
     res.json({ sid, url });
   } catch {
     res.status(502).json({ error: 'idv_start_failed' });
   }
 });
 
-// POST /idv/webhook ← Stripe. Verify the signature over the RAW body (THE critical control); on `verified`,
-// retrieve the session, derive the boolean thresholds from the verified age, and record ONLY those + the
-// vendor session id — the DOB is never written. Idempotent (Stripe retries); minting is separately
-// single-use at /credential.
+// POST /idv/webhook ← Persona. The adapter verifies the signature over the RAW body (THE critical control)
+// and normalizes the event to { ok, status, sid, vendorSessionId }. On `verified` we retrieve the inquiry
+// fresh (authoritative age), derive the boolean thresholds, and record ONLY those + the vendor session id —
+// the DOB is never written. Idempotent (the vendor retries); minting is separately single-use at /credential.
 export const issuerIdvWebhook = onRequest(
-  { cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets: [STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET] },
+  { cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets: [PERSONA_API_KEY, PERSONA_WEBHOOK_SECRET] },
   async (req, res) => {
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-    const idv = makeIdv(STRIPE_SECRET_KEY.value());
-    let event;
+    const idv = makeIdv({
+      apiKey: PERSONA_API_KEY.value(),
+      webhookSecret: PERSONA_WEBHOOK_SECRET.value(),
+      version: PERSONA_VERSION,
+    });
+    const evt = idv.parseWebhook({ rawBody: req.rawBody, headers: req.headers });
+    if (!evt.ok) return res.status(400).json({ error: 'bad_signature' }); // forged/misconfigured — never trust it
     try {
-      event = idv.verifyEvent({
-        rawBody: req.rawBody,
-        signature: req.headers['stripe-signature'],
-        webhookSecret: STRIPE_WEBHOOK_SECRET.value(),
-      });
-    } catch {
-      return res.status(400).json({ error: 'bad_signature' }); // forged/misconfigured — never trust it
-    }
-    try {
-      const obj = event.data?.object || {};
-      const sid = obj.metadata?.sid;
-      if (!sid) return res.json({ ok: true }); // not one of ours — ack so Stripe stops retrying
-      const ref = db.collection('idvSessions').doc(String(sid));
-      if (event.type === 'identity.verification_session.verified') {
-        const r = await idv.verifiedAgeFor(obj.id); // fresh authenticated retrieve (dob → age, in memory)
+      if (evt.status === 'ignore' || !evt.sid) return res.json({ ok: true }); // irrelevant/not ours — ack
+      const ref = db.collection('idvSessions').doc(String(evt.sid));
+      if (evt.status === 'verified') {
+        const r = await idv.verifiedAgeFor(evt.vendorSessionId); // fresh authenticated retrieve (dob → age, in memory)
         await db.runTransaction(async (tx) => {
           const snap = await tx.get(ref);
           if (!snap.exists) return; // already consumed/expired — a re-delivered event must never resurrect it
           if (!r.ok) tx.update(ref, { status: 'failed', ttl: ttlAfter(IDV_TTL_MS) });
-          else tx.update(ref, { status: 'verified', claims: ageClaimsFromAge(r.age), vendorRef: obj.id, ttl: ttlAfter(IDV_TTL_MS) });
+          else tx.update(ref, { status: 'verified', claims: ageClaimsFromAge(r.age), vendorRef: evt.vendorSessionId, ttl: ttlAfter(IDV_TTL_MS) });
         });
-      } else if (
-        event.type === 'identity.verification_session.requires_input' ||
-        event.type === 'identity.verification_session.canceled'
-      ) {
+      } else if (evt.status === 'failed') {
         await db.runTransaction(async (tx) => {
           const snap = await tx.get(ref);
           // only a still-pending session regresses to failed — never clobber a verified/consumed one (out-of-order delivery)
@@ -148,7 +144,7 @@ export const issuerIdvWebhook = onRequest(
       }
       res.json({ ok: true });
     } catch {
-      res.status(500).json({ error: 'webhook_processing_failed' }); // let Stripe retry (don't drop a verification)
+      res.status(500).json({ error: 'webhook_processing_failed' }); // let the vendor retry (don't drop a verification)
     }
   },
 );
@@ -283,4 +279,86 @@ export const issuerCredentialEndpoint = onRequest(vcOpts([ISSUER_SIGNING_KEY]), 
 // GET /status/1?idx= → StatusList check (a verifier's checkStatus honors valid:false as revoked).
 export const issuerStatusEndpoint = onRequest(vcOpts([]), async (req, res) => {
   res.json({ valid: await checkStatus(req.query.idx) });
+});
+
+// ── Admin console API (admin.kunji.cc) — operator-only: ledger, revocation, stats ──
+// THE GATE IS THE `admin:true` CUSTOM CLAIM, not authentication: this same project mints anonymous wallet
+// tokens, which verifyIdToken would accept — so a token without the claim must be rejected. The admin API
+// holds NO signing secret (keys are read from the public .well-known), so it cannot sign or rotate keys.
+const requireAdmin = async (req) => {
+  const m = /^Bearer (.+)$/.exec(String(req.headers.authorization || ''));
+  if (!m) return null;
+  try {
+    const decoded = await getAuth().verifyIdToken(m[1]);
+    return decoded.admin === true ? decoded : null;
+  } catch {
+    return null;
+  }
+};
+
+// Issuance ledger, newest first, paginated by the (unique, sequential) StatusList idx. No PII — the rows are
+// booleans + idx + kid + vendorRef + issuedAt; each is flagged with its current revocation status.
+const adminLedger = async (req) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const before = Number(req.query.before);
+  let q = db.collection('issuerCredentials').orderBy('idx', 'desc');
+  if (Number.isInteger(before) && before > 0) q = q.where('idx', '<', before).orderBy('idx', 'desc');
+  const [snap, statusSnap] = await Promise.all([
+    q.limit(limit).get(),
+    db.collection('issuerStatusList').doc('age').get(),
+  ]);
+  const revoked = new Set(((statusSnap.exists && statusSnap.data().revoked) || []).map(Number));
+  const items = snap.docs.map((d) => {
+    const x = d.data();
+    return { idx: x.idx, vct: x.vct, kid: x.kid, claims: x.claims || null, vendorRef: x.vendorRef || null, issuedAt: x.issuedAt || null, revoked: revoked.has(Number(x.idx)) };
+  });
+  return { items, nextBefore: items.length === limit ? items[items.length - 1].idx : null };
+};
+
+// Aggregate stats (count() — no docs returned): the IDV funnel + issuance/revocation totals.
+const adminStats = async () => {
+  const idv = db.collection('idvSessions');
+  const [pending, verified, failed, issued, statusSnap] = await Promise.all([
+    idv.where('status', '==', 'pending').count().get(),
+    idv.where('status', '==', 'verified').count().get(),
+    idv.where('status', '==', 'failed').count().get(),
+    db.collection('issuerCredentials').count().get(),
+    db.collection('issuerStatusList').doc('age').get(),
+  ]);
+  const revoked = ((statusSnap.exists && statusSnap.data().revoked) || []).length;
+  return {
+    idv: { pending: pending.data().count, verified: verified.data().count, failed: failed.data().count },
+    issued: issued.data().count,
+    revoked,
+  };
+};
+
+// Revoke / un-revoke an idx by toggling it in issuerStatusList/age.revoked (transaction; idempotent).
+const adminSetRevoked = async (idx, revoke) => {
+  const n = Number(idx);
+  if (!Number.isInteger(n) || n < 1) throw new Error('bad_idx');
+  const ref = db.collection('issuerStatusList').doc('age');
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const cur = new Set(((snap.exists && snap.data().revoked) || []).map(Number));
+    if (revoke) cur.add(n);
+    else cur.delete(n);
+    tx.set(ref, { revoked: Array.from(cur) }, { merge: true });
+  });
+  return { idx: n, revoked: revoke };
+};
+
+// /api/** (admin.kunji.cc rewrite) — one Function, internal path router; same-origin (no CORS).
+export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
+  const admin = await requireAdmin(req);
+  if (!admin) return res.status(401).json({ error: 'unauthorized' });
+  try {
+    if (req.method === 'GET' && req.path === '/api/ledger') return res.json(await adminLedger(req));
+    if (req.method === 'GET' && req.path === '/api/stats') return res.json(await adminStats());
+    if (req.method === 'POST' && req.path === '/api/revoke') return res.json(await adminSetRevoked(req.body?.idx, true));
+    if (req.method === 'POST' && req.path === '/api/unrevoke') return res.json(await adminSetRevoked(req.body?.idx, false));
+    return res.status(404).json({ error: 'not_found' });
+  } catch (e) {
+    return res.status(e?.message === 'bad_idx' ? 400 : 500).json({ error: e?.message === 'bad_idx' ? 'bad_idx' : 'admin_failed' });
+  }
 });

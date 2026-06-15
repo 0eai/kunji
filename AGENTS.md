@@ -84,8 +84,11 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - `issuer-functions/` — the **real age-credential issuer** (`issuer.kunji.cc`), Functions **codebase `issuer`**
   (Node 20). OpenID4VCI offer/token/credential + `.well-known` key SET (rotation) + StatusList revocation,
   signed by its OWN secret `KUNJI_ISSUER_SIGNING_KEY` (distinct from the demo's). Issuance is gated CLOSED
-  (`ISSUER_OPEN_MINT`) until the IDV proofing gate lands. Booleans-only, no DOB/PII at rest; namespaced
-  `issuer*`/`idv*` Firestore. `issuer-public/` + `admin-public/` are its static frontends. SD-JWT core +
+  (`ISSUER_OPEN_MINT`) until proofed) → **IDV proofing gate** (swappable adapter `idv/persona.js` — Persona;
+  `/idv/start|webhook|status`; signed-webhook → verified age → booleans, DOB never stored) → an **auth-gated
+  admin API** (`issuerAdminApi`: ledger/revoke/stats, gated by the `admin:true` custom claim, no signing
+  secret). Booleans-only, no DOB/PII at rest; namespaced `issuer*`/`idv*` Firestore. `issuer-public/` is the
+  "verify your age" frontend; `admin/` is the standalone admin-console SPA (admin.kunji.cc). SD-JWT core +
   OID4VCI helpers reused via byte-identical ports `issuer-functions/{vc.js,oid4vc.js}` (parity-guarded). See
   `docs/issuer.md`. **A trusted-third-party role — the opposite posture from the zero-knowledge wallet.**
 - `landing/` — marketing site + `rp.js` (the built drop-in "Sign in with kunji" widget).

@@ -108,5 +108,18 @@ service cloud.firestore {
     match /credentialSessions/{sessionId} {
       allow read, write: if false;
     }
+
+    // Real age issuer (issuer.kunji.cc) — every collection is function-mediated via the `issuer` Functions
+    // codebase (Admin SDK, which bypasses these rules). Clients have NO direct access: the public issuer
+    // endpoints and the auth-gated admin console (issuerAdminApi, gated by the `admin:true` custom claim)
+    // are the only paths in. These were already denied by default; the explicit deny documents the intent
+    // and guards against a future rules change accidentally exposing the ledger / IDV sessions / tokens.
+    match /issuerCredentials/{d} { allow read, write: if false; }
+    match /issuerStatusList/{d} { allow read, write: if false; }
+    match /issuerOffers/{d} { allow read, write: if false; }
+    match /issuerTokens/{d} { allow read, write: if false; }
+    match /issuerRateLimits/{d} { allow read, write: if false; }
+    match /idvSessions/{d} { allow read, write: if false; }
+    match /issuerAdmins/{d} { allow read, write: if false; }
   }
 }

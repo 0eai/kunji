@@ -2,21 +2,10 @@ import js from '@eslint/js';
 import globals from 'globals';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
-import prettier from 'eslint-config-prettier';
 
+// Self-contained (the root ESLint ignores admin/). Mirrors the root's React-19 / automatic-runtime setup.
 export default [
-  {
-    ignores: [
-      'dist',
-      '**/dist/**',
-      'landing/rp.js',
-      'landing/rp.v1.js',
-      'landing/kunji-agent-demo.js',
-      'admin',
-      'reports',
-      'eslint.config.js',
-    ],
-  },
+  { ignores: ['dist'] },
   js.configs.recommended,
   {
     files: ['**/*.{js,jsx}'],
@@ -29,16 +18,11 @@ export default [
     settings: { react: { version: 'detect' } },
     plugins: { react, 'react-hooks': reactHooks },
     rules: {
-      // JSX automatic runtime: components used in JSX count as used; no React import needed.
       'react/jsx-uses-vars': 'error',
-      'react/jsx-uses-react': 'off',
       'react/react-in-jsx-scope': 'off',
-      // The two classic hooks rules; keep deps as a warning (codebase has intentional disables).
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^(React|_)' }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
     },
   },
-  prettier, // turn off ESLint rules that conflict with Prettier (keep last)
 ];
