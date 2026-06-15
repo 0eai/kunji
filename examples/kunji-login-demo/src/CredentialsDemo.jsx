@@ -1,16 +1,27 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { renderBrandedQr } from './qr.js';
 
-// Verified-credentials demo: issuance (OpenID4VCI) + presentation (OpenID4VP) against the real kunji
-// wallet. The page only renders the wallet-accepted QR/deep-link payloads + polls the verify result —
-// the issuer + verifier are this demo's own Cloud Functions (see functions/index.js).
+// Verified-credentials demo: issuance (OpenID4VCI / kunji-native) + presentation (OpenID4VP) against the
+// real kunji wallet. A configurable playground — pick the credential FORMAT (SD-JWT or unlinkable BBS) and
+// WHICH age threshold to prove. The issuer + verifier are this demo's own Cloud Functions (functions/index.js).
 const KUNJI_APP_URL = 'https://app.kunji.cc';
+// The canonical issuer origin the credentials bind to (`iss`). BBS receipt requires the user to paste THIS
+// exact URL into the wallet (it enforces credential.iss === the URL you give it).
+const ISSUER_ORIGIN = 'https://kunji-demo.web.app';
+
+const THRESHOLDS = [13, 16, 18, 21];
 
 export default function CredentialsDemo({ onBack }) {
-  // 1. Issuance
+  // Format governs the whole flow: receive that format, then prove with it.
+  const [format, setFormat] = useState('sdjwt'); // 'sdjwt' | 'bbs'
+  const [threshold, setThreshold] = useState(18);
+
+  // 1. Issuance (SD-JWT, OpenID4VCI offer flow)
   const [offerUri, setOfferUri] = useState('');
   const [offerErr, setOfferErr] = useState('');
   const offerQrRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   // 2. Presentation
   const [vpUri, setVpUri] = useState('');
   const [vpErr, setVpErr] = useState('');
@@ -26,6 +37,17 @@ export default function CredentialsDemo({ onBack }) {
   }, [vpUri]);
   useEffect(() => () => clearInterval(pollRef.current), []);
 
+  // Switching format resets the in-progress issuance/presentation so the two paths never get crossed.
+  const pickFormat = (f) => {
+    setFormat(f);
+    setOfferUri('');
+    setOfferErr('');
+    setVpUri('');
+    setVpErr('');
+    setResult(null);
+    clearInterval(pollRef.current);
+  };
+
   const getOffer = useCallback(async () => {
     setOfferErr('');
     try {
@@ -37,12 +59,14 @@ export default function CredentialsDemo({ onBack }) {
     }
   }, []);
 
-  const proveAge = useCallback(async () => {
+  const prove = useCallback(async () => {
     setVpErr('');
     setResult(null);
     clearInterval(pollRef.current);
+    const claim = `age_over_${threshold}`;
+    const qs = new URLSearchParams({ claim, ...(format === 'bbs' ? { format: 'bbs' } : {}) });
     try {
-      const r = await fetch('/oid4vp/request');
+      const r = await fetch(`/oid4vp/request?${qs}`);
       if (!r.ok) throw new Error('request');
       const { state, requestUri } = await r.json();
       setVpUri(requestUri);
@@ -55,7 +79,7 @@ export default function CredentialsDemo({ onBack }) {
           const s = await rr.json();
           if (s.approved) {
             clearInterval(pollRef.current);
-            setResult({ claims: s.claims || {} });
+            setResult({ claims: s.claims || {}, threshold });
           }
         } catch {
           /* transient */
@@ -66,12 +90,11 @@ export default function CredentialsDemo({ onBack }) {
     } catch {
       setVpErr('Could not reach the verifier. Try again.');
     }
-  }, []);
+  }, [threshold, format]);
 
   // Same-device deep links the wallet handles: ?vp= (present) and ?offer= (receive an OpenID4VCI offer).
   const vpDeepLink = vpUri ? `${KUNJI_APP_URL}/?vp=${encodeURIComponent(vpUri)}` : '';
   const offerDeepLink = offerUri ? `${KUNJI_APP_URL}/?offer=${encodeURIComponent(offerUri)}` : '';
-  const [copied, setCopied] = useState(false);
   const copyOffer = async () => {
     try {
       await navigator.clipboard.writeText(offerUri);
@@ -81,66 +104,127 @@ export default function CredentialsDemo({ onBack }) {
       /* clipboard blocked */
     }
   };
+  const copyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(ISSUER_ORIGIN);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+
+  const fmtBtn = (id, label) => (
+    <button
+      onClick={() => pickFormat(id)}
+      className={`px-4 py-2 text-[13px] font-semibold rounded-full transition-colors ${
+        format === id ? 'bg-ink text-paper' : 'border border-line text-muted hover:text-ink'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <main className="flex-1 flex flex-col max-w-[34rem] w-full mx-auto px-6 py-10 animate-rise">
       <header className="flex items-center gap-2 mb-8">
-        <img src="https://kunji.cc/icon.svg" alt="" className="w-6 h-6" />
-        <span className="text-[15px] font-medium text-faint">Kunji Demo · Verified credentials</span>
+        <img src="/icon.svg" alt="" className="w-6 h-6" />
+        <span className="text-[15px] font-medium text-faint">kunji · verified credentials</span>
         {onBack && (
           <button onClick={onBack} className="ml-auto text-[13px] text-muted hover:text-ink underline-offset-2 hover:underline">
-            ← Sign-in demo
+            ← demos
           </button>
         )}
       </header>
 
       <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight">Verified credentials</h1>
-      <p className="text-[15px] text-muted mt-1 mb-8">
+      <p className="text-[15px] text-muted mt-1 mb-6">
         Get a demo credential into your kunji wallet, then prove a fact from it — selective disclosure, no
         account, the issuer never sees where you present it.
       </p>
 
+      {/* Format toggle — governs the whole flow */}
+      <div className="rounded-2xl border border-line p-4 mb-6">
+        <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Credential format</p>
+        <div className="flex gap-2">
+          {fmtBtn('sdjwt', 'SD-JWT')}
+          {fmtBtn('bbs', 'BBS · unlinkable')}
+        </div>
+        <p className="text-[13px] text-muted mt-3">
+          {format === 'sdjwt'
+            ? 'A signed SD-JWT VC with pre-baked age thresholds. Selective disclosure; one-time-use copies for unlinkability across presentations (v2).'
+            : 'An unlinkable BBS credential (v3): one credential derives a fresh zero-knowledge proof per presentation — not even the issuer can correlate them. Holder-bound (non-transferable).'}
+        </p>
+      </div>
+
       {/* Card 1 — issuance */}
       <section className="rounded-2xl border border-line p-6 mb-6">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-1">Step 1 · OpenID4VCI</p>
-        <h2 className="text-[1.25rem] font-semibold tracking-tight">Get a demo age credential</h2>
+        <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-1">Step 1 · Get the credential</p>
+        <h2 className="text-[1.25rem] font-semibold tracking-tight">
+          Get a demo age credential{format === 'bbs' ? ' (unlinkable)' : ''}
+        </h2>
         <p className="text-[14px] text-muted mt-1">
-          A signed SD-JWT VC with pre-baked age thresholds (booleans only — never your date of birth).
+          Pre-baked age thresholds (booleans only — never your date of birth).
         </p>
-        {!offerUri ? (
-          <button
-            onClick={getOffer}
-            className="inline-flex items-center justify-center mt-5 px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity"
-          >
-            Get credential
-          </button>
+
+        {format === 'sdjwt' ? (
+          !offerUri ? (
+            <button
+              onClick={getOffer}
+              className="inline-flex items-center justify-center mt-5 px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity"
+            >
+              Get credential
+            </button>
+          ) : (
+            <div className="mt-5">
+              <div ref={offerQrRef} className="relative inline-flex rounded-2xl border border-line bg-white p-3" />
+              <p className="text-[13px] text-muted mt-3">
+                Scan with the kunji app, or tap below on this device, then approve.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <a
+                  href={offerDeepLink}
+                  className="inline-flex items-center justify-center px-4 py-2 text-[13px] bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+                >
+                  Open in kunji on this device
+                </a>
+                <button
+                  onClick={copyOffer}
+                  className="inline-flex items-center justify-center px-4 py-2 text-[13px] border border-line text-muted hover:text-ink rounded-full transition-colors"
+                >
+                  {copied ? 'Copied ✓' : 'Copy offer'}
+                </button>
+              </div>
+              <p className="text-[12px] text-faint mt-3">
+                This offer is single-use and expires shortly.{' '}
+                <button onClick={getOffer} className="text-accent hover:text-ink underline underline-offset-2">
+                  Get a fresh offer
+                </button>{' '}
+                if it was already used.
+              </p>
+            </div>
+          )
         ) : (
           <div className="mt-5">
-            <div ref={offerQrRef} className="relative inline-flex rounded-2xl border border-line bg-white p-3" />
-            <p className="text-[13px] text-muted mt-3">
-              Scan with the kunji app, or tap below on this device, then approve.
+            <p className="text-[14px] text-muted">
+              BBS receipt uses the wallet's issuer-URL field (no deep link). In kunji:
             </p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <a
-                href={offerDeepLink}
-                className="inline-flex items-center justify-center px-4 py-2 text-[13px] bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
-              >
-                Open in kunji on this device
-              </a>
+            <ol className="text-[14px] text-muted mt-2 ml-4 list-decimal space-y-1">
+              <li>Open <b className="text-ink">Credentials → Receive a credential</b>.</li>
+              <li>Turn on <b className="text-ink">Unlinkable (BBS)</b>.</li>
+              <li>Paste the issuer URL below and tap receive.</li>
+            </ol>
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              <code className="font-mono text-[13px] text-ink bg-accent-soft border border-line rounded-lg px-3 py-2">
+                {ISSUER_ORIGIN}
+              </code>
               <button
-                onClick={copyOffer}
+                onClick={copyUrl}
                 className="inline-flex items-center justify-center px-4 py-2 text-[13px] border border-line text-muted hover:text-ink rounded-full transition-colors"
               >
-                {copied ? 'Copied ✓' : 'Copy offer'}
+                {copiedUrl ? 'Copied ✓' : 'Copy URL'}
               </button>
             </div>
-            <p className="text-[12px] text-faint mt-3">
-              This offer is single-use and expires shortly.{' '}
-              <button onClick={getOffer} className="text-accent hover:text-ink underline underline-offset-2">
-                Get a fresh offer
-              </button>{' '}
-              if it was already used.
-            </p>
           </div>
         )}
         {offerErr && <p className="text-[13px] text-danger mt-3">{offerErr}</p>}
@@ -149,27 +233,48 @@ export default function CredentialsDemo({ onBack }) {
       {/* Card 2 — presentation */}
       <section className="rounded-2xl border border-line p-6">
         <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-1">Step 2 · OpenID4VP</p>
-        <h2 className="text-[1.25rem] font-semibold tracking-tight">Prove you&rsquo;re over 18</h2>
+        <h2 className="text-[1.25rem] font-semibold tracking-tight">Prove an age threshold</h2>
         <p className="text-[14px] text-muted mt-1">
-          The demo asks only for <span className="font-mono text-ink">age_over_18</span>. Nothing else from the
-          credential is revealed.
+          The demo asks only for the one predicate you choose. Nothing else from the credential is revealed.
         </p>
+
+        <div className="mt-4">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Prove you&rsquo;re over…</p>
+          <div className="flex flex-wrap gap-2">
+            {THRESHOLDS.map((n) => (
+              <button
+                key={n}
+                onClick={() => setThreshold(n)}
+                className={`px-4 py-2 text-[13px] font-semibold rounded-full transition-colors ${
+                  threshold === n ? 'bg-accent-fill text-ink' : 'border border-line text-muted hover:text-ink'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="text-[12px] text-faint mt-2">
+            Requests <span className="font-mono text-ink">age_over_{threshold}</span> ·{' '}
+            <span className="font-mono text-ink">{format === 'bbs' ? 'vc+bbs' : 'vc+sd-jwt'}</span>
+          </p>
+        </div>
+
         {result && result.claims ? (
           <div className="mt-5 rounded-xl bg-success/10 border border-success/30 p-4">
-            <p className="text-[15px] font-semibold text-success">Verified — over 18 ✓</p>
+            <p className="text-[15px] font-semibold text-success">Verified — over {result.threshold} ✓</p>
             <p className="text-[13px] text-muted mt-1">
               Disclosed: <span className="font-mono text-ink">{JSON.stringify(result.claims)}</span>
             </p>
-            <button onClick={proveAge} className="text-[13px] text-muted hover:text-ink mt-3 underline-offset-2 hover:underline">
+            <button onClick={prove} className="text-[13px] text-muted hover:text-ink mt-3 underline-offset-2 hover:underline">
               Run again
             </button>
           </div>
         ) : !vpUri ? (
           <button
-            onClick={proveAge}
+            onClick={prove}
             className="inline-flex items-center justify-center mt-5 px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity"
           >
-            Prove you&rsquo;re over 18
+            Prove you&rsquo;re over {threshold}
           </button>
         ) : (
           <div className="mt-5">

@@ -11,7 +11,7 @@ export default [
       '**/dist/**',
       'landing/rp.js',
       'landing/rp.v1.js',
-      'landing/kunji-agent-demo.js',
+      'examples/kunji-login-demo/public/kunji-agent-demo.js',
       'admin',
       'issuer-web',
       'reports',

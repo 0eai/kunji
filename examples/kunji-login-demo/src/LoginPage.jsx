@@ -5,7 +5,7 @@ import QRCodeStyling from 'qr-code-styling';
 // Here it's the current origin (audience = hostname; callback is same-site via Hosting rewrite).
 const AUDIENCE = window.location.hostname;
 const CALLBACK_URL = `${window.location.origin}/kunji/callback`;
-const APP_NAME = 'Kunji Demo';
+const APP_NAME = 'kunji demo';
 const KUNJI_APP_URL = 'https://app.kunji.cc';
 
 // Brand-styled QR: extra-rounded modules + the kunji app-icon logo (amber tile + dark key),
@@ -290,8 +290,14 @@ export default function LoginPage({ onSuccess }) {
   return (
     <>
       <header className="flex items-center gap-2 max-w-[26rem] w-full mx-auto px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
-        <img src="https://kunji.cc/icon.svg" alt="" className="w-6 h-6" />
-        <span className="text-[15px] font-medium text-faint">Kunji Demo</span>
+        <img src="/icon.svg" alt="" className="w-6 h-6" />
+        <span className="text-[15px] font-medium text-faint">kunji · sign in</span>
+        <a
+          href="#"
+          className="ml-auto text-[13px] text-muted hover:text-ink underline-offset-2 hover:underline"
+        >
+          ← demos
+        </a>
       </header>
 
       <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise">

@@ -10,6 +10,10 @@
   </head>
   <body style="background: #faf9f6">
     <div id="root"></div>
+    <!-- The drop-in widget (#rpjs) + the agent-demo bundle (#agentic). Classic scripts → they define
+         window.kunji / window.kunjiAgentDemo before the deferred React module mounts. -->
+    <script src="https://kunji.cc/rp.js"></script>
+    <script src="/kunji-agent-demo.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -4,12 +4,12 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 import { verifyAssertion } from './verify.js';
-import { verifyCapabilityAssertion } from './capability.js';
+import { verifyCapabilityAssertion, scopeSatisfies } from './capability.js';
 import { verifyCredentialPresentation, parseVcScope } from './vc.js';
 import { verifyBbsPresentation, isBbsPresentation, decodeBbsPresentation } from './vcBbs.js';
 import { b64uToBytes } from './bbs.js';
 import { verifyProofJwt } from './oid4vc.js';
-import { issuerKey, issuerWellKnown, credentialIssuerMetadata, authServerMetadata, mintAgeCredential, MAX_BATCH } from './issuer.js';
+import { issuerKey, issuerBbsKey, issuerWellKnown, credentialIssuerMetadata, authServerMetadata, mintAgeCredential, issueBbs, MAX_BATCH } from './issuer.js';
 import { verifierKey, verifierWellKnown, buildVpRequest, verifyVp } from './verifier.js';
 
 initializeApp();
@@ -21,6 +21,9 @@ const SESSION_TTL_MS = 2 * 60 * 1000;
 // `firebase functions:secrets:set ISSUER_SIGNING_KEY` / `VERIFIER_SIGNING_KEY` (base64 Ed25519 secret key).
 const ISSUER_SIGNING_KEY = defineSecret('ISSUER_SIGNING_KEY');
 const VERIFIER_SIGNING_KEY = defineSecret('VERIFIER_SIGNING_KEY');
+// The issuer's BBS secret (base64url) for unlinkable (v3) credentials — set with
+// `firebase functions:secrets:set ISSUER_BBS_KEY` (a fresh `bbsKeyGen` secret, see issuer.js).
+const ISSUER_BBS_KEY = defineSecret('ISSUER_BBS_KEY');
 // The demo's public origin — the `credential_issuer`/`iss`/`client_id` the wallet fetches + binds to. Must
 // be the live host (override via DEMO_ORIGIN env for the emulator). The wallet rejects a non-https issuer.
 const DEMO_ORIGIN = process.env.DEMO_ORIGIN || 'https://kunji-demo.web.app';
@@ -42,6 +45,12 @@ const allocStatusIdxs = async (n) => {
 // Local trust-anchor resolution for the verifier: the credential's `iss` IS this same demo, so resolve the
 // issuer keys + StatusList locally (no self-fetch). getIssuerKeys/checkStatus shapes match verifyVpToken.
 const localIssuerKeys = (iss) => (iss === DEMO_ORIGIN ? issuerWellKnown(DEMO_ORIGIN, issuerKey(ISSUER_SIGNING_KEY.value()).publicKey).keys : []);
+// Resolve the issuer's BBS public key locally (the credential's `iss` IS this demo) — for verifying a
+// posted unlinkable (v3) presentation, no self-fetch.
+const localIssuerBbsKey = async (iss) => {
+  if (iss !== DEMO_ORIGIN) throw new Error('issuer_bbs_key_not_found');
+  return (await issuerBbsKey(ISSUER_BBS_KEY.value())).publicKey;
+};
 const localCheckStatus = async (_uri, idx) => {
   const snap = await db.collection('statusList').doc('age').get();
   const revoked = (snap.exists && snap.data().revoked) || [];
@@ -303,6 +312,19 @@ export const kunjiAgent = onRequest({ cors: true, maxInstances: 5, memory: '256M
   }
 });
 
+// A scope-GATED resource for the step-up demo: returns a (demo) profile only if the approved session's
+// scope satisfies `read:profile`; else `403 insufficient_scope` + the `need`. Proves backendless scope
+// enforcement (docs/scope.md) with the SAME `scopeSatisfies` the wallet uses — the agent must step up
+// (re-consent for the broader scope) to pass. `sessionId` is this demo's bearer handle (as elsewhere).
+export const apiProfile = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
+  const snap = await sessionRef(String(req.query.sessionId || '')).get();
+  const s = snap.exists ? snap.data() : null;
+  if (!s || s.status !== 'approved') return res.status(401).json({ error: 'not_authenticated' });
+  if (!scopeSatisfies(s.scope || [], [{ id: 'read:profile' }]))
+    return res.status(403).json({ error: 'insufficient_scope', need: 'read:profile', have: s.scope || [] });
+  res.json({ profile: { name: 'Ada Lovelace', plan: 'demo', note: 'Released because the session holds read:profile.' }, sub: s.sub, scope: s.scope });
+});
+
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
 // Live verified-credentials demo — OpenID4VCI issuance + OpenID4VP presentation against the real wallet.
 // DEMO ONLY: the issuer mints `age_over_18` to anyone (rate-limited); a real issuer authenticates the
@@ -312,9 +334,40 @@ export const kunjiAgent = onRequest({ cors: true, maxInstances: 5, memory: '256M
 // ── Issuer metadata + trust anchor ──
 export const issuerMetadata = onRequest(vcOpts([]), (_req, res) => res.json(credentialIssuerMetadata(DEMO_ORIGIN)));
 export const oauthMetadata = onRequest(vcOpts([]), (_req, res) => res.json(authServerMetadata(DEMO_ORIGIN)));
-export const issuerWellKnownFn = onRequest(vcOpts([ISSUER_SIGNING_KEY]), (_req, res) =>
-  res.json(issuerWellKnown(DEMO_ORIGIN, issuerKey(ISSUER_SIGNING_KEY.value()).publicKey)),
-);
+export const issuerWellKnownFn = onRequest(vcOpts([ISSUER_SIGNING_KEY, ISSUER_BBS_KEY]), async (_req, res) => {
+  const { publicKey: bbsPublicKey } = await issuerBbsKey(ISSUER_BBS_KEY.value());
+  res.json(issuerWellKnown(DEMO_ORIGIN, issuerKey(ISSUER_SIGNING_KEY.value()).publicKey, bbsPublicKey));
+});
+
+// POST /issue → kunji-native issuance (the wallet's "Issuer URL" receive). Mints an UNLINKABLE BBS
+// credential ({ format:'bbs', holderBinding }) or SD-JWT copies ({ holderJwks } | { holderJwk }). The
+// OID4VCI offer flow (/credential-offer → /token → /credential) is the other, standards path (SD-JWT).
+// DEMO ONLY: mints to anyone (rate-limited); a real issuer authenticates the subject first.
+export const issueCredential = onRequest(vcOpts([ISSUER_SIGNING_KEY, ISSUER_BBS_KEY]), async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  if (await rateLimited(req.ip, 30, 60 * 1000, 'vci')) return res.status(429).json({ error: 'rate_limited' });
+  const body = req.body || {};
+
+  // Unlinkable ask (v3, BBS): one credential, fresh ZK proof per presentation — no holder key needed.
+  if (body.format === 'bbs') {
+    const { secretKey, publicKey } = await issuerBbsKey(ISSUER_BBS_KEY.value());
+    const credential = await issueBbs({ secretKey, publicKey, origin: DEMO_ORIGIN, holderBinding: body.holderBinding });
+    return res.json({ credential, issuer: DEMO_ORIGIN });
+  }
+
+  const { secretKey } = issuerKey(ISSUER_SIGNING_KEY.value());
+  // Batch ask (unlinkability v2): one one-time copy per holder key, each its own signature + status idx.
+  if (Array.isArray(body.holderJwks) && body.holderJwks.length) {
+    if (body.holderJwks.length > MAX_BATCH) return res.status(400).json({ error: 'batch_too_large', max: MAX_BATCH });
+    const idxs = await allocStatusIdxs(body.holderJwks.length);
+    const credentials = body.holderJwks.map((holderJwk, i) => mintAgeCredential({ secretKey, origin: DEMO_ORIGIN, holderJwk, idx: idxs[i] }));
+    return res.json({ credentials, issuer: DEMO_ORIGIN });
+  }
+  if (!body.holderJwk) return res.status(400).json({ error: 'holderJwk_required' });
+  const [idx] = await allocStatusIdxs(1);
+  const credential = mintAgeCredential({ secretKey, origin: DEMO_ORIGIN, holderJwk: body.holderJwk, idx });
+  return res.json({ credential, idx, issuer: DEMO_ORIGIN });
+});
 
 // ── OpenID4VCI: offer → token → credential ──
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
@@ -395,19 +448,23 @@ export const verifierWellKnownFn = onRequest(vcOpts([VERIFIER_SIGNING_KEY]), (_r
   res.json(verifierWellKnown(DEMO_ORIGIN, verifierKey(VERIFIER_SIGNING_KEY.value()).publicKey)),
 );
 
-// GET /oid4vp/request → a signed JAR asking for age_over_18 (DCQL) + a state to poll.
+// GET /oid4vp/request?claim=&format= → a signed JAR (DCQL) + a state to poll. `claim` picks which age
+// predicate to prove (age_over_13/16/18/21, allow-listed, default 18); `format=bbs` asks for the
+// unlinkable (v3) credential instead of SD-JWT.
 export const oid4vpRequest = onRequest(vcOpts([VERIFIER_SIGNING_KEY]), async (req, res) => {
   if (await rateLimited(req.ip, 30, 60 * 1000, 'vci')) return res.status(429).json({ error: 'rate_limited' });
   const state = token(16);
   const nonce = token(24);
+  const claim = String(req.query.claim || '');
+  const format = String(req.query.format || '');
   const { secretKey } = verifierKey(VERIFIER_SIGNING_KEY.value());
-  const { requestUri, dcqlQuery } = buildVpRequest({ secretKey, clientId: DEMO_ORIGIN, base: DEMO_ORIGIN, state, nonce });
+  const { requestUri, dcqlQuery } = buildVpRequest({ secretKey, clientId: DEMO_ORIGIN, base: DEMO_ORIGIN, state, nonce, claim, format });
   await db.collection('oid4vpRequests').doc(state).set({ nonce, dcqlQuery, approved: null, claims: null, ttl: ttlAfter(VC_TTL_MS) });
   res.json({ state, requestUri });
 });
 
 // POST /oid4vp/response ← { vp_token, state } — the wallet's direct_post. Verify + record the result.
-export const oid4vpResponse = onRequest(vcOpts([ISSUER_SIGNING_KEY]), async (req, res) => {
+export const oid4vpResponse = onRequest(vcOpts([ISSUER_SIGNING_KEY, ISSUER_BBS_KEY]), async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
   const { vp_token, state } = req.body || {};
   const ref = db.collection('oid4vpRequests').doc(String(state || ''));
@@ -420,6 +477,7 @@ export const oid4vpResponse = onRequest(vcOpts([ISSUER_SIGNING_KEY]), async (req
     clientId: DEMO_ORIGIN,
     nonce: rec.nonce,
     getIssuerKeys: async (iss) => localIssuerKeys(iss),
+    getIssuerBbsKey: localIssuerBbsKey, // verify an unlinkable (v3) presentation against the local BBS key
     checkStatus: localCheckStatus,
   });
   if (!r.ok) return res.status(400).json({ error: r.error });

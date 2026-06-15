@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.js --bundle --format=iife --platform=browser --minify --legal-comments=none --outfile=../landing/rp.js && cp ../landing/rp.js ../landing/rp.v1.js && esbuild src/agent-demo.js --bundle --format=iife --platform=browser --minify --legal-comments=none --outfile=../landing/kunji-agent-demo.js"
+    "build": "esbuild src/index.js --bundle --format=iife --platform=browser --minify --legal-comments=none --outfile=../landing/rp.js && cp ../landing/rp.js ../landing/rp.v1.js && esbuild src/agent-demo.js --bundle --format=iife --platform=browser --minify --legal-comments=none --outfile=../examples/kunji-login-demo/public/kunji-agent-demo.js"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1",

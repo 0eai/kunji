@@ -1,0 +1,135 @@
+{
+  "recorded": true,
+  "steps": [
+    {
+      "step": "keygen",
+      "label": "Generated the agent key + transport key",
+      "data": {
+        "agentPub": "PHjogI4du0pBoaDeTtHvC/9EQwOhZxjGR0XelQqt+ww="
+      }
+    },
+    {
+      "step": "request",
+      "label": "Built the authorization request",
+      "data": {
+        "request": {
+          "kunjiCap": "v2",
+          "audience": "kunji-demo.web.app",
+          "scope": [
+            "login"
+          ],
+          "agentPub": "PHjogI4du0pBoaDeTtHvC/9EQwOhZxjGR0XelQqt+ww=",
+          "transportPub": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEX1l7v3e/m2AunGT+PhcY6yscnzqY6cOLzIZPyqKVK//iANtUgMbruxI2ATa2qIfEi/v2qKPJbL5NPbjMYtrS1w==",
+          "sessionId": "6ad6a7e1b81856aba65d63829e0e6697bafb6f5a9810711048a90d3bd9e70ba1"
+        }
+      }
+    },
+    {
+      "step": "code",
+      "label": "Got a 6-digit code from the relay",
+      "data": {
+        "code": "418207"
+      }
+    },
+    {
+      "step": "await",
+      "label": "Waiting for you to approve in the wallet…"
+    },
+    {
+      "step": "capability",
+      "label": "Capability received & decrypted",
+      "data": {
+        "capabilityClaims": {
+          "sub": "6de345296941d8940e8663a175c578fa8985e5857c14acc6420ce2801f8c3ec3",
+          "aud": "kunji-demo.web.app",
+          "scope": [
+            "login"
+          ],
+          "exp": 1780944145,
+          "jti": "b7b1524f44c852d83deb850fe7279ca2"
+        },
+        "capability": "eyJhbGciOiJFZERTQSIsInR5cCI6Imt1bmppLWNhcCtqd3QiLCJqd2siOnsia3R5IjoiT0tQIiwiY3J2IjoiRWQyNTUxOSIsIngiOiIwT01KbmRwNW9VWWxVWjhnRW9NdGNCS1gwcS1DUTF2eE5mZ2QxaTl4a1h3In19.eyJpc3MiOiI2ZGUzNDUyOTY5NDFkODk0MGU4NjYzYTE3NWM1NzhmYTg5ODVlNTg1N2MxNGFjYzY0MjBjZTI4MDFmOGMzZWMzIiwic3ViIjoiNmRlMzQ1Mjk2OTQxZDg5NDBlODY2M2ExNzVjNTc4ZmE4OTg1ZTU4NTdjMTRhY2M2NDIwY2UyODAxZjhjM2VjMyIsImF1ZCI6Imt1bmppLWRlbW8ud2ViLmFwcCIsInNjb3BlIjpbImxvZ2luIl0sImlhdCI6MTc4MDk0MDU0NSwiZXhwIjoxNzgwOTQ0MTQ1LCJqdGkiOiJiN2IxNTI0ZjQ0Yzg1MmQ4M2RlYjg1MGZlNzI3OWNhMiIsImNuZiI6eyJqd2siOnsia3R5IjoiT0tQIiwiY3J2IjoiRWQyNTUxOSIsIngiOiJQSGpvZ0k0ZHUwcEJvYURlVHRIdkNfOUVRd09oWnhqR1IwWGVsUXF0LXd3In19fQ.qvtIjLHePQq53MyvHbcTMxna5p_jk0a0-Vs2VlGCuBytbsHU5Eow5l4hLBKDzyVnR1wLMNRZ27JVfCQZ-FZtAQ"
+      }
+    },
+    {
+      "step": "session",
+      "label": "Created a login session at the RP",
+      "data": {
+        "sessionId": "NwfXKJcSwySdAxfDbEF6cA",
+        "challenge": "T75IzuceyV5GCmgUI4K0N1KWe8ejWZ9Mq6ZNqPCd5Mk"
+      }
+    },
+    {
+      "step": "proof",
+      "label": "Signed the holder-of-key proof",
+      "data": {
+        "agentProof": "eyJhbGciOiJFZERTQSIsInR5cCI6Imt1bmppLWFnZW50cHJvb2Yrand0In0.eyJhdWQiOiJrdW5qaS1kZW1vLndlYi5hcHAiLCJjaGFsbGVuZ2UiOiJUNzVJenVjZXlWNUdDbWdVSTRLME4xS1dlOGVqV1o5TXE2Wk5xUENkNU1rIiwiaWF0IjoxNzgwOTQwNTQ1LCJqdGkiOiIwNjc0OWZhOWIzNmJkZThjNDAxMjUxZmQwNzEyMDAyYyIsImNhcCI6ImI3YjE1MjRmNDRjODUyZDgzZGViODUwZmU3Mjc5Y2EyIn0.NQbnWG7hMOJGg-oSfawLQp23Wdxwhf6juBOzrI-lYgQ_mBoTQ6-KifL5dwf7Olx5cVmHX_iYeWKe6t2o7MRpAw"
+      }
+    },
+    {
+      "step": "login",
+      "label": "Submitted to /kunji/agent",
+      "data": {
+        "agentResponse": {
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "step": "status",
+      "label": "Verified at the RP",
+      "data": {
+        "status": {
+          "status": "approved",
+          "sub": "6de345296941d8940e8663a175c578fa8985e5857c14acc6420ce2801f8c3ec3",
+          "scope": [
+            "login"
+          ],
+          "agent": true
+        }
+      }
+    }
+  ],
+  "result": {
+    "status": "approved",
+    "sub": "6de345296941d8940e8663a175c578fa8985e5857c14acc6420ce2801f8c3ec3",
+    "scope": [
+      "login"
+    ],
+    "capabilityClaims": {
+      "sub": "6de345296941d8940e8663a175c578fa8985e5857c14acc6420ce2801f8c3ec3",
+      "aud": "kunji-demo.web.app",
+      "scope": [
+        "login"
+      ],
+      "exp": 1780944145,
+      "jti": "b7b1524f44c852d83deb850fe7279ca2"
+    },
+    "io": {
+      "request": {
+        "kunjiCap": "v2",
+        "audience": "kunji-demo.web.app",
+        "scope": [
+          "login"
+        ],
+        "agentPub": "PHjogI4du0pBoaDeTtHvC/9EQwOhZxjGR0XelQqt+ww=",
+        "transportPub": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEX1l7v3e/m2AunGT+PhcY6yscnzqY6cOLzIZPyqKVK//iANtUgMbruxI2ATa2qIfEi/v2qKPJbL5NPbjMYtrS1w==",
+        "sessionId": "6ad6a7e1b81856aba65d63829e0e6697bafb6f5a9810711048a90d3bd9e70ba1"
+      },
+      "code": "418207",
+      "capability": "eyJhbGciOiJFZERTQSIsInR5cCI6Imt1bmppLWNhcCtqd3QiLCJqd2siOnsia3R5IjoiT0tQIiwiY3J2IjoiRWQyNTUxOSIsIngiOiIwT01KbmRwNW9VWWxVWjhnRW9NdGNCS1gwcS1DUTF2eE5mZ2QxaTl4a1h3In19.eyJpc3MiOiI2ZGUzNDUyOTY5NDFkODk0MGU4NjYzYTE3NWM1NzhmYTg5ODVlNTg1N2MxNGFjYzY0MjBjZTI4MDFmOGMzZWMzIiwic3ViIjoiNmRlMzQ1Mjk2OTQxZDg5NDBlODY2M2ExNzVjNTc4ZmE4OTg1ZTU4NTdjMTRhY2M2NDIwY2UyODAxZjhjM2VjMyIsImF1ZCI6Imt1bmppLWRlbW8ud2ViLmFwcCIsInNjb3BlIjpbImxvZ2luIl0sImlhdCI6MTc4MDk0MDU0NSwiZXhwIjoxNzgwOTQ0MTQ1LCJqdGkiOiJiN2IxNTI0ZjQ0Yzg1MmQ4M2RlYjg1MGZlNzI3OWNhMiIsImNuZiI6eyJqd2siOnsia3R5IjoiT0tQIiwiY3J2IjoiRWQyNTUxOSIsIngiOiJQSGpvZ0k0ZHUwcEJvYURlVHRIdkNfOUVRd09oWnhqR1IwWGVsUXF0LXd3In19fQ.qvtIjLHePQq53MyvHbcTMxna5p_jk0a0-Vs2VlGCuBytbsHU5Eow5l4hLBKDzyVnR1wLMNRZ27JVfCQZ-FZtAQ",
+      "agentProof": "eyJhbGciOiJFZERTQSIsInR5cCI6Imt1bmppLWFnZW50cHJvb2Yrand0In0.eyJhdWQiOiJrdW5qaS1kZW1vLndlYi5hcHAiLCJjaGFsbGVuZ2UiOiJUNzVJenVjZXlWNUdDbWdVSTRLME4xS1dlOGVqV1o5TXE2Wk5xUENkNU1rIiwiaWF0IjoxNzgwOTQwNTQ1LCJqdGkiOiIwNjc0OWZhOWIzNmJkZThjNDAxMjUxZmQwNzEyMDAyYyIsImNhcCI6ImI3YjE1MjRmNDRjODUyZDgzZGViODUwZmU3Mjc5Y2EyIn0.NQbnWG7hMOJGg-oSfawLQp23Wdxwhf6juBOzrI-lYgQ_mBoTQ6-KifL5dwf7Olx5cVmHX_iYeWKe6t2o7MRpAw",
+      "agentResponse": {
+        "status": "ok"
+      },
+      "status": {
+        "status": "approved",
+        "sub": "6de345296941d8940e8663a175c578fa8985e5857c14acc6420ce2801f8c3ec3",
+        "scope": [
+          "login"
+        ],
+        "agent": true
+      }
+    }
+  }
+}

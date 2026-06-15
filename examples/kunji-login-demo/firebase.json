@@ -9,6 +9,10 @@
         "function": { "functionId": "createSession", "region": "us-central1" }
       },
       {
+        "source": "/api/profile",
+        "function": { "functionId": "apiProfile", "region": "us-central1" }
+      },
+      {
         "source": "/kunji/session",
         "function": { "functionId": "lookupSession", "region": "us-central1" }
       },
@@ -35,6 +39,10 @@
       {
         "source": "/.well-known/kunji-issuer.json",
         "function": { "functionId": "issuerWellKnownFn", "region": "us-central1" }
+      },
+      {
+        "source": "/issue",
+        "function": { "functionId": "issueCredential", "region": "us-central1" }
       },
       {
         "source": "/.well-known/kunji-verifier.json",
@@ -79,7 +87,7 @@
           { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            "value": "default-src 'self'; script-src 'self' https://kunji.cc; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://app.kunji.cc https://kunji-demo.web.app https://us-central1-kunji-cc.cloudfunctions.net; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
           },
           {
             "key": "Strict-Transport-Security",

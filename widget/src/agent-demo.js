@@ -177,9 +177,135 @@ export const run = async ({
   };
 };
 
+// ── Step-up (push-relay.md Transport ①) ───────────────────────────────────────────────────────────
+// One authorize round: build a v2 request for `scope` bound to `agentSk`, register it (→ 6-digit code +
+// same-device deep link), poll the relay for the wallet-deposited capability, and decrypt it. Reused
+// across both rounds of runStepUp with ONE agentSk so the wallet recognizes the same agent and shows a
+// DELTA re-consent on the second round.
+const authorizeRound = async ({ relay, aud, scope, agentSk, round, onStep, signal, pollMs, maxPolls }) => {
+  const aborted = () => signal && signal.aborted;
+  const step = (s, label, data) => onStep({ step: s, label, data: { round, ...data } });
+  const ecdh = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
+  const transportPub = bytesToB64(await subtle.exportKey('spki', ecdh.publicKey));
+  const agentPub = bytesToB64(ed25519.getPublicKey(agentSk));
+  const sessionId = randHex(32);
+  const request = { kunjiCap: 'v2', audience: aud, scope, agentPub, transportPub, sessionId };
+  const deepLink = `${relay}/?authorize=${b64urlFromString(JSON.stringify(request))}`;
+  step('request', 'Built the authorization request', { request, deepLink });
+
+  const reg = await post(`${relay}/agent/request`, request);
+  const code = /^\d{6}$/.test(String(reg.code)) ? reg.code : null;
+  if (!code) throw new Error(reg.error === 'rate_limited' ? 'Relay rate-limited — wait a moment.' : 'Relay unavailable.');
+  step('code', 'Got a 6-digit code from the relay', { code, deepLink, request });
+
+  step('await', 'Waiting for you to approve in the wallet…');
+  let deposited = null;
+  let warned429 = false;
+  for (let i = 0; i < maxPolls; i++) {
+    if (aborted()) throw new Error('aborted');
+    const r = await fetch(`${relay}/agent/capability?sessionId=${sessionId}`);
+    if (r.status === 410) throw new Error('Authorization expired before approval.');
+    if (r.ok) { deposited = await r.json(); break; }
+    if (r.status === 429) {
+      if (!warned429) { step('await', 'Relay busy — backing off, still waiting…'); warned429 = true; }
+      await sleep(pollMs * 2);
+      continue;
+    }
+    await sleep(pollMs);
+  }
+  if (!deposited) throw new Error('Timed out waiting for approval.');
+
+  const walletPub = await subtle.importKey('spki', b64ToBytes(deposited.walletPubE), { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+  const aesKey = await subtle.deriveKey({ name: 'ECDH', public: walletPub }, ecdh.privateKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const { iv, data } = deposited.encryptedCapability;
+  const ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(iv) }, aesKey, b64ToBytes(data));
+  const capability = JSON.parse(new TextDecoder().decode(ptBuf));
+  const capClaims = jwtPayload(capability);
+  step('capability', 'Capability received & decrypted', {
+    capabilityClaims: { sub: capClaims.sub, aud: capClaims.aud, scope: capClaims.scope, exp: capClaims.exp, jti: capClaims.jti },
+  });
+  return { capability, capClaims };
+};
+
+// Log in to the RP with a capability (session → holder-of-key proof → /kunji/agent → status).
+const loginRound = async ({ base, aud, agentSk, capability, capClaims, round, onStep }) => {
+  const step = (s, label, data) => onStep({ step: s, label, data: { round, ...data } });
+  const session = await post(`${base}/api/session`, { audience: aud, callbackUrl: `${base}/kunji/callback` });
+  if (!session.sessionId) throw new Error('createSession failed.');
+  const agentProof = signJWS(
+    { alg: 'EdDSA', typ: 'kunji-agentproof+jwt' },
+    { aud, challenge: session.challenge, iat: Math.floor(Date.now() / 1000), jti: randHex(16), cap: capClaims.jti },
+    agentSk,
+  );
+  const agentResponse = await post(`${base}/kunji/agent`, { sessionId: session.sessionId, capability, agentProof });
+  const status = await fetch(`${base}/kunji/status?sessionId=${session.sessionId}`).then((r) => r.json()).catch(() => ({}));
+  step('login', 'Logged in at the RP', { agentResponse, status, scope: status.scope || capClaims.scope });
+  return { rpSessionId: session.sessionId, status };
+};
+
+const getJson = async (url) => {
+  const r = await fetch(url);
+  let body = {};
+  try { body = await r.json(); } catch { /* non-JSON */ }
+  return { status: r.status, body };
+};
+
+/**
+ * Step-up demo (Transport ①): connect at `['login']`, hit a scope-gated RP action (`/api/profile`),
+ * get a 403 insufficient_scope, then re-authorize the SAME agent at `['login', need]` — the wallet
+ * shows a DELTA re-consent — and retry the action to a 200. Two real approvals in your wallet.
+ */
+export const runStepUp = async ({
+  relayUrl = 'https://app.kunji.cc',
+  rpBase = 'https://kunji-demo.web.app',
+  audience,
+  onStep = () => {},
+  signal,
+  pollMs = 3000,
+  maxPolls = 100,
+} = {}) => {
+  const relay = relayUrl.replace(/\/$/, '');
+  const base = rpBase.replace(/\/$/, '');
+  const aud = audience || new URL(base).hostname;
+  const step = (s, label, data) => onStep({ step: s, label, data });
+
+  const agentSk = ed25519.keygen().secretKey; // ONE key across both rounds → the wallet sees one agent
+  step('keygen', 'Generated the agent key', { agentPub: bytesToB64(ed25519.getPublicKey(agentSk)) });
+
+  // Round 1 — connect with the narrow `login` scope.
+  const opts = { relay, base, aud, agentSk, onStep, signal, pollMs, maxPolls };
+  const r1 = await authorizeRound({ ...opts, scope: ['login'], round: 1 });
+  const l1 = await loginRound({ ...opts, capability: r1.capability, capClaims: r1.capClaims, round: 1 });
+
+  // Hit the scope-gated resource → expect 403 insufficient_scope.
+  let gated = await getJson(`${base}/api/profile?sessionId=${l1.rpSessionId}`);
+  if (gated.status === 200) {
+    step('gated-ok', 'Gated action already allowed', { profile: gated.body.profile });
+    return { status: 'approved', scope: l1.status.scope, profile: gated.body.profile, steppedUp: false };
+  }
+  const need = gated.body?.need || 'read:profile';
+  step('gated-denied', `403 insufficient_scope — needs "${need}"`, { status: gated.status, need });
+
+  // Round 2 — step up: re-authorize the SAME agent for the broader scope (wallet shows the delta).
+  step('stepup', `Requesting the extra scope "${need}" — approve the delta in your wallet`, { need });
+  const r2 = await authorizeRound({ ...opts, scope: ['login', need], round: 2 });
+  const l2 = await loginRound({ ...opts, capability: r2.capability, capClaims: r2.capClaims, round: 2 });
+
+  // Retry the gated action → now 200.
+  gated = await getJson(`${base}/api/profile?sessionId=${l2.rpSessionId}`);
+  step('gated-ok', `Retried /api/profile → ${gated.status}`, { status: gated.status, profile: gated.body.profile });
+  return {
+    status: l2.status.status || 'approved',
+    scope: l2.status.scope || r2.capClaims.scope || null,
+    profile: gated.body.profile || null,
+    steppedUp: true,
+    io: { need, round1: r1.capClaims, round2: r2.capClaims, profile: gated.body },
+  };
+};
+
 // Render a branded QR of a request (string or object) into `el` — used by both the live flow and
 // the recorded replay so the card skin can show the same QR the wallet would scan.
 export const renderQr = (el, data) =>
   renderBrandedQr(el, { data: typeof data === 'string' ? data : JSON.stringify(data), size: 200 });
 
-window.kunjiAgentDemo = { run, renderQr };
+window.kunjiAgentDemo = { run, runStepUp, renderQr };
