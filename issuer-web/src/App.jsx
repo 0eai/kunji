@@ -53,31 +53,48 @@ function LivenessCapture({ gestures, onCapture, onError, busy }) {
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const previewUrlRef = useRef(''); // current blob: URL (so we can revoke it)
   const [phase, setPhase] = useState('intro'); // intro | recording | review
   const [idx, setIdx] = useState(0);
-  const [preview, setPreview] = useState('');
+  const [previewUrl, setPreviewUrl] = useState(''); // blob: URL for the <video> preview (CSP media-src blob:)
+  const [uploadData, setUploadData] = useState(''); // data: URL for the upload POST (ready after FileReader)
   const [mime, setMime] = useState('video/webm');
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
-  useEffect(() => stopStream, [stopStream]); // release the camera on unmount
+  const clearPreview = useCallback(() => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = '';
+    setPreviewUrl('');
+    setUploadData('');
+  }, []);
+  useEffect(
+    () => () => {
+      stopStream();
+      clearPreview();
+    },
+    [stopStream, clearPreview],
+  ); // release camera + blob URL on unmount
+
+  // Attach the live camera to the recording <video> AFTER it mounts. Essential: the recording-phase element
+  // isn't in the DOM until React re-renders, so this can't be done synchronously inside start().
+  useEffect(() => {
+    if (phase === 'recording' && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play?.().catch(() => {});
+    }
+  }, [phase]);
 
   const start = async () => {
-    setPreview('');
+    clearPreview();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 640, height: 480 },
         audio: false,
       });
       streamRef.current = stream;
-      setPhase('recording');
-      setIdx(0);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play?.().catch(() => {});
-      }
       const chosen = recorderMime();
       setMime(chosen);
       const mr = new MediaRecorder(stream, { mimeType: chosen, videoBitsPerSecond: 800000 });
@@ -86,14 +103,17 @@ function LivenessCapture({ gestures, onCapture, onError, busy }) {
       mr.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
       mr.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: chosen });
-        const reader = new FileReader();
-        reader.onload = () => {
-          setPreview(reader.result);
-          setPhase('review');
-        };
+        const url = URL.createObjectURL(blob); // blob: URL → playable under the issuer CSP (media-src blob:)
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
+        const reader = new FileReader(); // data: URL → the JSON upload body
+        reader.onload = () => setUploadData(reader.result);
         reader.readAsDataURL(blob);
         stopStream();
+        setPhase('review');
       };
+      setIdx(0);
+      setPhase('recording'); // the effect above attaches the stream once the <video> is mounted
       mr.start();
       let i = 0;
       const STEP_MS = 2200;
@@ -117,9 +137,9 @@ function LivenessCapture({ gestures, onCapture, onError, busy }) {
   if (phase === 'review') {
     return (
       <div className="mt-5 space-y-4">
-        <video src={preview} controls playsInline className="w-full max-h-72 rounded-2xl border border-line bg-surface" />
+        <video src={previewUrl} controls playsInline className="w-full max-h-72 rounded-2xl border border-line bg-surface" />
         <div className="flex items-center gap-2">
-          <Btn onClick={() => onCapture(preview, baseMime(mime))} disabled={busy}>
+          <Btn onClick={() => onCapture(uploadData, baseMime(mime))} disabled={busy || !uploadData}>
             {busy ? (
               <>
                 <Spinner /> Uploading…

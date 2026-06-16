@@ -239,7 +239,7 @@ export const issuerVerifyUpload = onRequest(vcOpts([]), async (req, res) => {
   if (!m || m.kind !== 'manual') return res.status(400).json({ error: 'unsupported' });
   let buf;
   try {
-    buf = Buffer.from(String(image || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
+    buf = Buffer.from(String(image || '').replace(/^data:[^,]*;base64,/, ''), 'base64');
   } catch {
     return res.status(400).json({ error: 'bad_image' });
   }
@@ -272,7 +272,8 @@ export const issuerLivenessUpload = onRequest(vcOpts([]), async (req, res) => {
   if (!getType(session.type)?.requiresLiveness) return res.status(400).json({ error: 'unsupported' });
   let buf;
   try {
-    buf = Buffer.from(String(video || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
+    // Tolerate data-URL parameters (e.g. `data:video/webm;codecs=vp8;base64,…` from MediaRecorder).
+    buf = Buffer.from(String(video || '').replace(/^data:[^,]*;base64,/, ''), 'base64');
   } catch {
     return res.status(400).json({ error: 'bad_video' });
   }
