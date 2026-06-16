@@ -35,7 +35,7 @@ const pickActive = (items) => {
 };
 
 const BackLink = ({ onClick }) => (
-  <button onClick={onClick} className="text-[13px] text-muted hover:text-ink transition-colors -mt-1 mb-1">
+  <button onClick={onClick} className="block w-fit text-[13px] text-muted hover:text-ink transition-colors mb-4">
     ← Back
   </button>
 );
