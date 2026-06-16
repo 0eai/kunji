@@ -47,8 +47,10 @@ export const InfoHint = ({ info, hintLabel = 'What is this?' }) => {
 };
 
 /* Small quiet uppercase section label, optional trailing count + optional (i) info popover. */
+// items-center (not baseline) so the 15px (i) icon centers on the 11px label instead of baseline-aligning
+// (which sat the icon high). The label + same-size count look identical centered vs. baseline.
 export const SectionLabel = ({ children, count, info, hintLabel, className = '' }) => (
-  <div className={`relative flex items-baseline gap-2 ${className}`}>
+  <div className={`relative flex items-center gap-2 ${className}`}>
     <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-faint">
       {children}
     </span>
