@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bot, Trash2, ShieldCheck, Bell, BellRing } from 'lucide-react';
 import Sheet from './ui/Sheet';
-import { Btn, Monogram } from './ui/primitives';
+import { Btn, Monogram, SheetHeading } from './ui/primitives';
 import { listAgents, revokeAgent, setAgentPushEnabled } from '../services/capability';
 import { pushSupported, enablePushForAudience, revokePushForAudience } from '../services/push';
 import { scopeId } from '../lib/capability';
@@ -87,17 +87,13 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
 
   return (
     <Sheet onClose={onClose} z={60} labelledBy="agents-title">
-      <div className="flex items-center gap-2.5 mb-3">
-        <Bot size={18} className="text-accent" />
-        <h2 id="agents-title" className="text-lg font-semibold tracking-tight">
-          Authorized agents
-        </h2>
-      </div>
-      <p className="text-[14px] text-muted leading-relaxed mb-5">
-        Agents — an AI assistant, script, or service — you've authorized to act for you at an app,
-        within a scope and for a limited time, never holding your keys. Revoke any one to cut it off
-        at apps that honor revocation.
-      </p>
+      <SheetHeading
+        id="agents-title"
+        icon={Bot}
+        info="Agents — an AI assistant, script, or service — you've authorized to act for you at an app, within a scope and for a limited time, never holding your keys. Revoke any one to cut it off at apps that honor revocation."
+      >
+        Authorized agents
+      </SheetHeading>
 
       {(() => {
         const soon = (agents || []).filter((a) => a.exp && a.exp * 1000 - Date.now() < SOON_MS).length;

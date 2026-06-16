@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { KeyRound, Copy, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
 import Sheet from './ui/Sheet';
-import { Btn, PasswordField } from './ui/primitives';
+import { Btn, PasswordField, SheetHeading } from './ui/primitives';
 import {
   exportRecoveryKey,
   buildRecoveryEnvelope,
@@ -87,16 +87,13 @@ const RecoveryKeySheet = ({ userId, onClose }) => {
 
   return (
     <Sheet onClose={onClose} z={60} labelledBy="recovery-title">
-      <div className="flex items-center gap-2.5 mb-3">
-        <KeyRound size={18} className="text-accent" />
-        <h2 id="recovery-title" className="text-lg font-semibold tracking-tight">
-          Export recovery key
-        </h2>
-      </div>
-      <p className="text-[14px] text-muted leading-relaxed mb-5">
-        A cold backup that restores your vault if you lose every device. Encrypted with a separate
-        passphrase — store the key and passphrase apart.
-      </p>
+      <SheetHeading
+        id="recovery-title"
+        icon={KeyRound}
+        info="A cold backup that restores your vault if you lose every device. Encrypted with a separate passphrase — store the key and passphrase apart."
+      >
+        Export recovery key
+      </SheetHeading>
       {!recoveryKey ? (
         <div className="space-y-4">
           <PasswordField

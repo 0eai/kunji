@@ -116,12 +116,6 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
 
   return (
     <div>
-      <p className="text-[13px] text-muted leading-relaxed mb-4">
-        Optional. By default each app sees a random, unlinkable name and icon. Set a name or photo
-        here and you can choose — per app, when it asks — to share it instead. It's never verified
-        and never sent without your consent.
-      </p>
-
       <div className="flex items-center gap-4 mb-4">
         {avatar ? (
           <img

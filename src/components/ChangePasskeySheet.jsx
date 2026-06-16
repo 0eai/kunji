@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Lock } from 'lucide-react';
 import Sheet from './ui/Sheet';
-import { Btn, PasswordField } from './ui/primitives';
+import { Btn, PasswordField, SheetHeading } from './ui/primitives';
 import { changePasskey } from '../services/vault';
 import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { logActivity } from '../services/activityLog';
@@ -45,16 +45,13 @@ const ChangePasskeySheet = ({ userId, masterKey, onClose }) => {
 
   return (
     <Sheet onClose={() => !changing && onClose()} z={60} labelledBy="changekey-title">
-      <div className="flex items-center gap-2.5 mb-3">
-        <Lock size={18} className="text-accent" />
-        <h2 id="changekey-title" className="text-lg font-semibold tracking-tight">
-          Change passkey
-        </h2>
-      </div>
-      <p className="text-[14px] text-muted leading-relaxed mb-5">
-        Set a new passkey for this device. Your recovery key and any other linked devices keep their
-        own passkeys — only this device changes.
-      </p>
+      <SheetHeading
+        id="changekey-title"
+        icon={Lock}
+        info="Set a new passkey for this device. Your recovery key and any other linked devices keep their own passkeys — only this device changes."
+      >
+        Change passkey
+      </SheetHeading>
       <div className="space-y-4">
         <PasswordField
           label="Current passkey"

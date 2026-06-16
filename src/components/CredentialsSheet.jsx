@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BadgeCheck, Trash2, DownloadCloud, ScanLine } from 'lucide-react';
 import Sheet from './ui/Sheet';
-import { Btn, Field, Monogram } from './ui/primitives';
+import { Btn, Field, Monogram, SheetHeading } from './ui/primitives';
 import {
   listCredentials,
   deleteCredential,
@@ -139,17 +139,13 @@ const CredentialsSheet = ({ masterKey, onClose }) => {
 
   return (
     <Sheet onClose={onClose} z={60} labelledBy="creds-title">
-      <div className="flex items-center gap-2.5 mb-3">
-        <BadgeCheck size={18} className="text-accent" />
-        <h2 id="creds-title" className="text-lg font-semibold tracking-tight">
-          Verified credentials
-        </h2>
-      </div>
-      <p className="text-[14px] text-muted leading-relaxed mb-5">
-        Credentials issued to you by trusted issuers. When an app asks you to prove something (like
-        being over 18), you present one — revealing only what's asked, never your date of birth. Each
-        proof spends a fresh single-use copy, so verifiers can't link your visits to each other.
-      </p>
+      <SheetHeading
+        id="creds-title"
+        icon={BadgeCheck}
+        info="Credentials issued to you by trusted issuers. When an app asks you to prove something (like being over 18), you present one — revealing only what's asked, never your date of birth. Each proof spends a fresh single-use copy, so verifiers can't link your visits to each other."
+      >
+        Verified credentials
+      </SheetHeading>
 
       {pools === null ? (
         <p className="text-[13px] text-faint mb-5">Loading…</p>
