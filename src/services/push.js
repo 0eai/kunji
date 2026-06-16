@@ -72,3 +72,23 @@ export const revokePushForAudience = async (cryptoKey, audience) => {
   const channelId = await deriveChannelId(cryptoKey, audience);
   await pushChannelWrite(cryptoKey, channelId, 'delete', {});
 };
+
+// Global "let agents notify me" master switch. Per-DEVICE (localStorage), since the underlying Web Push
+// subscription is per-device anyway — and a single shared channel can't exist (each channel binds one
+// authorized poster key). It gates the per-agent channels: off = kill-switch (the UI revokes all enabled
+// channels) and blocks enabling. Default ON, so existing per-agent notifications keep working.
+const AGENT_NOTIFY_KEY = 'kunji.agentNotify';
+export const agentNotifyAllowed = () => {
+  try {
+    return localStorage.getItem(AGENT_NOTIFY_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+};
+export const setAgentNotifyAllowed = (on) => {
+  try {
+    localStorage.setItem(AGENT_NOTIFY_KEY, on ? 'on' : 'off');
+  } catch {
+    /* private mode / storage blocked — preference just won't persist */
+  }
+};

@@ -3,7 +3,13 @@ import { Bot, Trash2, ShieldCheck, Bell, BellRing } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Monogram, SheetHeading } from './ui/primitives';
 import { listAgents, revokeAgent, setAgentPushEnabled } from '../services/capability';
-import { pushSupported, enablePushForAudience, revokePushForAudience } from '../services/push';
+import {
+  pushSupported,
+  enablePushForAudience,
+  revokePushForAudience,
+  agentNotifyAllowed,
+  setAgentNotifyAllowed,
+} from '../services/push';
 import { scopeId } from '../lib/capability';
 import { useToast } from '../contexts/ToastContext';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
@@ -37,6 +43,8 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
   const [pushBusy, setPushBusy] = useState(''); // jti whose notifications toggle is in flight
   const [confirm, setConfirm] = useState(null); // agent pending revoke confirmation
   const supportsPush = pushSupported();
+  const [globalNotify, setGlobalNotify] = useState(agentNotifyAllowed()); // per-device master switch
+  const [globalBusy, setGlobalBusy] = useState(false);
 
   const refresh = useCallback(() => {
     listAgents(masterKey)
@@ -61,6 +69,32 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
       return false;
     } finally {
       setRevoking('');
+    }
+  };
+
+  // The master switch. Off is a kill-switch: tear down every enabled agent's channel on this device so
+  // nothing can ping you, and block enabling until it's back on. On just re-allows per-agent toggles
+  // (it never auto-enables an agent). Per-device, like the push subscription itself.
+  const toggleGlobalNotify = async () => {
+    if (!globalNotify) {
+      setAgentNotifyAllowed(true);
+      setGlobalNotify(true);
+      showToast('Agent notifications on — turn them on per agent below.');
+      return;
+    }
+    setGlobalBusy(true);
+    try {
+      const enabled = (agents || []).filter((a) => a.pushEnabled);
+      for (const a of enabled) {
+        await revokePushForAudience(masterKey, a.audience).catch(() => {});
+        await setAgentPushEnabled(masterKey, a, false).catch(() => {});
+      }
+      setAgents((list) => (list || []).map((x) => ({ ...x, pushEnabled: false })));
+      setAgentNotifyAllowed(false);
+      setGlobalNotify(false);
+      showToast(enabled.length ? 'Agent notifications off — all agents turned off.' : 'Agent notifications off.');
+    } finally {
+      setGlobalBusy(false);
     }
   };
 
@@ -104,6 +138,36 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
         ) : null;
       })()}
 
+      {supportsPush && (
+        <button
+          type="button"
+          onClick={toggleGlobalNotify}
+          aria-pressed={globalNotify}
+          disabled={globalBusy}
+          className="w-full flex items-center gap-3 text-left mb-5 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-medium text-ink">Agent notifications</span>
+            <span className="block text-[12px] text-muted">
+              {globalNotify
+                ? 'Agents you enable below can ping you to approve more access. Turning this off blocks them all on this device.'
+                : 'Off — no agent can notify you on this device. Turn on to enable notifications per agent.'}
+            </span>
+          </span>
+          <span
+            className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+              globalNotify ? 'bg-accent-fill' : 'bg-line'
+            }`}
+          >
+            <span
+              className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                globalNotify ? 'translate-x-4' : ''
+              }`}
+            />
+          </span>
+        </button>
+      )}
+
       {agents === null ? (
         <p className="text-[13px] text-faint mb-5">Loading…</p>
       ) : agents.length === 0 ? (
@@ -119,7 +183,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
                   {(a.scope || []).map(scopeId).join(', ')} ·{' '}
                   <span className={expiryTone(a.exp)}>{expiryLabel(a.exp)}</span>
                 </p>
-                {supportsPush && (
+                {supportsPush && globalNotify && (
                   <button
                     onClick={() => toggleNotify(a)}
                     disabled={pushBusy === a.jti}

@@ -12,7 +12,7 @@ import {
   listAgents,
 } from '../services/capability';
 import { scopeId, scopeSatisfies } from '../lib/capability';
-import { pushSupported, enablePushForAudience } from '../services/push';
+import { pushSupported, enablePushForAudience, agentNotifyAllowed } from '../services/push';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -335,7 +335,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
               </span>
             </button>
           )}
-          {pushSupported() && (
+          {pushSupported() && agentNotifyAllowed() && (
             <button
               type="button"
               onClick={() => setNotify((v) => !v)}
