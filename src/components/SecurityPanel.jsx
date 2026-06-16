@@ -15,7 +15,6 @@ import { signOutDevice } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import InstallButton from './InstallButton';
 import LinkedDevicesSheet from './LinkedDevicesSheet';
-import AgentsSheet from './AgentsSheet';
 import CredentialsSheet from './CredentialsSheet';
 import ChangePasskeySheet from './ChangePasskeySheet';
 import ProfileSheet from './ProfileSheet';
@@ -53,7 +52,7 @@ const Row = ({ icon: Icon, title, count, open, onToggle, children }) => (
   </div>
 );
 
-const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
+const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) => {
   const { showToast } = useToast();
 
   const [open, setOpen] = useState({
@@ -88,7 +87,6 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
   };
 
   const [showDevices, setShowDevices] = useState(false); // linked-devices list (wraps the issuer flow)
-  const [showAgent, setShowAgent] = useState(false); // authorize-an-agent (capability) sheet
 
   // Active-agents count for the row badge — listAgents already drops expired ones.
   const [agentCount, setAgentCount] = useState(0);
@@ -180,7 +178,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             Agents you've authorized to act for you at an app — within a scope and for a limited
             time, never holding your keys. Review them and revoke any one.
           </p>
-          <Btn variant="primary" onClick={() => setShowAgent(true)} className="w-full">
+          <Btn variant="primary" onClick={onManageAgents} className="w-full">
             <Bot size={16} /> Manage agents
           </Btn>
         </Row>
@@ -286,16 +284,6 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
         />
       )}
 
-      {showAgent && (
-        <AgentsSheet
-          userId={userId}
-          masterKey={cryptoKey}
-          onClose={() => {
-            setShowAgent(false);
-            refreshAgents();
-          }}
-        />
-      )}
 
       {showCredentials && (
         <CredentialsSheet

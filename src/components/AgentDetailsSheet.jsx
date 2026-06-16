@@ -20,7 +20,7 @@ import { useToast } from '../contexts/ToastContext';
 
 // Per-agent detail (mirrors AppDetailsModal): the scoped capability's access, the agent's holder key, a
 // per-device notifications toggle, recent (lifecycle) activity for this agent, and revoke. Opened from the
-// agents list (AgentsSheet today; the Dashboard agents view in Step 2).
+// agents list (the Dashboard agents view / AgentDetailsSheet).
 const AgentDetailsSheet = ({ agent, userId, masterKey, onClose, onRevoked }) => {
   const { showToast } = useToast();
   const [showActivity, setShowActivity] = useState(false);

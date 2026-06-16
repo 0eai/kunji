@@ -36,7 +36,7 @@ import AppRow from './AppRow';
 import ApprovalModal from './ApprovalModal';
 import AppDetailsModal from './AppDetailsModal';
 import SecurityPanel from './SecurityPanel';
-import AgentsSheet from './AgentsSheet';
+import AgentsView from './AgentsView';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
 import PresentCredentialSheet from './PresentCredentialSheet';
 import ReceiveOfferSheet from './ReceiveOfferSheet';
@@ -68,7 +68,7 @@ const Dashboard = ({
 
   const [showScanner, setShowScanner] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
-  const [showAgents, setShowAgents] = useState(false);
+  const [view, setView] = useState('apps'); // 'apps' | 'agents' — the body swaps between the two lists
   const [agentCount, setAgentCount] = useState(0); // active (non-expired) authorized agents
   const [pendingSession, setPendingSession] = useState(null);
   const [pendingAuthorize, setPendingAuthorize] = useState(null); // raw agent request from ?authorize= deep link
@@ -468,10 +468,15 @@ const Dashboard = ({
         <div className="flex items-center gap-0.5 -mr-2">
           {agentCount > 0 && (
             <button
-              onClick={() => setShowAgents(true)}
-              title={`${agentCount} active agent${agentCount > 1 ? 's' : ''}`}
-              aria-label={`${agentCount} active agent${agentCount > 1 ? 's' : ''} — manage`}
-              className="inline-flex items-center gap-1 mr-1 px-2.5 py-1 rounded-full text-[12px] font-medium bg-accent-soft text-accent hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              onClick={() => setView((v) => (v === 'agents' ? 'apps' : 'agents'))}
+              title={view === 'agents' ? 'Back to apps' : `${agentCount} active agent${agentCount > 1 ? 's' : ''} — manage`}
+              aria-label={view === 'agents' ? 'Back to apps' : `${agentCount} active agent${agentCount > 1 ? 's' : ''} — manage`}
+              aria-pressed={view === 'agents'}
+              className={`inline-flex items-center gap-1 mr-1 px-2.5 py-1 rounded-full text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
+                view === 'agents'
+                  ? 'bg-accent-fill text-on-accent'
+                  : 'bg-accent-soft text-accent hover:opacity-80'
+              }`}
             >
               <Bot size={14} strokeWidth={1.75} /> {agentCount}
             </button>
@@ -503,10 +508,17 @@ const Dashboard = ({
         </div>
       </header>
 
-      {/* App list — hairline rows, no cards. Scrolls within the page-level scroller above. */}
+      {/* Body — the apps list, or (on the agents chip) the agents list in its place. */}
       <div className="flex-1">
         <div className="max-w-[34rem] w-full mx-auto px-6">
-          {loading ? (
+          {view === 'agents' ? (
+            <AgentsView
+              userId={user.uid}
+              masterKey={cryptoKey}
+              onBack={() => setView('apps')}
+              onCountChange={setAgentCount}
+            />
+          ) : loading ? (
             <div className="pt-7">
               <div className="divide-y divide-line">
                 {[0, 1, 2].map((i) => (
@@ -553,7 +565,7 @@ const Dashboard = ({
 
       {/* Slim bottom action — hairline-topped, not a slab. Two ways in: scan the QR or type the
           code it shows (the typed path resolves against an app you've already added). */}
-      {!loading && apps.length > 0 && (
+      {view === 'apps' && !loading && apps.length > 0 && (
         <div className="sticky bottom-0 z-20 shrink-0 border-t border-line bg-paper">
           <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center">
             <button
@@ -615,6 +627,10 @@ const Dashboard = ({
           userId={user.uid}
           cryptoKey={cryptoKey}
           onLock={onLock}
+          onManageAgents={() => {
+            setShowSecurity(false);
+            setView('agents');
+          }}
           onClose={() => {
             setShowSecurity(false);
             refreshAgents();
@@ -622,16 +638,6 @@ const Dashboard = ({
         />
       )}
 
-      {showAgents && (
-        <AgentsSheet
-          userId={user.uid}
-          masterKey={cryptoKey}
-          onClose={() => {
-            setShowAgents(false);
-            refreshAgents();
-          }}
-        />
-      )}
 
       {pendingAuthorize && (
         <AuthorizeAgentSheet

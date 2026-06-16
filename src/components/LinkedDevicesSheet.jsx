@@ -8,7 +8,7 @@ import IssueLinkSheet from './IssueLinkSheet';
 
 // Devices linked to this identity (shared, encrypted). Awareness-only — there's no remote unlink
 // (that would re-key the whole identity); to remove one, sign out on that device. Mirrors the
-// AgentsSheet pattern: a list + an "Add a device" button that opens the existing issuer flow.
+// Sheet pattern: a list + an "Add a device" button that opens the existing issuer flow.
 const LinkedDevicesSheet = ({ userId, masterKey, onClose }) => {
   const [devices, setDevices] = useState(null); // null = loading
   const [showIssue, setShowIssue] = useState(false);

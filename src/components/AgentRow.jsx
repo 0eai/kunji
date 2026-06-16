@@ -5,7 +5,7 @@ import { scopeId } from '../lib/capability';
 import { expiryLabel, expiryTone } from '../lib/agentFormat';
 
 /* One authorized agent — a hairline list row (mirrors AppRow). The whole row opens the agent's detail
-   sheet; per-agent actions (notifications, revoke) live inside it. Used in AgentsSheet and the Dashboard
+   sheet; per-agent actions (notifications, revoke) live inside it. Used in the Dashboard agents view and the agent detail
    agents view. */
 const AgentRow = ({ agent, onOpen }) => (
   <button

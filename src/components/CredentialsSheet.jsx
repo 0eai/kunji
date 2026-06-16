@@ -48,7 +48,7 @@ const issuerName = (g) => g.brand || issuerLabel(g.iss);
 
 // Verified credentials the user holds (issued by trusted issuers, stored encrypted, shared across
 // linked devices). Receive one from an issuer, see what you hold, remove any. Presenting them happens
-// at login (ApprovalModal). Mirrors the AgentsSheet pattern.
+// at login (ApprovalModal). Mirrors the sheet pattern.
 const CredentialsSheet = ({ masterKey, onClose }) => {
   const { showToast } = useToast();
   const [creds, setCreds] = useState(null); // null = loading

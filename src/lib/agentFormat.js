@@ -1,4 +1,4 @@
-// Shared agent-expiry formatting (used by AgentsSheet / AgentRow / AgentDetailsSheet). Local-only —
+// Shared agent-expiry formatting (used by AgentsView / AgentRow / AgentDetailsSheet). Local-only —
 // no server tracks expiries; this is a client-side reminder derived from the capability's `exp`.
 export const SOON_MS = 48 * 3_600_000; // "expiring soon" window — surfaced for re-authorization
 

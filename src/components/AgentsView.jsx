@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bot, ShieldCheck } from 'lucide-react';
-import Sheet from './ui/Sheet';
-import { Btn, SheetHeading } from './ui/primitives';
+import { ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Btn, SectionLabel } from './ui/primitives';
 import { listAgents } from '../services/capability';
 import {
   pushSupported,
@@ -16,30 +15,35 @@ import AuthorizeAgentSheet from './AuthorizeAgentSheet';
 import AgentRow from './AgentRow';
 import AgentDetailsSheet from './AgentDetailsSheet';
 
-// Authorized agents: the active capabilities the user has issued (shared across linked devices, encrypted).
-// The list + the global notifications switch + "Authorize an agent" live here; per-agent details (scope,
-// notifications, revoke, lifecycle activity) live in AgentDetailsSheet. Mirrors the sheet pattern.
-const AgentsSheet = ({ userId, masterKey, onClose }) => {
+// The agents list as a Dashboard BODY view (rendered in place of the apps list when the user taps the
+// agents chip / Security → Authorized agents). Holds the global notifications switch + "Authorize an agent";
+// per-agent details (scope, notifications, revoke, lifecycle activity) live in AgentDetailsSheet. Reports
+// its count up so the header chip stays in sync. Renders inside the Dashboard's centered column.
+const AgentsView = ({ userId, masterKey, onBack, onCountChange }) => {
   const { showToast } = useToast();
   const [agents, setAgents] = useState(null); // null = loading
   const [showAuthorize, setShowAuthorize] = useState(false);
-  const [detail, setDetail] = useState(null); // agent open in the detail sheet
+  const [detail, setDetail] = useState(null);
   const supportsPush = pushSupported();
-  const [globalNotify, setGlobalNotify] = useState(agentNotifyAllowed()); // per-device master switch
+  const [globalNotify, setGlobalNotify] = useState(agentNotifyAllowed());
   const [globalBusy, setGlobalBusy] = useState(false);
 
   const refresh = useCallback(() => {
     listAgents(masterKey)
-      // Soonest-expiring (and already-expired) first, so what needs attention is on top.
-      .then((list) => setAgents([...list].sort((a, b) => (a.exp || Infinity) - (b.exp || Infinity))))
-      .catch(() => setAgents([]));
-  }, [masterKey]);
-
+      .then((list) => {
+        const sorted = [...list].sort((a, b) => (a.exp || Infinity) - (b.exp || Infinity));
+        setAgents(sorted);
+        onCountChange?.(sorted.length);
+      })
+      .catch(() => {
+        setAgents([]);
+        onCountChange?.(0);
+      });
+  }, [masterKey, onCountChange]);
   useEffect(() => refresh(), [refresh]);
 
-  // Master switch (per-device, like the push subscription). Off is a kill-switch: drop THIS device's
-  // subscription for every audience it receives for (other linked devices keep theirs) and block enabling;
-  // on re-allows the per-agent toggles (in the detail sheet). It never auto-enables an agent.
+  // Per-device master switch — off is a kill-switch (drop this device's subs for every audience it receives
+  // for; other linked devices keep theirs); on re-allows per-agent toggles (in the detail sheet).
   const toggleGlobalNotify = async () => {
     if (!globalNotify) {
       setAgentNotifyAllowed(true);
@@ -50,7 +54,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
     setGlobalBusy(true);
     try {
       const auds = [...localPushAudiences()];
-      for (const aud of auds) await revokePushForAudience(masterKey, aud).catch(() => {}); // this device only
+      for (const aud of auds) await revokePushForAudience(masterKey, aud).catch(() => {});
       setAgentNotifyAllowed(false);
       setGlobalNotify(false);
       showToast(auds.length ? 'Agent notifications off on this device.' : 'Agent notifications off.');
@@ -59,24 +63,22 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
     }
   };
 
-  return (
-    <Sheet onClose={onClose} z={60} labelledBy="agents-title">
-      <SheetHeading
-        id="agents-title"
-        icon={Bot}
-        info="Agents — an AI assistant, script, or service — you've authorized to act for you at an app, within a scope and for a limited time, never holding your keys. Revoke any one to cut it off at apps that honor revocation."
-      >
-        Authorized agents
-      </SheetHeading>
+  const soon = (agents || []).filter((a) => a.exp && a.exp * 1000 - Date.now() < SOON_MS).length;
 
-      {(() => {
-        const soon = (agents || []).filter((a) => a.exp && a.exp * 1000 - Date.now() < SOON_MS).length;
-        return soon ? (
-          <p className="text-[12px] text-accent bg-accent-soft border border-line rounded-lg px-3 py-2 mb-4">
-            {soon === 1 ? '1 agent is' : `${soon} agents are`} expired or expiring soon — re-authorize to keep access.
-          </p>
-        ) : null;
-      })()}
+  return (
+    <div className="animate-rise pb-8">
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-[13px] text-muted hover:text-ink mb-3 -mt-1 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+      >
+        <ArrowLeft size={15} /> Apps
+      </button>
+
+      {soon ? (
+        <p className="text-[12px] text-accent bg-accent-soft border border-line rounded-lg px-3 py-2 mb-4">
+          {soon === 1 ? '1 agent is' : `${soon} agents are`} expired or expiring soon — re-authorize to keep access.
+        </p>
+      ) : null}
 
       {supportsPush && (
         <button
@@ -108,19 +110,25 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
         </button>
       )}
 
+      <SectionLabel count={agents?.length} className="pt-1 pb-1">
+        Agents
+      </SectionLabel>
       {agents === null ? (
-        <p className="text-[13px] text-faint mb-5">Loading…</p>
+        <p className="text-[13px] text-faint py-4">Loading…</p>
       ) : agents.length === 0 ? (
-        <p className="text-[13px] text-faint mb-5">No active agents.</p>
+        <p className="text-[15px] text-muted leading-relaxed py-4">
+          No active agents. Authorize an AI assistant, script, or service to act for you at an app —
+          scoped, expiring, and revocable.
+        </p>
       ) : (
-        <div className="divide-y divide-line mb-5">
+        <div className="divide-y divide-line">
           {agents.map((a) => (
             <AgentRow key={a.jti} agent={a} onOpen={() => setDetail(a)} />
           ))}
         </div>
       )}
 
-      <Btn variant="primary" onClick={() => setShowAuthorize(true)} className="w-full">
+      <Btn variant="primary" onClick={() => setShowAuthorize(true)} className="w-full mt-6">
         <ShieldCheck size={16} /> Authorize an agent
       </Btn>
 
@@ -130,7 +138,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
           masterKey={masterKey}
           onClose={() => {
             setShowAuthorize(false);
-            refresh(); // a newly-authorized agent should appear in the list
+            refresh();
           }}
         />
       )}
@@ -142,13 +150,17 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
           masterKey={masterKey}
           onClose={() => setDetail(null)}
           onRevoked={(jti) => {
-            setAgents((list) => (list || []).filter((x) => x.jti !== jti));
+            setAgents((list) => {
+              const next = (list || []).filter((x) => x.jti !== jti);
+              onCountChange?.(next.length);
+              return next;
+            });
             setDetail(null);
           }}
         />
       )}
-    </Sheet>
+    </div>
   );
 };
 
-export default AgentsSheet;
+export default AgentsView;
