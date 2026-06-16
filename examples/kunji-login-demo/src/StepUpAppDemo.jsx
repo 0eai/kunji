@@ -35,7 +35,11 @@ export default function StepUpAppDemo({ onBack }) {
   const resultRef = useRef(null);
 
   // (Re)mount the real drop-in widget with the phase's scope. Round 1 = plain login; the step-up round
-  // adds vc:age_over_18 so the wallet offers to present the credential.
+  // requests `vc:age#age_over_18` — i.e. credential vct `age`, disclose claim `age_over_18` (the scope
+  // grammar is `vc:<vct>#<claim>`; `parseVcScope` reads the part before `#` as the vct), so the wallet
+  // matches the held `age` credential and offers to present it. NOTE: the wallet only sees this scope on
+  // the QR / "Sign in with kunji" deep link — a typed 6-digit code goes via lookupSession, which carries
+  // no scope, so use scan/tap (not the code) for the credential step.
   const mountSignin = useCallback((scope) => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -51,7 +55,7 @@ export default function StepUpAppDemo({ onBack }) {
 
   useEffect(() => {
     if (phase === 'connect') mountSignin('profile');
-    else if (phase === 'stepup') mountSignin('vc:age_over_18');
+    else if (phase === 'stepup') mountSignin('vc:age#age_over_18');
   }, [phase, mountSignin]);
 
   useEffect(() => {
@@ -157,7 +161,8 @@ export default function StepUpAppDemo({ onBack }) {
           <h2 className="text-[1.25rem] font-semibold tracking-tight">Prove your age</h2>
           <p className="text-[14px] text-muted mt-1 mb-4">
             Sign in again — the wallet recognizes you're <b>already connected</b> and asks only to{' '}
-            <b>prove a verified credential</b>. Approve it and present your age credential.
+            <b>prove a verified credential</b>. Approve it and present your age credential.{' '}
+            <span className="text-faint">Scan the QR or tap “Sign in with kunji” — a typed code can't carry the credential request.</span>
           </p>
           <div ref={mountRef} />
           {phase === 'nocred' && (
