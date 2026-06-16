@@ -40,6 +40,39 @@ describe('issuer credential-type registry — age buildClaims', () => {
   });
 });
 
+describe('issuer credential-type registry — residency + gender (coarse attributes)', () => {
+  it('residency: coarse country (+ optional region) from a valid ISO code', () => {
+    const r = getType('residency');
+    expect(r.buildClaims({ country: 'us' })).toEqual({ country: 'US' }); // normalized uppercase
+    expect(r.buildClaims({ country: 'GB', region: 'Scotland' })).toEqual({ country: 'GB', region: 'Scotland' });
+    expect(r.buildClaims({ country: 'USA' })).toBeNull(); // not alpha-2
+    expect(r.buildClaims({})).toBeNull();
+    expect(credentialConfigs().residency).toMatchObject({ vct: 'residency', format: 'vc+sd-jwt' });
+  });
+
+  it('gender: one coarse marker, only the allowed values', () => {
+    const g = getType('gender');
+    expect(g.buildClaims({ gender: 'Female' })).toEqual({ gender: 'female' }); // normalized lowercase
+    expect(g.buildClaims({ gender: 'x' })).toEqual({ gender: 'x' });
+    expect(g.buildClaims({ gender: 'other' })).toBeNull();
+    expect(g.buildClaims({})).toBeNull();
+  });
+
+  it('every type declares reviewFields with required keys (drives the dynamic admin panel)', () => {
+    for (const [id, t] of Object.entries(CREDENTIAL_TYPES)) {
+      expect(Array.isArray(t.reviewFields), id).toBe(true);
+      expect(t.reviewFields.length, id).toBeGreaterThan(0);
+      for (const f of t.reviewFields) {
+        expect(typeof f.key, id).toBe('string');
+        expect(['text', 'date', 'select']).toContain(f.type);
+        if (f.type === 'select') expect(Array.isArray(f.options), id).toBe(true);
+      }
+    }
+    // gender proves the SELECT renderer the personhood type will also need.
+    expect(getType('gender').reviewFields[0].type).toBe('select');
+  });
+});
+
 describe('issuer verification-method registry — document-review', () => {
   it('resolves the method + its manual kind', () => {
     expect(getMethod('document-review')).toBe(documentReview);

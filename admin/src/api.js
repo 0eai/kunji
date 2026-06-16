@@ -30,7 +30,7 @@ export const reviewDoc = async (sid) => {
   return URL.createObjectURL(await res.blob());
 };
 
-export const reviewDecision = (sid, approve, dob) =>
-  call('/review/decision', { method: 'POST', body: JSON.stringify({ sid, approve, dob }) });
+export const reviewDecision = (sid, approve, verifiedData) =>
+  call('/review/decision', { method: 'POST', body: JSON.stringify({ sid, approve, verifiedData }) });
 export const revoke = (type, idx) => call('/revoke', { method: 'POST', body: JSON.stringify({ type, idx }) });
 export const unrevoke = (type, idx) => call('/unrevoke', { method: 'POST', body: JSON.stringify({ type, idx }) });

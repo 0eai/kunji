@@ -94,6 +94,7 @@ const catalog = () => ({
     id,
     label: t.label,
     description: t.description || null,
+    reviewFields: t.reviewFields || [],
     methods: [
       ...t.methods.map((mid) => {
         const m = getMethod(mid) || {};
@@ -392,7 +393,14 @@ const adminReviews = async () => {
   const snap = await db.collection('verificationSessions').where('status', '==', 'pending_review').limit(100).get();
   const items = snap.docs
     .map((d) => ({ sid: d.id, ...d.data() }))
-    .map((x) => ({ sid: x.sid, type: x.type, method: x.method, submittedAt: x.submittedAt || null }))
+    .map((x) => ({
+      sid: x.sid,
+      type: x.type,
+      method: x.method,
+      submittedAt: x.submittedAt || null,
+      // The fields the operator must confirm for this type (drives the dynamic review panel).
+      reviewFields: getType(x.type)?.reviewFields || [],
+    }))
     .sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
   return { items };
 };
@@ -408,8 +416,11 @@ const adminReviewDoc = async (sid, res) => {
   return res.send(buf);
 };
 
-// Approve (with the reviewer-confirmed DOB) → verified + claims; or reject. Either way DELETE the ID image.
-const adminReviewDecision = async (admin, { sid, approve, dob }) => {
+// Approve (with the reviewer-confirmed fields) → verified + claims; or reject. Either way DELETE the ID
+// image. `verifiedData` is the type's reviewFields the operator filled in; a bare `dob` is accepted for
+// back-compat with the original age flow. buildClaims is the no-PII boundary: raw inputs → coarse claims.
+const adminReviewDecision = async (admin, { sid, approve, verifiedData, dob }) => {
+  const data = verifiedData && typeof verifiedData === 'object' ? verifiedData : dob != null ? { dob } : {};
   const ref = db.collection('verificationSessions').doc(String(sid || ''));
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -419,8 +430,8 @@ const adminReviewDecision = async (admin, { sid, approve, dob }) => {
       tx.update(ref, { status: 'rejected', reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
       return { docPath: s.docPath, status: 'rejected' };
     }
-    const claims = getType(s.type)?.buildClaims({ dob });
-    if (!claims) return { error: 'bad_dob' };
+    const claims = getType(s.type)?.buildClaims(data);
+    if (!claims) return { error: 'bad_claims' };
     tx.update(ref, { status: 'verified', claims, reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
     return { docPath: s.docPath, status: 'verified' };
   });
@@ -496,7 +507,7 @@ export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: 
     if (req.method === 'POST' && req.path === '/api/unrevoke') return res.json(await adminSetRevoked(req.body?.type || 'age', req.body?.idx, false));
     return res.status(404).json({ error: 'not_found' });
   } catch (e) {
-    const known = ['bad_idx', 'bad_dob', 'bad_session'].includes(e?.message);
+    const known = ['bad_idx', 'bad_dob', 'bad_claims', 'bad_session'].includes(e?.message);
     return res.status(known ? 400 : 500).json({ error: known ? e.message : 'admin_failed' });
   }
 });

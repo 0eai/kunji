@@ -5,8 +5,20 @@ import { fetchLedger, fetchStats, fetchReviews, reviewDoc, reviewDecision, revok
 import { Btn, Spinner, SectionLabel, Field } from './ui.jsx';
 
 const ISSUER_ORIGIN = import.meta.env.VITE_ISSUER_ORIGIN || 'https://issuer-kunji-cc.web.app';
-const thresholds = (c) =>
-  c ? Object.entries(c).filter(([, v]) => v).map(([k]) => k.replace('age_over_', '≥')).join(' ') || 'none' : '—';
+// Compact ledger display of a credential's coarse claims, across types: age_over_N → ≥N, other true
+// booleans → the key, key:value → "key:value". (Booleans that are false are omitted.)
+const claimSummary = (c) => {
+  if (!c || typeof c !== 'object') return '—';
+  const parts = Object.entries(c)
+    .map(([k, v]) => {
+      if (k.startsWith('age_over_')) return v ? k.replace('age_over_', '≥') : null;
+      if (v === true) return k;
+      if (v === false) return null;
+      return `${k}:${v}`;
+    })
+    .filter(Boolean);
+  return parts.join(' ') || 'none';
+};
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = resolving, null = signed out
@@ -98,7 +110,7 @@ function Dashboard() {
   const [items, setItems] = useState([]);
   const [keys, setKeys] = useState(null);
   const [err, setErr] = useState('');
-  const [reviewSid, setReviewSid] = useState(null);
+  const [review, setReview] = useState(null); // the pending-review item being reviewed
 
   const load = useCallback(async () => {
     setErr('');
@@ -124,19 +136,19 @@ function Dashboard() {
 
   // Live refresh: poll every 10s while the dashboard is visible (not in a backgrounded tab, not mid-review).
   useEffect(() => {
-    if (reviewSid) return undefined;
+    if (review) return undefined;
     const id = setInterval(() => {
       if (!document.hidden) load();
     }, 10000);
     return () => clearInterval(id);
-  }, [reviewSid, load]);
+  }, [review, load]);
 
-  if (reviewSid)
+  if (review)
     return (
       <ReviewPanel
-        sid={reviewSid}
+        review={review}
         onDone={() => {
-          setReviewSid(null);
+          setReview(null);
           load();
         }}
       />
@@ -183,7 +195,7 @@ function Dashboard() {
                 </div>
                 <div className="text-[12px] text-faint font-mono">{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : ''}</div>
               </div>
-              <Btn variant="quiet" onClick={() => setReviewSid(r.sid)}>
+              <Btn variant="quiet" onClick={() => setReview(r)}>
                 Review
               </Btn>
             </div>
@@ -199,7 +211,7 @@ function Dashboard() {
             <div key={it.id} className={`flex items-center gap-3 py-3 ${it.revoked ? 'opacity-50' : ''}`}>
               <div className="flex-1 min-w-0">
                 <div className="text-sm">
-                  {it.type} #{it.idx} <span className="font-mono text-[12px] text-muted">{thresholds(it.claims)}</span>
+                  {it.type} #{it.idx} <span className="font-mono text-[12px] text-muted">{claimSummary(it.claims)}</span>
                 </div>
                 <div className="text-[12px] text-faint font-mono">
                   {it.kid} · {it.issuedAt ? new Date(it.issuedAt).toISOString().slice(0, 10) : ''}
@@ -232,9 +244,14 @@ function Dashboard() {
   );
 }
 
-function ReviewPanel({ sid, onDone }) {
+// Fallback for a session whose type predates reviewFields (only `age` ever shipped without it).
+const DEFAULT_FIELDS = [{ key: 'dob', label: 'Date of birth (from ID)', type: 'date', required: true }];
+
+function ReviewPanel({ review, onDone }) {
+  const { sid, type } = review;
+  const fields = review.reviewFields?.length ? review.reviewFields : DEFAULT_FIELDS;
   const [img, setImg] = useState('');
-  const [dob, setDob] = useState('');
+  const [data, setData] = useState({}); // the verifiedData the operator fills in
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -251,14 +268,17 @@ function ReviewPanel({ sid, onDone }) {
     };
   }, [sid]);
 
+  const setField = (k, v) => setData((d) => ({ ...d, [k]: v }));
+  const ready = fields.every((f) => !f.required || String(data[f.key] || '').trim());
+
   const decide = async (approve) => {
     setErr('');
     setBusy(true);
     try {
-      await reviewDecision(sid, approve, approve ? dob : undefined);
+      await reviewDecision(sid, approve, approve ? data : undefined);
       onDone();
     } catch (e) {
-      setErr(e.message === 'bad_dob' ? 'Enter a valid date of birth from the ID.' : 'Decision failed — try again.');
+      setErr(['bad_claims', 'bad_dob'].includes(e.message) ? 'Check the details entered from the ID.' : 'Decision failed — try again.');
       setBusy(false);
     }
   };
@@ -268,9 +288,11 @@ function ReviewPanel({ sid, onDone }) {
       <button onClick={onDone} className="text-[13px] text-muted hover:text-ink transition-colors">
         ← Back to dashboard
       </button>
-      <h1 className="text-[1.4rem] font-semibold tracking-tight mt-3">Review submission</h1>
+      <h1 className="text-[1.4rem] font-semibold tracking-tight mt-3">
+        Review submission <span className="text-faint text-[1rem]">· {type}</span>
+      </h1>
       <p className="text-[13px] text-faint mt-1">
-        Confirm the date of birth from the ID, then approve. The image is deleted on your decision.
+        Confirm the details below from the ID, then approve. The image is deleted on your decision.
       </p>
       <div className="mt-5 rounded-2xl border border-line overflow-hidden bg-surface">
         {img ? (
@@ -279,12 +301,38 @@ function ReviewPanel({ sid, onDone }) {
           <div className="py-20 flex justify-center text-muted">{err ? <span className="text-danger text-sm">{err}</span> : <Spinner size={22} />}</div>
         )}
       </div>
-      <div className="mt-5 max-w-xs">
-        <Field label="Date of birth (from ID)" type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+      <div className="mt-5 max-w-xs space-y-4">
+        {fields.map((f) =>
+          f.type === 'select' ? (
+            <label key={f.key} className="block">
+              <span className="block text-[11px] uppercase tracking-[0.14em] text-faint mb-1.5">{f.label}</span>
+              <select
+                value={data[f.key] || ''}
+                onChange={(e) => setField(f.key, e.target.value)}
+                className="w-full bg-transparent border-0 border-b border-line rounded-none px-0 py-2.5 text-ink outline-none transition-colors focus:border-accent"
+              >
+                <option value="">Select…</option>
+                {(f.options || []).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <Field
+              key={f.key}
+              label={f.label}
+              type={f.type === 'date' ? 'date' : 'text'}
+              value={data[f.key] || ''}
+              onChange={(e) => setField(f.key, e.target.value)}
+            />
+          ),
+        )}
       </div>
       {err && img && <p className="text-[13px] text-danger mt-3">{err}</p>}
       <div className="flex items-center gap-2 mt-6">
-        <Btn onClick={() => decide(true)} disabled={busy || !dob}>
+        <Btn onClick={() => decide(true)} disabled={busy || !ready}>
           {busy ? (
             <>
               <Spinner /> Working…

@@ -34,12 +34,61 @@ export const CREDENTIAL_TYPES = {
       { id: 'pass', label: 'PASS (Korea)', description: 'Korean mobile-carrier identity verification.', region: 'KR' },
       { id: 'aadhaar', label: 'Aadhaar (India)', description: 'Indian eID (Aadhaar) verification.', region: 'IN' },
     ],
+    // What the operator confirms from the ID (drives the admin review panel; sent back as `verifiedData`).
+    reviewFields: [{ key: 'dob', label: 'Date of birth (from ID)', type: 'date', required: true }],
     // Disclosable claims from the verified data a method produced. For age: the reviewer-confirmed DOB (or a
     // provider-verified integer age) → boolean thresholds. The DOB is NEVER stored or returned. null = invalid.
     buildClaims: ({ dob, age } = {}) => {
       const a = age != null ? Number(age) : ageFromDob(dob);
       if (a == null || Number.isNaN(a)) return null;
       return Object.fromEntries(AGE_THRESHOLDS.map((n) => [`age_over_${n}`, a >= n]));
+    },
+  },
+
+  // Residency — a COARSE attribute (country, optional region) read off the ID. No uniqueness/nullifier; the
+  // raw document is never stored — only the country/region claim the user chooses to disclose.
+  residency: {
+    vct: 'residency',
+    label: 'Residency',
+    description: 'Prove the country (and optionally region) your government ID is from — coarse, not your address.',
+    ttlSeconds: 365 * DAY,
+    methods: ['document-review'],
+    reviewFields: [
+      { key: 'country', label: 'Country (ISO code, from ID)', type: 'text', required: true },
+      { key: 'region', label: 'Region / state (optional)', type: 'text', required: false },
+    ],
+    buildClaims: ({ country, region } = {}) => {
+      const c = String(country || '').trim().toUpperCase();
+      if (!/^[A-Z]{2}$/.test(c)) return null; // ISO-3166 alpha-2
+      const r = String(region || '').trim();
+      return { country: c, ...(r ? { region: r } : {}) };
+    },
+  },
+
+  // Gender — a single COARSE attribute (the ID's sex/gender marker). Sensitive, so it is opt-in, disclosed
+  // only when the user chooses, and stored only as this one claim (never the raw ID). No uniqueness.
+  gender: {
+    vct: 'gender',
+    label: 'Gender',
+    description: 'Prove the gender marker on your government ID. Optional, and shared only when an app asks.',
+    ttlSeconds: 365 * DAY,
+    methods: ['document-review'],
+    reviewFields: [
+      {
+        key: 'gender',
+        label: 'Gender marker (from ID)',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'female', label: 'Female (F)' },
+          { value: 'male', label: 'Male (M)' },
+          { value: 'x', label: 'X / other / unspecified' },
+        ],
+      },
+    ],
+    buildClaims: ({ gender } = {}) => {
+      const g = String(gender || '').trim().toLowerCase();
+      return ['female', 'male', 'x'].includes(g) ? { gender: g } : null;
     },
   },
 };
