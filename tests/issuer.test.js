@@ -8,6 +8,7 @@ import { getType, CREDENTIAL_TYPES, credentialConfigs, ISSUER_BRAND } from '../i
 import { getMethod, VERIFICATION_METHODS } from '../issuer-functions/verify/index.js';
 import { documentReview, MAX_DOC_BYTES } from '../issuer-functions/verify/documentReview.js';
 import { nullifierDigest } from '../issuer-functions/nullifier.js';
+import { randomGestureSequence, validateLivenessUpload, LIVENESS_MAX_BYTES, LIVENESS_GESTURES } from '../issuer-functions/liveness.js';
 
 describe('issuer credential-type registry — age buildClaims', () => {
   const age = getType('age');
@@ -123,6 +124,35 @@ describe('issuer uniqueness nullifier — secret-keyed, deterministic, one-way (
   it('refuses empty inputs', () => {
     expect(() => nullifierDigest('', 'secret')).toThrow();
     expect(() => nullifierDigest(pre, '')).toThrow();
+  });
+});
+
+describe('issuer liveness — gesture challenge + clip validation', () => {
+  it('verified_human requires liveness; coarse types do not', () => {
+    expect(getType('verified_human').requiresLiveness).toBe(true);
+    expect(getType('age').requiresLiveness).toBeUndefined();
+    expect(getType('residency').requiresLiveness).toBeUndefined();
+  });
+
+  it('randomGestureSequence: a non-repeating sequence of known {id,label} gestures', () => {
+    const ids = new Set(LIVENESS_GESTURES.map((g) => g.id));
+    for (let i = 0; i < 50; i++) {
+      const seq = randomGestureSequence(3);
+      expect(seq).toHaveLength(3);
+      expect(new Set(seq.map((g) => g.id)).size).toBe(3); // no repeats
+      for (const g of seq) {
+        expect(ids.has(g.id)).toBe(true);
+        expect(typeof g.label).toBe('string');
+      }
+    }
+  });
+
+  it('validateLivenessUpload: accepts a bounded video, rejects images / oversize / empty', () => {
+    expect(validateLivenessUpload({ contentType: 'video/webm', bytes: 1_000_000 })).toBe(true);
+    expect(validateLivenessUpload({ contentType: 'video/mp4', bytes: LIVENESS_MAX_BYTES })).toBe(true);
+    expect(validateLivenessUpload({ contentType: 'image/jpeg', bytes: 1000 })).toBe(false); // not a video
+    expect(validateLivenessUpload({ contentType: 'video/webm', bytes: LIVENESS_MAX_BYTES + 1 })).toBe(false);
+    expect(validateLivenessUpload({ contentType: 'video/webm', bytes: 0 })).toBe(false);
   });
 });
 

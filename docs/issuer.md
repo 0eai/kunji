@@ -69,6 +69,28 @@ operator-facing membership oracle); the nullifier is **NEVER** in the credential
   *correctly-transcribed* ID" (operator-accuracy bound); one human with two ID documents → two credentials.
   See `docs/verified-credentials.md` §7.
 
+### Liveness (anti-fraud)
+
+A type with **`requiresLiveness`** (currently `verified_human`) makes the user record a short **camera-only**
+clip performing a **random gesture sequence** (`liveness.js`) in addition to the ID. `/verify/start` mints +
+stores the sequence on the session and returns it; `issuer-web` captures it with `getUserMedia` +
+`MediaRecorder` (no file option) and POSTs it to `/verify/liveness-upload`; the session reaches
+`pending_review` only once **both** the ID and the clip are in. The operator review panel plays the clip
+beside the ID + the requested gestures and confirms a **live person matching the ID** performed them — a
+downloaded/pre-recorded clip won't match a fresh random challenge (anti-replay is **operator-diligence-bound**,
+not cryptographic; no automated face-match/ML). The clip is a **transient biometric artifact**: stored deny-all
+in Storage (`verify-docs/{sid}/liveness`), **deleted on the decision** + the 24h sweep, and **NEVER issued** —
+the credential stays coarse (`is_human:true`). Enabling the camera on the issuer origin is a deliberate
+`Permissions-Policy: camera=(self)` + CSP `media-src 'self' blob:` change (issuer hosting headers).
+
+### Resume on relogin (`issuerVerified/{sub}`)
+
+On approval the issuer records the **coarse claims** per signed-in user at `issuerVerified/{sub}` (deny-all,
+no PII). `/verify/mine` returns this list and `/credential-offer?type=<vct>` re-mints a fresh offer from it
+(authed to the owner) — so a returning user (or a new device) re-adds an earned credential **without
+re-verifying**. A deliberate convenience-vs-retention trade: the issuer now keeps a per-user coarse
+verified-attributes record (it never reaches an RP and doesn't make credentials cross-app-linkable).
+
 The offer→token→credential path + `/status/{type}` + revoke are **type-agnostic**. Trust model: the issuer
 **publishes brand + per-type verification methods** in its metadata so an RP can recognize WHO issued it +
 HOW it was verified + the brand mark (not a certification scheme yet). Future verifiers (PASS, Aadhaar, …)

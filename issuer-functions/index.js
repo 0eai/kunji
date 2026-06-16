@@ -20,6 +20,7 @@ import { verifyProofJwt } from './oid4vc.js';
 import { loadKeySet, issuerWellKnown, credentialIssuerMetadata, authServerMetadata, mintTypedCredential, MAX_BATCH } from './issuer.js';
 import { ISSUER_BRAND, CREDENTIAL_TYPES, getType } from './credentials.js';
 import { nullifierDigest } from './nullifier.js';
+import { randomGestureSequence, validateLivenessUpload } from './liveness.js';
 import { getMethod } from './verify/index.js';
 import { verifyAssertion } from './loginVerify.js';
 
@@ -209,8 +210,17 @@ export const issuerVerifyStart = onRequest(vcOpts([]), async (req, res) => {
   if (!t || !m || !t.methods.includes(method)) return res.status(400).json({ error: 'unsupported' });
   const sid = token(24);
   const status = m.kind === 'manual' ? 'collecting' : 'pending_review';
-  await db.collection('verificationSessions').doc(sid).set({ sub, type, method, status, ttl: ttlAfter(VERIFY_TTL_MS) });
-  res.json({ sid, kind: m.kind });
+  const doc = { sub, type, method, status, ttl: ttlAfter(VERIFY_TTL_MS) };
+  // Liveness types get a random gesture challenge — stored on the session + returned so the frontend can
+  // prompt and the operator can confirm the same sequence beside the recorded video.
+  let liveness = null;
+  if (t.requiresLiveness) {
+    const gestures = randomGestureSequence();
+    doc.liveness = { gestures, status: 'pending' };
+    liveness = { gestures };
+  }
+  await db.collection('verificationSessions').doc(sid).set(doc);
+  res.json({ sid, kind: m.kind, ...(liveness ? { liveness } : {}) });
 });
 
 // POST /verify/upload { sid, image (base64/dataURL), contentType } → store the ID image (Admin SDK, private)
@@ -236,8 +246,47 @@ export const issuerVerifyUpload = onRequest(vcOpts([]), async (req, res) => {
   if (!m.validateUpload({ contentType, bytes: buf.length })) return res.status(400).json({ error: 'bad_image' });
   const docPath = `verify-docs/${sid}`;
   await bucket().file(docPath).save(buf, { contentType, resumable: false, metadata: { cacheControl: 'no-store' } });
-  await ref.update({ status: 'pending_review', docPath, docContentType: contentType, submittedAt: Date.now() });
-  res.json({ status: 'pending_review' });
+  // A liveness type waits for the video too — only both-in moves it to review (submittedAt = that moment).
+  const needsLiveness = getType(session.type)?.requiresLiveness && session.liveness?.status !== 'submitted';
+  const update = needsLiveness
+    ? { status: 'collecting', docPath, docContentType: contentType }
+    : { status: 'pending_review', docPath, docContentType: contentType, submittedAt: Date.now() };
+  await ref.update(update);
+  res.json({ status: update.status });
+});
+
+// POST /verify/liveness-upload { sid, video (base64/dataURL), contentType } → store the live gesture clip
+// (Admin SDK, private, alongside the ID). Camera-only on the client; reviewed then DELETED — never issued.
+// The session reaches 'pending_review' only once BOTH the ID and the liveness video are in.
+export const issuerLivenessUpload = onRequest(vcOpts([]), async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  if (await rateLimited(req.ip, 10)) return res.status(429).json({ error: 'rate_limited' });
+  const sub = await requireUser(req);
+  if (!sub) return res.status(401).json({ error: 'login_required' });
+  const { sid, video, contentType } = req.body || {};
+  const ref = db.collection('verificationSessions').doc(String(sid || ''));
+  const snap = await ref.get();
+  const session = snap.exists ? snap.data() : null;
+  if (!session || session.sub !== sub || !['collecting', 'pending_review'].includes(session.status))
+    return res.status(409).json({ error: 'bad_session' });
+  if (!getType(session.type)?.requiresLiveness) return res.status(400).json({ error: 'unsupported' });
+  let buf;
+  try {
+    buf = Buffer.from(String(video || '').replace(/^data:[^;]+;base64,/, ''), 'base64');
+  } catch {
+    return res.status(400).json({ error: 'bad_video' });
+  }
+  if (!validateLivenessUpload({ contentType, bytes: buf.length })) return res.status(400).json({ error: 'bad_video' });
+  const livenessPath = `verify-docs/${sid}/liveness`;
+  await bucket().file(livenessPath).save(buf, { contentType, resumable: false, metadata: { cacheControl: 'no-store' } });
+  const both = Boolean(session.docPath); // ID already uploaded?
+  const update = { livenessPath, livenessContentType: contentType, 'liveness.status': 'submitted' };
+  if (both) {
+    update.status = 'pending_review';
+    update.submittedAt = Date.now();
+  }
+  await ref.update(update);
+  res.json({ status: both ? 'pending_review' : 'collecting' });
 });
 
 // GET /verify/status?sid → the issuer page polls this; returns only the non-privileged status.
@@ -419,18 +468,25 @@ const adminReviews = async () => {
       submittedAt: x.submittedAt || null,
       // The fields the operator must confirm for this type (drives the dynamic review panel).
       reviewFields: getType(x.type)?.reviewFields || [],
+      // For liveness types: the requested gesture sequence + whether a clip is present (the panel shows
+      // the video + asks the operator to confirm the live human matches the ID + performed these gestures).
+      liveness: x.liveness?.status === 'submitted' ? { gestures: x.liveness.gestures || [] } : null,
     }))
     .sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
   return { items };
 };
 
-// Stream the pending session's ID image to the (already claim-verified) operator — never a public URL.
-const adminReviewDoc = async (sid, res) => {
+// Stream a pending session's artifact (the ID image, or the liveness video when artifact==='liveness') to
+// the (already claim-verified) operator — never a public URL.
+const adminReviewDoc = async (sid, res, artifact) => {
   const snap = await db.collection('verificationSessions').doc(String(sid || '')).get();
   const s = snap.exists ? snap.data() : null;
-  if (!s || !s.docPath) return res.status(404).json({ error: 'no_document' });
-  const [buf] = await bucket().file(s.docPath).download();
-  res.set('Content-Type', s.docContentType || 'application/octet-stream');
+  const isLiveness = artifact === 'liveness';
+  const path = isLiveness ? s?.livenessPath : s?.docPath;
+  const ct = isLiveness ? s?.livenessContentType : s?.docContentType;
+  if (!s || !path) return res.status(404).json({ error: 'no_document' });
+  const [buf] = await bucket().file(path).download();
+  res.set('Content-Type', ct || 'application/octet-stream');
   res.set('Cache-Control', 'no-store');
   return res.send(buf);
 };
@@ -459,11 +515,12 @@ const adminReviewDecision = async (admin, { sid, approve, verifiedData, dob }) =
     const r = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists || snap.data().status !== 'pending_review') return { error: 'bad_session' };
-      tx.update(ref, { status: 'rejected', reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
-      return { docPath: snap.data().docPath, status: 'rejected' };
+      const d = snap.data();
+      tx.update(ref, { status: 'rejected', reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null, livenessPath: null });
+      return { docPath: d.docPath, livenessPath: d.livenessPath, status: 'rejected' };
     });
     if (r.error) throw new Error(r.error);
-    if (r.docPath) await bucket().file(r.docPath).delete({ ignoreNotFound: true }).catch(() => {});
+    await deleteArtifacts(r); // ID + liveness video
     return { status: r.status };
   }
 
@@ -489,7 +546,7 @@ const adminReviewDecision = async (admin, { sid, approve, verifiedData, dob }) =
       const nfSnap = await tx.get(nfRef);
       if (!nfSnap.exists) tx.set(nfRef, { createdAt: Date.now() });
     }
-    tx.update(ref, { status: 'verified', claims, reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
+    tx.update(ref, { status: 'verified', claims, reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null, livenessPath: null });
     // Durable per-user record so the user can re-add this credential on relogin / a new device without
     // re-verifying. COARSE claims only (no PII); deny-all; issuer-internal (never reaches an RP). See
     // issuerOffer (?type=) + issuerVerifyMine.
@@ -500,11 +557,19 @@ const adminReviewDecision = async (admin, { sid, approve, verifiedData, dob }) =
         { merge: true },
       );
     }
-    return { docPath: s.docPath, status: 'verified' };
+    return { docPath: s.docPath, livenessPath: s.livenessPath, status: 'verified' };
   });
   if (result.error) throw new Error(result.error);
-  if (result.docPath) await bucket().file(result.docPath).delete({ ignoreNotFound: true }).catch(() => {});
+  await deleteArtifacts(result); // ID + liveness video — nothing biometric persists past the decision
   return { status: result.status };
+};
+
+// Delete the transient verification artifacts (the ID image + the liveness video) from Storage. Both are
+// biometric/PII and never persist past the operator's decision (S33). Best-effort; ignores missing objects.
+const deleteArtifacts = async ({ docPath, livenessPath } = {}) => {
+  for (const p of [docPath, livenessPath]) {
+    if (p) await bucket().file(p).delete({ ignoreNotFound: true }).catch(() => {});
+  }
 };
 
 // Issuance ledger, newest first (by issuedAt — idx is per-type), each flagged with its revocation status.
@@ -567,7 +632,7 @@ export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: 
     if (req.method === 'GET' && req.path === '/api/ledger') return res.json(await adminLedger(req));
     if (req.method === 'GET' && req.path === '/api/stats') return res.json(await adminStats());
     if (req.method === 'GET' && req.path === '/api/reviews') return res.json(await adminReviews());
-    if (req.method === 'GET' && req.path === '/api/review/doc') return await adminReviewDoc(req.query.sid, res);
+    if (req.method === 'GET' && req.path === '/api/review/doc') return await adminReviewDoc(req.query.sid, res, req.query.artifact);
     if (req.method === 'POST' && req.path === '/api/review/decision')
       return res.json(await adminReviewDecision(admin, req.body || {}));
     if (req.method === 'POST' && req.path === '/api/revoke') return res.json(await adminSetRevoked(req.body?.type || 'age', req.body?.idx, true));

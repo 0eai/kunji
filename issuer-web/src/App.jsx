@@ -37,6 +37,134 @@ const BackLink = ({ onClick }) => (
   </button>
 );
 
+// Pick a MediaRecorder mime the browser supports; report the base type the issuer accepts (video/webm|mp4).
+const recorderMime = () => {
+  const cands = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+  for (const m of cands) if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(m)) return m;
+  return 'video/webm';
+};
+const baseMime = (m) => (String(m).startsWith('video/mp4') ? 'video/mp4' : 'video/webm');
+
+// Camera-only liveness capture: record a short clip while the user follows a random gesture sequence (the
+// anti-spoof challenge — a downloaded clip won't match). No file upload. Calls onCapture(dataUrl, contentType)
+// when the user submits the recording; the clip is reviewed by an operator then deleted (never issued).
+function LivenessCapture({ gestures, onCapture, onError, busy }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const [phase, setPhase] = useState('intro'); // intro | recording | review
+  const [idx, setIdx] = useState(0);
+  const [preview, setPreview] = useState('');
+  const [mime, setMime] = useState('video/webm');
+
+  const stopStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+  useEffect(() => stopStream, [stopStream]); // release the camera on unmount
+
+  const start = async () => {
+    setPreview('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 640, height: 480 },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setPhase('recording');
+      setIdx(0);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play?.().catch(() => {});
+      }
+      const chosen = recorderMime();
+      setMime(chosen);
+      const mr = new MediaRecorder(stream, { mimeType: chosen, videoBitsPerSecond: 800000 });
+      recorderRef.current = mr;
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: chosen });
+        const reader = new FileReader();
+        reader.onload = () => {
+          setPreview(reader.result);
+          setPhase('review');
+        };
+        reader.readAsDataURL(blob);
+        stopStream();
+      };
+      mr.start();
+      let i = 0;
+      const STEP_MS = 2200;
+      const tick = () => {
+        i += 1;
+        if (i < gestures.length) {
+          setIdx(i);
+          setTimeout(tick, STEP_MS);
+        } else {
+          setTimeout(() => recorderRef.current?.state !== 'inactive' && recorderRef.current?.stop(), STEP_MS);
+        }
+      };
+      setTimeout(tick, STEP_MS);
+    } catch {
+      stopStream();
+      setPhase('intro');
+      onError('Camera access is needed for the liveness check. Allow the camera, then try again.');
+    }
+  };
+
+  if (phase === 'review') {
+    return (
+      <div className="mt-5 space-y-4">
+        <video src={preview} controls playsInline className="w-full max-h-72 rounded-2xl border border-line bg-surface" />
+        <div className="flex items-center gap-2">
+          <Btn onClick={() => onCapture(preview, baseMime(mime))} disabled={busy}>
+            {busy ? (
+              <>
+                <Spinner /> Uploading…
+              </>
+            ) : (
+              'Submit'
+            )}
+          </Btn>
+          <Btn variant="quiet" onClick={start} disabled={busy}>
+            Re-record
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+  if (phase === 'recording') {
+    return (
+      <div className="mt-5 space-y-4">
+        <div className="relative overflow-hidden rounded-2xl border border-line bg-black">
+          <video ref={videoRef} autoPlay muted playsInline className="w-full max-h-72 object-cover" />
+          <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/70 to-transparent text-center">
+            <p className="text-white text-[15px] font-medium">{gestures[idx]?.label}</p>
+          </div>
+        </div>
+        <div className="flex justify-center gap-1.5">
+          {gestures.map((g, i) => (
+            <span key={g.id} className={`w-2 h-2 rounded-full ${i <= idx ? 'bg-accent' : 'bg-line'}`} />
+          ))}
+        </div>
+        <p className="text-[12px] text-faint text-center">Recording… follow each prompt.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-5">
+      <Btn onClick={start} disabled={busy}>
+        Start camera &amp; record
+      </Btn>
+      <p className="text-[12px] text-faint mt-3">
+        Camera only — no file upload. You&rsquo;ll follow {gestures.length} quick prompts.
+      </p>
+    </div>
+  );
+}
+
 const Header = ({ onSignOut }) => (
   <header className="flex items-center gap-2 px-6 pt-6">
     <img src="https://kunji.cc/icon.svg" alt="" className="w-6 h-6 rounded-md" />
@@ -58,6 +186,7 @@ export default function App() {
   // flow
   const [step, setStep] = useState('chooseType'); // home | chooseType | chooseProvider | upload | review | done | rejected
   const [creds, setCreds] = useState([]); // already-earned credentials ({ type, verifiedAt }) — re-addable
+  const [livenessReq, setLivenessReq] = useState(null); // { gestures } when the chosen type requiresLiveness
   const [selType, setSelType] = useState(null); // the chosen type object (catalog)
   const [sid, setSid] = useState('');
   const [preview, setPreview] = useState('');
@@ -236,9 +365,10 @@ export default function App() {
     setBusy(true);
     setErr('');
     try {
-      const { sid: s, kind } = await api.startVerify(type, method);
+      const { sid: s, kind, liveness } = await api.startVerify(type, method);
       setSid(s);
       setPreview('');
+      setLivenessReq(liveness || null); // { gestures } for a requiresLiveness type
       setStep(kind === 'manual' ? 'upload' : 'review');
     } catch (e) {
       if (e.status === 401) {
@@ -267,12 +397,30 @@ export default function App() {
     setErr('');
     try {
       await api.uploadDoc(sid, preview, 'image/jpeg');
-      setStep('review');
+      // A liveness type captures the gesture video next; otherwise it's straight to review.
+      setStep(livenessReq ? 'liveness' : 'review');
     } catch (e) {
       if (e.status === 401) {
         api.setToken('');
         setPhase('login');
       } else setErr(e.message === 'bad_image' ? 'That image was rejected — use a clear JPG/PNG under 8 MB.' : 'Upload failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Upload the recorded liveness clip (camera-only) → review.
+  const submitLiveness = async (dataUrl, contentType) => {
+    setBusy(true);
+    setErr('');
+    try {
+      await api.uploadLiveness(sid, dataUrl, contentType);
+      setStep('review');
+    } catch (e) {
+      if (e.status === 401) {
+        api.setToken('');
+        setPhase('login');
+      } else setErr(e.message === 'bad_video' ? 'That clip was rejected — re-record a short, clear video.' : 'Upload failed. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -284,6 +432,7 @@ export default function App() {
     setOfferLink('');
     setErr('');
     setSelType(null);
+    setLivenessReq(null);
     setStep('chooseType');
   };
 
@@ -451,6 +600,20 @@ export default function App() {
               </Btn>
             )}
           </div>
+        </>
+      );
+    }
+    if (step === 'liveness') {
+      return (
+        <>
+          <BackLink onClick={restart} />
+          <SectionLabel>Step 2 · Liveness</SectionLabel>
+          <h1 className="text-[1.6rem] leading-tight font-semibold tracking-tight mt-2">Quick liveness check</h1>
+          <p className="text-[15px] text-muted mt-2">
+            Record a few seconds following the prompts, so a kunji operator can confirm a live person who matches
+            your ID. The clip is reviewed, then deleted — it&rsquo;s never shared or stored.
+          </p>
+          <LivenessCapture gestures={livenessReq?.gestures || []} onCapture={submitLiveness} onError={setErr} busy={busy} />
         </>
       );
     }

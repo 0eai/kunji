@@ -24,8 +24,9 @@ export const fetchReviews = () => call('/reviews');
 
 // The pending submission's ID image — fetched with the bearer (the endpoint streams bytes, no public URL),
 // returned as a blob object URL to display in an <img>.
-export const reviewDoc = async (sid) => {
-  const res = await fetch(`/api/review/doc?sid=${encodeURIComponent(sid)}`, { headers: await authHeader() });
+export const reviewDoc = async (sid, artifact) => {
+  const q = `?sid=${encodeURIComponent(sid)}${artifact ? `&artifact=${encodeURIComponent(artifact)}` : ''}`;
+  const res = await fetch(`/api/review/doc${q}`, { headers: await authHeader() });
   if (!res.ok) throw new Error('doc_failed');
   return URL.createObjectURL(await res.blob());
 };

@@ -250,7 +250,9 @@ const DEFAULT_FIELDS = [{ key: 'dob', label: 'Date of birth (from ID)', type: 'd
 function ReviewPanel({ review, onDone }) {
   const { sid, type } = review;
   const fields = review.reviewFields?.length ? review.reviewFields : DEFAULT_FIELDS;
+  const liveness = review.liveness; // { gestures: [{id,label}] } when this type required a liveness clip
   const [img, setImg] = useState('');
+  const [video, setVideo] = useState('');
   const [data, setData] = useState({}); // the verifiedData the operator fills in
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -267,6 +269,20 @@ function ReviewPanel({ review, onDone }) {
       if (url) URL.revokeObjectURL(url);
     };
   }, [sid]);
+
+  useEffect(() => {
+    if (!liveness) return undefined;
+    let url;
+    reviewDoc(sid, 'liveness')
+      .then((u) => {
+        url = u;
+        setVideo(u);
+      })
+      .catch(() => {});
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [sid, liveness]);
 
   const setField = (k, v) => setData((d) => ({ ...d, [k]: v }));
   const ready = fields.every((f) => !f.required || String(data[f.key] || '').trim());
@@ -301,6 +317,24 @@ function ReviewPanel({ review, onDone }) {
           <div className="py-20 flex justify-center text-muted">{err ? <span className="text-danger text-sm">{err}</span> : <Spinner size={22} />}</div>
         )}
       </div>
+      {liveness && (
+        <div className="mt-5">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-faint mb-2">Liveness check</div>
+          <div className="rounded-2xl border border-line overflow-hidden bg-black">
+            {video ? (
+              <video src={video} controls playsInline className="w-full max-h-[60vh]" />
+            ) : (
+              <div className="py-16 flex justify-center text-muted">
+                <Spinner size={22} />
+              </div>
+            )}
+          </div>
+          <p className="text-[12px] text-muted mt-2">
+            Confirm a <strong className="text-ink font-medium">live person matching the ID</strong> performed, in
+            order: {(liveness.gestures || []).map((g) => g.label).join(' → ') || '—'}.
+          </p>
+        </div>
+      )}
       <div className="mt-5 max-w-xs space-y-4">
         {fields.map((f) =>
           f.type === 'select' ? (

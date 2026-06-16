@@ -116,6 +116,9 @@ export const CREDENTIAL_TYPES = {
     description: 'Prove you are a real, unique person — a coarse signal, never your ID number or name.',
     ttlSeconds: 180 * DAY,
     methods: ['document-review'],
+    // Requires a live gesture-video (anti-spoof) in addition to the ID — the operator face-matches a live
+    // human to the ID. The video is reviewed then DELETED; never issued (credential stays coarse). See liveness.js.
+    requiresLiveness: true,
     reviewFields: [
       {
         key: 'idType',

@@ -29,6 +29,7 @@ export const loginStatus = (sessionId) => get(`/kunji/status?sessionId=${encodeU
 export const myVerifications = () => get('/verify/mine', true);
 export const startVerify = (type, method) => post('/verify/start', { type, method }, true);
 export const uploadDoc = (sid, image, contentType) => post('/verify/upload', { sid, image, contentType }, true);
+export const uploadLiveness = (sid, video, contentType) => post('/verify/liveness-upload', { sid, video, contentType }, true);
 export const checkStatus = (sid) => get(`/verify/status?sid=${encodeURIComponent(sid)}`);
 export const getOffer = (sid) => get(`/credential-offer?sid=${encodeURIComponent(sid)}`, true);
 // Re-add an already-earned credential to a wallet (no session, no re-verification).
