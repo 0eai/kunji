@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useVault } from './contexts/VaultContext';
-import { auth, ensureAnonymousAuth, onAuthStateChanged } from './lib/firebase';
+import {
+  auth,
+  ensureAnonymousAuth,
+  onAuthStateChanged,
+  isEmailSignInLink,
+  completeEmailLink,
+} from './lib/firebase';
 import { logActivity } from './services/activityLog';
 import LockScreen from './components/LockScreen';
 import Dashboard from './components/Dashboard';
@@ -46,10 +52,32 @@ export default function App() {
   const { user, cryptoKey, loading, lockReason, setAuthUser, unlockVault, lockVault } = useVault();
   const [incoming] = useState(readIncomingLinks);
   const [authError, setAuthError] = useState(false);
+  // Set when an inbound email sign-in link arrives but we can't determine the email
+  // (it was requested on another device) — prompt for it. Holds the link href.
+  const [emailLinkHref, setEmailLinkHref] = useState(null);
+  const [emailPrompt, setEmailPrompt] = useState('');
+  const [emailPromptBusy, setEmailPromptBusy] = useState(false);
 
-  // Sign in anonymously on first load, persist session
+  // Sign in anonymously on first load, persist session.
+  // If the URL is a Firebase email sign-in link, complete it first: link the credential to
+  // the current (anonymous → permanent) account when this device requested it (uid preserved),
+  // or sign in as the linked uid on a fresh device. Either way the existing flow then runs.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      const href = window.location.href;
+      if (isEmailSignInLink(href)) {
+        try {
+          await completeEmailLink(href, firebaseUser);
+          history.replaceState(null, '', window.location.pathname); // strip oobCode/apiKey/mode
+        } catch (e) {
+          if (e.message === 'EMAIL_REQUIRED') {
+            setEmailLinkHref(href);
+            setAuthUser(null); // clear "loading" so the email prompt can render
+            return;
+          }
+          console.error('Email link sign-in failed:', e);
+        }
+      }
       if (firebaseUser) {
         setAuthUser(firebaseUser);
         setAuthError(false);
@@ -66,6 +94,21 @@ export default function App() {
     });
     return unsub;
   }, [setAuthUser]);
+
+  // Cross-device email-link completion: the user opened the link on a device that didn't
+  // request it, so we ask for the email, then sign in as the linked uid.
+  const submitEmailPrompt = async () => {
+    if (!emailPrompt.trim()) return;
+    setEmailPromptBusy(true);
+    try {
+      await completeEmailLink(emailLinkHref, auth.currentUser, emailPrompt.trim());
+      history.replaceState(null, '', window.location.pathname);
+      setEmailLinkHref(null); // onAuthStateChanged fires with the signed-in user
+    } catch (e) {
+      console.error('Email link sign-in failed:', e);
+      setEmailPromptBusy(false);
+    }
+  };
 
   // If no session is established within a few seconds (blocked storage, offline,
   // private mode), surface an actionable error instead of a perpetual "Connecting…".
@@ -118,6 +161,34 @@ export default function App() {
     document.addEventListener('visibilitychange', handle);
     return () => document.removeEventListener('visibilitychange', handle);
   }, [cryptoKey, user, lockVault]);
+
+  // Inbound email sign-in link opened on a device that didn't request it — confirm the email.
+  if (emailLinkHref) {
+    return (
+      <div className="h-[100dvh] w-full flex flex-col items-center justify-center gap-4 bg-paper text-ink px-6 text-center">
+        <p className="text-[15px] font-medium">Confirm your email</p>
+        <p className="text-[14px] text-muted max-w-xs leading-relaxed">
+          Enter the email this sign-in link was sent to, to finish signing in.
+        </p>
+        <input
+          type="email"
+          value={emailPrompt}
+          onChange={(e) => setEmailPrompt(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submitEmailPrompt()}
+          placeholder="you@example.com"
+          autoFocus
+          className="w-full max-w-xs bg-transparent border-0 border-b border-line rounded-none px-0 py-3 text-ink placeholder:text-faint outline-none focus:border-accent transition-colors text-center"
+        />
+        <button
+          onClick={submitEmailPrompt}
+          disabled={emailPromptBusy || !emailPrompt.trim()}
+          className="inline-flex items-center justify-center px-5 py-3 text-sm bg-accent-fill hover:bg-accent text-on-accent font-semibold rounded-full transition-colors disabled:opacity-40"
+        >
+          {emailPromptBusy ? 'Signing in…' : 'Continue'}
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -9,9 +9,10 @@ import {
   UserCircle,
   Bot,
   BadgeCheck,
+  ShieldCheck,
 } from 'lucide-react';
 import { resetUserVault } from '../services/vault';
-import { signOutDevice } from '../lib/firebase';
+import { signOutDevice, hasAccountRecovery } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
 import InstallButton from './InstallButton';
 import LinkedDevicesSheet from './LinkedDevicesSheet';
@@ -19,6 +20,7 @@ import CredentialsSheet from './CredentialsSheet';
 import ChangePasskeySheet from './ChangePasskeySheet';
 import ProfileSheet from './ProfileSheet';
 import RecoveryKeySheet from './RecoveryKeySheet';
+import AccountRecoverySheet from './AccountRecoverySheet';
 import ActivitySheet from './ActivitySheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Field, Btn } from './ui/primitives';
@@ -62,6 +64,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
     agent: false,
     credentials: false,
     recovery: false,
+    accountRecovery: false,
     activity: false,
   });
   // Single-open accordion: expanding one row collapses the rest; re-clicking closes it.
@@ -112,6 +115,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
   const [showChangeKey, setShowChangeKey] = useState(false); // change-passkey sheet
   const [showProfile, setShowProfile] = useState(false); // edit-profile sheet
   const [showRecovery, setShowRecovery] = useState(false); // export-recovery-key sheet
+  const [showAccountRecovery, setShowAccountRecovery] = useState(false); // account-recovery (provider link) sheet
+  // Re-read on each render so it reflects a just-linked/unlinked provider; cheap (reads auth.currentUser).
+  const accountRecoveryOn = hasAccountRecovery();
   const [showActivity, setShowActivity] = useState(false); // recent-activity sheet
 
   return (
@@ -215,6 +221,23 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
         </Row>
 
         <Row
+          icon={ShieldCheck}
+          title="Account recovery"
+          count={accountRecoveryOn ? 'on' : undefined}
+          open={open.accountRecovery}
+          onToggle={() => toggle('accountRecovery')}
+        >
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Optional. Link a Google account or email so you can get back into your vault on a brand-new
+            device using only that account and your passkey — no recovery file or other device needed.
+            Your vault stays encrypted and apps still see only your unlinkable per-app identities.
+          </p>
+          <Btn variant="primary" onClick={() => setShowAccountRecovery(true)} className="w-full">
+            <ShieldCheck size={16} /> {accountRecoveryOn ? 'Manage account recovery' : 'Set up account recovery'}
+          </Btn>
+        </Row>
+
+        <Row
           icon={Activity}
           title="Recent activity"
           open={open.activity}
@@ -309,6 +332,10 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
 
       {showRecovery && (
         <RecoveryKeySheet userId={userId} onClose={() => setShowRecovery(false)} />
+      )}
+
+      {showAccountRecovery && (
+        <AccountRecoverySheet userId={userId} onClose={() => setShowAccountRecovery(false)} />
       )}
 
       {showActivity && (

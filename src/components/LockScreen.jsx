@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { Key, AlertTriangle, ArrowRight, Upload } from 'lucide-react';
-import { db } from '../lib/firebase';
+import { Key, AlertTriangle, ArrowRight, Upload, ShieldCheck, Mail } from 'lucide-react';
+import { db, recoverWithGoogle, startEmailLink } from '../lib/firebase';
 import {
   deriveKeyFromPasskey,
   deriveKeyArgon2id,
@@ -66,6 +66,45 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
 
   const [showReset, setShowReset] = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
+
+  // Account recovery (fresh device): sign in with a linked provider so this device
+  // resolves to the linked uid and the existing vault doc becomes reachable.
+  const [isAccountRecovering, setIsAccountRecovering] = useState(false);
+  const [recoverEmail, setRecoverEmail] = useState('');
+  const [recoverEmailSent, setRecoverEmailSent] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
+
+  // When provider sign-in changes the uid, drop the account-recovery view so the normal
+  // unlock form (now that users/{uid} exists) shows. Also clears on first mount (no-op).
+  useEffect(() => {
+    setIsAccountRecovering(false);
+    setAccountBusy(false);
+  }, [user?.uid]);
+
+  const handleGoogleRecover = async () => {
+    setAccountBusy(true);
+    try {
+      await recoverWithGoogle(); // onAuthStateChanged → App re-renders → the effect above resets this view
+    } catch (e) {
+      setAccountBusy(false);
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+      showToast(e.message || 'Could not sign in.', 'error');
+    }
+  };
+
+  const handleEmailRecover = async () => {
+    if (!recoverEmail.trim()) return;
+    setAccountBusy(true);
+    try {
+      await startEmailLink(recoverEmail.trim(), 'recover');
+      setRecoverEmailSent(true);
+      showToast('Check your email and open the link on this device.');
+    } catch (e) {
+      showToast(e.message || 'Could not send the link.', 'error');
+    } finally {
+      setAccountBusy(false);
+    }
+  };
 
   // Read a downloaded .kunji recovery file and drop its `v2:` string into the textarea, which
   // reveals the passphrase field and feeds the existing v2 parse path in handleSubmit.
@@ -409,6 +448,79 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
     );
   }
 
+  // Account recovery on a fresh device: provider sign-in resolves to the linked uid, after
+  // which the normal unlock form appears (the effect above drops this view on the uid change).
+  if (isAccountRecovering) {
+    return (
+      <div className="min-h-[100dvh] w-full flex flex-col bg-paper text-ink">
+        <header className="flex items-center gap-2 px-6 pt-[max(1.25rem,env(safe-area-inset-top))]">
+          <img src="/icons/icon.svg" alt="" className="w-7 h-7" />
+          <span className="text-[15px] font-semibold tracking-tight lowercase">kunji</span>
+          <span className="ml-auto text-[13px] text-faint tracking-tight">Be your own key.</span>
+        </header>
+        <main className="flex-1 flex flex-col justify-center max-w-[26rem] w-full mx-auto px-6 animate-rise">
+          <div className="mb-9">
+            <div className="w-12 h-12 rounded-2xl bg-accent-soft flex items-center justify-center mb-6">
+              <ShieldCheck size={22} className="text-accent" strokeWidth={2.25} />
+            </div>
+            <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-tight mb-2">
+              Recover with account
+            </h1>
+            <p className="text-[15px] leading-relaxed text-muted">
+              Sign in with the account you linked. Then enter your passkey to unlock — your vault
+              stays encrypted.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <Btn variant="primary" onClick={handleGoogleRecover} disabled={accountBusy} className="w-full">
+              {accountBusy ? (
+                <>
+                  <Spinner /> Signing in…
+                </>
+              ) : (
+                'Continue with Google'
+              )}
+            </Btn>
+
+            <div className="text-[12px] uppercase tracking-wide text-faint pt-2">Or by email</div>
+            <Field
+              label="Email"
+              type="email"
+              value={recoverEmail}
+              onChange={(e) => setRecoverEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            <Btn
+              variant="quiet"
+              onClick={handleEmailRecover}
+              disabled={accountBusy || !recoverEmail.trim()}
+              className="w-full"
+            >
+              <Mail size={16} /> {recoverEmailSent ? 'Resend sign-in link' : 'Email me a sign-in link'}
+            </Btn>
+            {recoverEmailSent && (
+              <p className="text-[12px] text-muted leading-relaxed">
+                We sent a sign-in link to{' '}
+                <strong className="text-ink font-medium">{recoverEmail.trim()}</strong>. Open it{' '}
+                <strong className="text-ink font-medium">on this device</strong> to continue.
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsAccountRecovering(false)}
+            disabled={accountBusy}
+            className="mt-6 w-full text-center text-sm font-medium text-muted hover:text-accent transition-colors disabled:opacity-40"
+          >
+            Back
+          </button>
+        </main>
+      </div>
+    );
+  }
+
   const isError =
     status === 'Incorrect Passkey' ||
     status === 'Incorrect recovery key or passphrase' ||
@@ -620,6 +732,15 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
             className="mt-5 w-full text-center text-sm font-medium text-accent hover:text-ink transition-colors"
           >
             Link from another device
+          </button>
+        )}
+
+        {isNewUser && !isRecovering && (
+          <button
+            onClick={() => setIsAccountRecovering(true)}
+            className="mt-3 w-full text-center text-sm font-medium text-muted hover:text-accent transition-colors"
+          >
+            Recover with account
           </button>
         )}
 

@@ -13,7 +13,7 @@
       http-equiv="Content-Security-Policy"
       content="
     default-src 'self';
-    script-src 'self' 'wasm-unsafe-eval' https://*.firebasedatabase.app;
+    script-src 'self' 'wasm-unsafe-eval' https://*.firebasedatabase.app https://apis.google.com;
     style-src 'self' 'unsafe-inline';
     connect-src 'self'
       https:
@@ -26,7 +26,7 @@
     img-src 'self' data: blob: https:;
     media-src 'self' blob:;
     worker-src 'self' blob:;
-    frame-src 'none';
+    frame-src https://kunji-cc.firebaseapp.com https://accounts.google.com https://apis.google.com;
     frame-ancestors 'none';
     object-src 'none';
     base-uri 'self';

@@ -87,6 +87,26 @@ export const changePasskey = async (userId, masterKey, currentPasskey, newPasske
 };
 
 /**
+ * Verify a passkey against this device's vault by re-deriving its wrapper and
+ * decrypting the blob (the same check `changePasskey` / `exportRecoveryKey` do).
+ * Returns true on a correct passkey, false otherwise. No mutation. Used by the
+ * account-recovery setup to confirm the user's passkey before measuring its
+ * strength and linking a provider.
+ */
+export const verifyPasskey = async (userId, passkey) => {
+  const userDoc = await getDoc(doc(db, 'users', userId));
+  if (!userDoc.exists()) return false;
+  const data = userDoc.data();
+  const { encryptionSalt, encryptedMasterKey, kdf, iterations } = data;
+  if (!encryptionSalt || !encryptedMasterKey) return false;
+  const wrapperKey =
+    kdf === 'argon2id'
+      ? await deriveKeyArgon2id(passkey, encryptionSalt, argon2ParamsFromDoc(data))
+      : await deriveKeyFromPasskey(passkey, encryptionSalt, iterations || getDefaultIterations());
+  return Boolean(await decryptData(encryptedMasterKey, wrapperKey));
+};
+
+/**
  * Generate a recovery key that can restore this vault on any device.
  * The master key is re-wrapped with an Argon2id key derived from a SEPARATE
  * recovery passphrase, so the recovery string is useless without that passphrase.
