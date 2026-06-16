@@ -12,6 +12,8 @@ import {
   RotateCcw,
   CheckCircle2,
   Circle,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 
 export const ACTIVITY_ICONS = {
@@ -25,6 +27,8 @@ export const ACTIVITY_ICONS = {
   Unlink,
   RotateCcw,
   CheckCircle: CheckCircle2,
+  Bell,
+  BellOff,
 };
 
 export const TYPE_COLOR = { success: 'text-success', danger: 'text-danger', info: 'text-muted' };

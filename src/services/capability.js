@@ -126,7 +126,12 @@ export const depositAgentCapability = async (sessionId, agentTransportPubB64, ca
  */
 export const issueCapability = async (userId, cryptoKey, { audience, scope, ttlSeconds, agentPub }) => {
   const result = await mintCapability(cryptoKey, { audience, scope, ttlSeconds, agentPubB64: agentPub });
-  await logActivity(userId, `Authorized an agent for ${audience}`, 'success', 'ShieldCheck', cryptoKey);
+  // Tag with the agent's jti/audience (NOT `domain`, so it doesn't mix into per-app activity) so the
+  // agent detail sheet can show this agent's lifecycle.
+  await logActivity(userId, `Authorized an agent for ${audience}`, 'success', 'ShieldCheck', cryptoKey, {
+    agentJti: result.jti,
+    agentAudience: audience,
+  });
   return result; // { capability, appPub, sub, jti, exp }
 };
 
@@ -207,5 +212,8 @@ export const revokeAgent = async (userId, cryptoKey, { jti, audience }) => {
   const sig = signMessageEd25519(revokeMessage(jti), secretKey);
   await setDoc(doc(db, 'revocations', jti), { jti, sig, revokedAt: Date.now() });
   await agentVaultWrite(cryptoKey, 'delete', jti, null);
-  await logActivity(userId, `Revoked an agent for ${audience}`, 'info', 'ShieldX', cryptoKey);
+  await logActivity(userId, `Revoked an agent for ${audience}`, 'info', 'ShieldX', cryptoKey, {
+    agentJti: jti,
+    agentAudience: audience,
+  });
 };

@@ -20,19 +20,18 @@ const sharedHint = (s) => {
 // Recent activity. Global by default (all events on this identity); pass `domain` to scope it to a
 // single app (same dialog, reused from AppDetailsModal). The Firestore listener lives here so it
 // only runs while the sheet is open. Mirrors the sheet pattern.
-const ActivitySheet = ({ userId, cryptoKey, onClose, domain, appName }) => {
+const ActivitySheet = ({ userId, cryptoKey, onClose, domain, appName, agentJti, agentLabel }) => {
   const [events, setEvents] = useState([]);
   const [detail, setDetail] = useState(null); // event opened in the detail sheet
   useEffect(() => {
     const want = domain ? normalizeDomain(domain) : null;
-    return listenToActivityLog(
-      userId,
-      (all) => setEvents(want ? all.filter((e) => e.domain && normalizeDomain(e.domain) === want) : all),
-      30,
-      cryptoKey,
-    );
-  }, [userId, cryptoKey, domain]);
+    // Scope to one app (by domain) or one agent (by jti); else show everything on this identity.
+    const keep = (e) =>
+      agentJti ? e.agentJti === agentJti : want ? e.domain && normalizeDomain(e.domain) === want : true;
+    return listenToActivityLog(userId, (all) => setEvents(all.filter(keep)), 30, cryptoKey);
+  }, [userId, cryptoKey, domain, agentJti]);
 
+  const scopedLabel = agentLabel || appName || domain;
   return (
     <Sheet onClose={onClose} z={60} labelledBy="activity-title">
       <div className="flex items-center gap-2.5 mb-3">
@@ -42,13 +41,19 @@ const ActivitySheet = ({ userId, cryptoKey, onClose, domain, appName }) => {
         </h2>
       </div>
       <p className="text-[14px] text-muted leading-relaxed mb-5">
-        {domain
-          ? `Sign-ins and security events for ${appName || domain} on this identity.`
-          : 'Sign-ins, approvals, and security events on this identity.'}
+        {agentJti
+          ? `Lifecycle events for this agent${scopedLabel ? ` at ${scopedLabel}` : ''} — the wallet sees when it was authorized, changed, or revoked, not its ongoing use.`
+          : domain
+            ? `Sign-ins and security events for ${scopedLabel} on this identity.`
+            : 'Sign-ins, approvals, and security events on this identity.'}
       </p>
       {events.length === 0 ? (
         <p className="text-[13px] text-faint">
-          {domain ? 'No activity for this app yet.' : 'No activity on this identity yet.'}
+          {agentJti
+            ? 'No recorded events for this agent yet.'
+            : domain
+              ? 'No activity for this app yet.'
+              : 'No activity on this identity yet.'}
         </p>
       ) : (
         <div className="divide-y divide-line border-t border-line max-h-[60vh] overflow-y-auto">
