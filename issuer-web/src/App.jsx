@@ -34,6 +34,12 @@ const pickActive = (items) => {
   return (items || []).slice().sort((a, b) => (rank[b.status] || 0) - (rank[a.status] || 0))[0] || null;
 };
 
+const BackLink = ({ onClick }) => (
+  <button onClick={onClick} className="text-[13px] text-muted hover:text-ink transition-colors -mt-1 mb-1">
+    ← Back
+  </button>
+);
+
 const Header = ({ onSignOut }) => (
   <header className="flex items-center gap-2 px-6 pt-6">
     <img src="https://kunji.cc/icon.svg" alt="" className="w-6 h-6 rounded-md" />
@@ -317,6 +323,7 @@ export default function App() {
     if (step === 'chooseProvider') {
       return (
         <>
+          <BackLink onClick={() => { setSelType(null); setStep('chooseType'); }} />
           <SectionLabel>Choose a verifier</SectionLabel>
           <h1 className="text-[1.6rem] leading-tight font-semibold tracking-tight mt-2">How do you want to prove {selType?.label?.toLowerCase()}?</h1>
           <div className="mt-6 divide-y divide-line border-y border-line">
@@ -345,11 +352,12 @@ export default function App() {
     if (step === 'upload') {
       return (
         <>
+          {(catalog?.types?.length || 0) > 1 && <BackLink onClick={restart} />}
           <SectionLabel>Step 1 · Your ID</SectionLabel>
           <h1 className="text-[1.6rem] leading-tight font-semibold tracking-tight mt-2">Upload a government ID</h1>
           <p className="text-[15px] text-muted mt-2">
             A passport or driver&rsquo;s license, all corners visible. A kunji operator reviews it, then it&rsquo;s deleted —
-            we keep only your verified age thresholds.
+            we keep only the verified result{selType?.label ? ` for ${selType.label.toLowerCase()}` : ''}, never the document itself.
           </p>
           <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
           {preview ? (
@@ -393,7 +401,7 @@ export default function App() {
             <h1 className="text-[1.5rem] font-semibold tracking-tight">We&rsquo;re reviewing your ID</h1>
           </div>
           <p className="text-[15px] text-muted mt-3">
-            A kunji operator is confirming your age. This page updates on its own — and because you&rsquo;re signed in,
+            A kunji operator is confirming your details. This page updates on its own — and because you&rsquo;re signed in,
             you can safely close it and come back (any device). Your document is deleted the moment the review is done.
           </p>
         </>
@@ -403,10 +411,10 @@ export default function App() {
       return (
         <>
           <SectionLabel>Verified</SectionLabel>
-          <h1 className="text-[1.7rem] leading-tight font-semibold tracking-tight mt-2">Age verified ✓</h1>
+          <h1 className="text-[1.7rem] leading-tight font-semibold tracking-tight mt-2">Verified ✓</h1>
           <p className="text-[15px] text-muted mt-2">
-            Open kunji to add your age credential, then present it anywhere that trusts kunji — boolean thresholds
-            only, no date of birth.
+            Open kunji to add your {selType?.label?.toLowerCase() || 'verified'} credential, then present it anywhere
+            that trusts kunji — only the minimal verified claim is shared, never the document you uploaded.
           </p>
           <a
             href={offerLink}
@@ -440,8 +448,8 @@ export default function App() {
         </div>
       </main>
       <footer className="max-w-[28rem] w-full mx-auto px-6 pb-8 text-[12px] text-faint leading-relaxed">
-        kunji verifies your age once and issues a credential with boolean thresholds only — never your date of birth.
-        Your ID is reviewed by an operator and deleted right after.
+        kunji verifies you once and issues a credential with minimal claims only — never the document you uploaded
+        or its raw details. Your ID is reviewed by an operator and deleted right after.
       </footer>
     </div>
   );
