@@ -7,6 +7,7 @@ import {
   deriveAppIdentity,
   parseQRPayload,
   submitDiscoverableAssertion,
+  recordAppShare,
   deriveSubFromPublicKey,
   migrateLegacyApps,
   lookupSessionByCode,
@@ -378,9 +379,26 @@ const Dashboard = ({
           }
         }
       }
-      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims, vcPresentations);
+      // Summarize what this sign-in shares — for the per-event Recent-activity detail (incl. scopes,
+      // which are NOT persisted on the app record) and the standing per-app credentials summary.
+      const credsDelta = credentials.map(({ cred, disclose }) => ({
+        vct: cred.vct,
+        iss: cred.iss,
+        claims: disclose || [],
+      }));
+      const sid = (s) => (typeof s === 'string' ? s : s?.id);
+      const sharedSummary = {
+        profile: !!(claims && (claims.name || claims.picture)),
+        credentials: credsDelta.map(({ vct, claims: cl }) => ({ vct, claims: cl })),
+        scopes: (pendingSession.scope || [])
+          .map(sid)
+          .filter((s) => s && s !== 'login' && s !== 'profile' && !s.startsWith('vc:')),
+      };
+      await submitDiscoverableAssertion(user.uid, cryptoKey, pendingSession, claims, vcPresentations, sharedSummary);
       // A one-time copy is spent once the assertion is in (best-effort; v1 credentials stay put).
       for (const { cred } of credentials) await spendIfOneTime(cryptoKey, cred);
+      // Record proven facts onto the app's standing record (best-effort; never blocks the sign-in).
+      if (credsDelta.length) await recordAppShare(vaultId, cryptoKey, domain, credsDelta).catch(() => {});
       showToast(`Signed in to ${audience}`);
       // The toast above is the confirmation for cross-device (QR) / device-code sign-ins.
       // Only the same-device deep link shows the "Return to …" sheet (it returns to the

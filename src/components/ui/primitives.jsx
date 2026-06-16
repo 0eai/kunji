@@ -1,25 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Eye, EyeOff, Info } from 'lucide-react';
 
-/* Small quiet uppercase section label, optional trailing count. Editorial header. */
-export const SectionLabel = ({ children, count, className = '' }) => (
-  <div className={`flex items-baseline gap-2 ${className}`}>
-    <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-faint">
-      {children}
-    </span>
-    {count != null && <span className="text-[11px] font-mono text-faint tabular">· {count}</span>}
-  </div>
-);
-
-/* A sheet title block: optional leading accent icon + the <h2 id> (kept intact for the Sheet's
-   aria-labelledby) + an optional (i) button that reveals `info` in a popover on tap — so the
-   "what is this" intro is opt-in rather than always on screen. The popover anchors to the full
-   title row (left-0 right-0) so it can't overflow the narrow sheet, and closes on outside tap or
-   on toggling the icon. No Esc handler here on purpose: the Sheet already closes on Esc. */
-export const SheetHeading = ({ id, icon: Icon, children, info, hintLabel = 'What is this?' }) => {
+/* An (i) button that reveals `info` in a popover on tap — so a "what is this" explainer is opt-in
+   rather than always on screen. Uses display:contents so the button sits inline in whatever row it's
+   dropped into, while the popover anchors to that row (left-0 right-0 → can't overflow a narrow sheet).
+   The PARENT row must be `relative`. Closes on outside tap / re-tap. No Esc handler on purpose — the
+   surrounding Sheet already closes on Esc, and a second handler would fight it. */
+export const InfoHint = ({ info, hintLabel = 'What is this?' }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const panelId = `${id}-hint`;
+  const panelId = useId();
   useEffect(() => {
     if (!open) return undefined;
     const onDown = (e) => {
@@ -29,40 +19,55 @@ export const SheetHeading = ({ id, icon: Icon, children, info, hintLabel = 'What
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
   return (
-    <div ref={ref} className="relative flex items-center gap-2.5 mb-3">
-      {Icon && <Icon size={18} className="text-accent shrink-0" />}
-      <h2 id={id} className="text-lg font-semibold tracking-tight">
-        {children}
-      </h2>
-      {info && (
-        <>
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-label={hintLabel}
-            title={hintLabel}
-            aria-expanded={open}
-            aria-controls={panelId}
-            className={`p-1 -m-1 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
-              open ? 'text-muted' : 'text-faint hover:text-muted'
-            }`}
-          >
-            <Info size={15} strokeWidth={1.75} />
-          </button>
-          {open && (
-            <p
-              id={panelId}
-              role="tooltip"
-              className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border border-line bg-surface shadow-md p-3 text-[13px] text-muted leading-relaxed animate-fade"
-            >
-              {info}
-            </p>
-          )}
-        </>
+    <span ref={ref} className="contents">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={hintLabel}
+        title={hintLabel}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={`p-1 -m-1 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
+          open ? 'text-muted' : 'text-faint hover:text-muted'
+        }`}
+      >
+        <Info size={15} strokeWidth={1.75} />
+      </button>
+      {open && (
+        <p
+          id={panelId}
+          role="tooltip"
+          className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border border-line bg-surface shadow-md p-3 text-[13px] text-muted leading-relaxed animate-fade"
+        >
+          {info}
+        </p>
       )}
-    </div>
+    </span>
   );
 };
+
+/* Small quiet uppercase section label, optional trailing count + optional (i) info popover. */
+export const SectionLabel = ({ children, count, info, hintLabel, className = '' }) => (
+  <div className={`relative flex items-baseline gap-2 ${className}`}>
+    <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-faint">
+      {children}
+    </span>
+    {count != null && <span className="text-[11px] font-mono text-faint tabular">· {count}</span>}
+    {info && <InfoHint info={info} hintLabel={hintLabel} />}
+  </div>
+);
+
+/* A sheet title block: optional leading accent icon + the <h2 id> (kept intact for the Sheet's
+   aria-labelledby) + an optional (i) info popover (the "what is this" intro, opt-in). */
+export const SheetHeading = ({ id, icon: Icon, children, info, hintLabel = 'What is this?' }) => (
+  <div className="relative flex items-center gap-2.5 mb-3">
+    {Icon && <Icon size={18} className="text-accent shrink-0" />}
+    <h2 id={id} className="text-lg font-semibold tracking-tight">
+      {children}
+    </h2>
+    {info && <InfoHint info={info} hintLabel={hintLabel} />}
+  </div>
+);
 
 /* Persistent field label — keeps context after the placeholder disappears on type. */
 const FieldLabel = ({ children }) => (

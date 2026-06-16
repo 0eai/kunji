@@ -12,6 +12,7 @@ import {
   isSafeReturnUrl,
   deriveSubFromPublicKey,
   requestsProfile,
+  mergeCredentials,
 } from '../src/services/identity.js';
 
 const validQR = (over = {}) =>
@@ -135,5 +136,31 @@ describe('isSafeReturnUrl', () => {
     [null, 'app.com', false],
   ])('isSafeReturnUrl(%s, %s) === %s', (url, audience, expected) => {
     expect(isSafeReturnUrl(url, audience)).toBe(expected);
+  });
+});
+
+describe('mergeCredentials — per-app verified-facts union', () => {
+  const age18 = { vct: 'age', iss: 'https://issuer.kunji.cc', claims: ['age_over_18'] };
+
+  it('adds a new fact to an empty prior', () => {
+    expect(mergeCredentials([], [age18])).toEqual([age18]);
+  });
+
+  it('is idempotent — re-proving the same fact does not duplicate', () => {
+    expect(mergeCredentials([age18], [age18])).toEqual([age18]);
+  });
+
+  it('merges claim sets for the same (vct, iss), sorted', () => {
+    const out = mergeCredentials([age18], [{ vct: 'age', iss: 'https://issuer.kunji.cc', claims: ['age_over_21'] }]);
+    expect(out).toEqual([{ vct: 'age', iss: 'https://issuer.kunji.cc', claims: ['age_over_18', 'age_over_21'] }]);
+  });
+
+  it('keeps different issuers (or vcts) as separate entries', () => {
+    const other = { vct: 'age', iss: 'https://other.example', claims: ['age_over_18'] };
+    expect(mergeCredentials([age18], [other])).toHaveLength(2);
+  });
+
+  it('ignores malformed entries (no vct)', () => {
+    expect(mergeCredentials([], [{ iss: 'x', claims: ['y'] }, null])).toEqual([]);
   });
 });

@@ -1,13 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Copy, CheckCircle2, KeyRound, Trash2, Activity, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Copy, CheckCircle2, KeyRound, Trash2, Activity, ChevronRight, BadgeCheck } from 'lucide-react';
 import { deriveSubFromPublicKey } from '../services/identity';
+import { deriveHandle } from '../lib/kunjiHandle';
 import Sheet from './ui/Sheet';
 import ActivitySheet from './ActivitySheet';
 import { SectionLabel, Monogram } from './ui/primitives';
 
+const issuerHost = (iss) => {
+  try {
+    return new URL(iss).host;
+  } catch {
+    return iss;
+  }
+};
+
 const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode, onDelete }) => {
   // Whether this app currently sees the custom profile (set at approval; wallet-only metadata).
   const sharesProfile = !!(app?.sharedProfile && profile && (profile.displayName || profile.avatar));
+  // Cumulative verified facts you've proven to this app (wallet-only metadata on the app record).
+  const credentials = app?.shared?.credentials || [];
   const [sub, setSub] = useState('');
   const [copiedSub, setCopiedSub] = useState(false);
   const [showActivitySheet, setShowActivitySheet] = useState(false);
@@ -18,6 +29,9 @@ const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode
       .then(setSub)
       .catch(() => setSub(''));
   }, [app?.publicKey]);
+
+  // The default per-app identity (deterministic from sub) — what the app sees unless you share a profile.
+  const handle = useMemo(() => (sub ? deriveHandle(sub) : null), [sub]);
 
   const copySub = () => {
     navigator.clipboard.writeText(sub);
@@ -41,7 +55,12 @@ const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode
       {/* Per-app subject ID */}
       {sub && (
         <div className="mb-7">
-          <SectionLabel className="mb-2.5">Your ID for this app</SectionLabel>
+          <SectionLabel
+            className="mb-2.5"
+            info="The stable identifier this app sees for you — unique to it, so apps can't link your accounts."
+          >
+            Your ID for this app
+          </SectionLabel>
           <div className="flex items-start gap-3 border-y border-line py-3.5">
             <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed tabular">
               {sub}
@@ -54,45 +73,73 @@ const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode
               {copiedSub ? <CheckCircle2 size={15} className="text-success" /> : <Copy size={15} />}
             </button>
           </div>
-          <p className="text-[12px] text-faint mt-2 leading-relaxed">
-            The stable identifier this app sees for you — unique to it, so apps can't link your
-            accounts.
-          </p>
         </div>
       )}
 
-      {/* What this app sees — custom profile vs the default per-app identity */}
+      {/* What this app sees — the identity (custom profile or default) + verified facts you've proven */}
       <div className="mb-7">
-        <SectionLabel className="mb-2.5">What this app sees</SectionLabel>
+        <SectionLabel
+          className="mb-2.5"
+          info="What this app learns about you. The default name & icon are generated just for this app — no real name, photo, or email. A custom profile is self-asserted and unverified; the app keeps a copy, so turning sharing off only affects future sign-ins. Verified facts are proven per sign-in — the app keeps only what it stored."
+        >
+          What this app sees
+        </SectionLabel>
         {sharesProfile ? (
-          <>
+          <div className="flex items-center gap-3 border-y border-line py-3.5">
+            {profile.avatar ? (
+              <img
+                src={profile.avatar}
+                alt=""
+                className="w-9 h-9 rounded-lg border border-line shrink-0 object-cover"
+              />
+            ) : (
+              <Monogram name={profile.displayName} size="sm" />
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink">Your custom profile</span>
+              <span className="block text-[12px] text-muted truncate">
+                {profile.displayName || 'Your photo'}
+              </span>
+            </span>
+          </div>
+        ) : (
+          handle && (
             <div className="flex items-center gap-3 border-y border-line py-3.5">
-              {profile.avatar ? (
-                <img
-                  src={profile.avatar}
-                  alt=""
-                  className="w-9 h-9 rounded-lg border border-line shrink-0 object-cover"
-                />
-              ) : (
-                <Monogram name={profile.displayName} size="sm" />
-              )}
+              <img
+                src={handle.avatarDataUri}
+                alt=""
+                className="w-9 h-9 rounded-lg border border-line shrink-0"
+              />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-medium text-ink">Your custom profile</span>
-                <span className="block text-[12px] text-muted truncate">
-                  {profile.displayName || 'Your photo'}
+                <span className="block text-[13px] font-medium text-ink truncate">{handle.name}</span>
+                <span className="block text-[12px] text-muted">
+                  Default identity — generated just for this app
                 </span>
               </span>
             </div>
-            <p className="text-[12px] text-faint mt-2 leading-relaxed">
-              Self-asserted and unverified. This app keeps a copy of what you've shared — turning
-              sharing off only affects future sign-ins.
+          )
+        )}
+
+        {/* Verified facts you've proven (cumulative; selective disclosure — only these claims, never your DOB) */}
+        {credentials.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[12px] uppercase tracking-wide text-faint mb-2">
+              Verified facts you've proven
             </p>
-          </>
-        ) : (
-          <p className="text-[13px] text-muted border-y border-line py-3.5">
-            Default identity only — a random name &amp; icon unique to this app. No name, photo, or
-            email.
-          </p>
+            <div className="divide-y divide-line border-y border-line">
+              {credentials.map((c, i) => (
+                <div key={`${c.vct}-${c.iss}-${i}`} className="flex items-center gap-3 py-3">
+                  <BadgeCheck size={17} className="text-success shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-mono text-ink truncate">
+                      {(c.claims || []).join(', ') || c.vct}
+                    </span>
+                    <span className="block text-[12px] text-faint truncate">from {issuerHost(c.iss)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
