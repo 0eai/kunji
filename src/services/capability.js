@@ -64,6 +64,19 @@ export const parseAgentRequest = (raw) => {
     scope: req.scope,
     agentPub: req.agentPub,
   };
+  // Optional RP-supplied human labels for custom scope ids — shown in consent marked "unverified"
+  // (the RP can type anything; these are NOT trusted). Keep only string→string entries, bounded in
+  // count + length, so a malformed/oversized map can't bloat or break the consent sheet.
+  if (req.scopeLabels && typeof req.scopeLabels === 'object' && !Array.isArray(req.scopeLabels)) {
+    const labels = {};
+    for (const [k, v] of Object.entries(req.scopeLabels)) {
+      if (typeof k === 'string' && typeof v === 'string' && k.length <= 64 && v.length <= 120) {
+        labels[k] = v;
+      }
+      if (Object.keys(labels).length >= 16) break;
+    }
+    if (Object.keys(labels).length) out.scopeLabels = labels;
+  }
   // v2 adds the relay transport key + session id. Both must be well-formed or we reject —
   // a malformed v2 must not silently downgrade to the paste-only path.
   if (req.kunjiCap === 'v2') {

@@ -76,7 +76,27 @@ prefix, or an `https://` URL on the RP's domain). Bare non-core ids are rejected
 
 A request MAY include `scopeLabels: { "<id>": "<text>" }`. The wallet shows the text **attributed to
 the RP** ("example.com says: *Read your orders*") and never as kunji's own words — labels are
-unverified RP input, treated like `claims`.
+unverified RP input, treated like `claims`. (Implemented: `parseAgentRequest` passes a bounded,
+string→string `scopeLabels` through; `AuthorizeAgentSheet` renders it marked "unverified".)
+
+### 3.3 Recommended conventions (a shared vocabulary — NOT enforced)
+
+These are **conventions**, not a kunji-enforced registry (see §2): the wallet renders them clearly and
+the RP enforces their meaning. Following them makes consent legible across apps and lets the TTL
+guidance (§5.1) apply by verb.
+
+| Family | Meaning | Typical constraints | TTL class (§5.1) |
+|---|---|---|---|
+| `read:<resource>` | read-only access | `resource` | 24 h |
+| `write:<resource>` | create/update | `resource`, `maxUses` | 1 h |
+| `delete:<resource>` | destructive | `resource` | 5 min |
+| `payments:<action>` | move money | `max` (e.g. `50USD`), `resource`, `rateBudget` | 5 min |
+| `admin:<action>` | privileged/config | `resource` | 5 min |
+
+Constraint dimensions kunji renders in plain language (`src/lib/scopeFormat.js`): `max` ("up to $50"),
+`resource` ("resource acct_123"), `maxUses` ("3 uses"), `rateBudget` ("rate …"); unknown dimensions
+fall back to "key value". An RP MAY use other namespaced ids/constraints — they render generically and
+the RP enforces them.
 
 ## 4. Consent rendering (wallet)
 

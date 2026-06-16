@@ -12,6 +12,7 @@ import {
   listAgents,
 } from '../services/capability';
 import { scopeId, scopeSatisfies } from '../lib/capability';
+import { formatConstraints } from '../lib/scopeFormat';
 import { pushSupported, enablePushForAudience, agentNotifyAllowed } from '../services/push';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
@@ -250,7 +251,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
               const on = implied || grantedIds.has(id);
               const reservedLabel = RESERVED_LABELS[id];
               const rpLabel = req.scopeLabels && req.scopeLabels[id];
-              const constraints = Object.entries(item).filter(([k]) => k !== 'id');
+              const constraints = formatConstraints(item);
               return (
                 <button
                   key={id}
@@ -283,10 +284,8 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
                         “{rpLabel}” — {req.audience} says this (unverified)
                       </span>
                     ) : null}
-                    {constraints.length > 0 && (
-                      <span className="block text-[11px] font-mono text-faint">
-                        {constraints.map(([k, v]) => `${k}: ${v}`).join(' · ')}
-                      </span>
+                    {constraints && (
+                      <span className="block text-[11px] text-faint">{constraints}</span>
                     )}
                   </span>
                 </button>
