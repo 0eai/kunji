@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { getType, CREDENTIAL_TYPES, credentialConfigs, ISSUER_BRAND } from '../issuer-functions/credentials.js';
 import { getMethod, VERIFICATION_METHODS } from '../issuer-functions/verify/index.js';
 import { documentReview, MAX_DOC_BYTES } from '../issuer-functions/verify/documentReview.js';
+import { nullifierDigest } from '../issuer-functions/nullifier.js';
 
 describe('issuer credential-type registry — age buildClaims', () => {
   const age = getType('age');
@@ -70,6 +71,58 @@ describe('issuer credential-type registry — residency + gender (coarse attribu
     }
     // gender proves the SELECT renderer the personhood type will also need.
     expect(getType('gender').reviewFields[0].type).toBe('select');
+  });
+});
+
+describe('issuer credential-type registry — verified_human (uniqueness)', () => {
+  const vh = getType('verified_human');
+  const full = { idType: 'passport', country: 'US', idNumber: 'X1234567' };
+
+  it('mints ONLY the coarse is_human predicate (no ID data leaks into claims)', () => {
+    expect(vh.buildClaims(full)).toEqual({ is_human: true });
+    // The claim object must carry nothing ID-derived — the nullifier/idNumber must never appear.
+    const claims = vh.buildClaims(full);
+    expect(Object.keys(claims)).toEqual(['is_human']);
+    expect(JSON.stringify(claims)).not.toContain('1234567');
+  });
+
+  it('rejects incomplete / invalid ID fields → null (no credential)', () => {
+    expect(vh.buildClaims({ idType: 'passport', country: 'US' })).toBeNull(); // no number
+    expect(vh.buildClaims({ idType: 'passport', country: 'USA', idNumber: 'X1234567' })).toBeNull(); // bad country
+    expect(vh.buildClaims({ idType: 'library_card', country: 'US', idNumber: 'X1234567' })).toBeNull(); // bad type
+    expect(vh.buildClaims({ idType: 'passport', country: 'US', idNumber: 'X1' })).toBeNull(); // too short
+    expect(vh.buildClaims({})).toBeNull();
+  });
+
+  it('nullifierFrom is a frozen, normalized pre-image (case/separators folded, leading zeros kept)', () => {
+    const base = vh.nullifierFrom(full);
+    expect(base).toBe('verified_human|US|passport|X1234567');
+    // separators + case are normalized away → same human, same pre-image (idempotent dedup)
+    expect(vh.nullifierFrom({ idType: 'Passport', country: 'us', idNumber: 'x1-23 45/67' })).toBe(base);
+    // leading zeros are SIGNIFICANT (preserved)
+    expect(vh.nullifierFrom({ idType: 'passport', country: 'US', idNumber: '00123' })).toBe('verified_human|US|passport|00123');
+    // distinct id / type / country → distinct pre-image
+    expect(vh.nullifierFrom({ ...full, idNumber: 'X1234568' })).not.toBe(base);
+    expect(vh.nullifierFrom({ ...full, idType: 'national_id' })).not.toBe(base);
+    expect(vh.nullifierFrom({ ...full, country: 'GB' })).not.toBe(base);
+    expect(vh.nullifierFrom({ idType: 'passport', country: 'US' })).toBeNull();
+  });
+});
+
+describe('issuer uniqueness nullifier — secret-keyed, deterministic, one-way (nullifier.js)', () => {
+  const pre = 'verified_human|US|passport|X1234567';
+  it('is deterministic per (pre-image, secret) and base64url-safe', () => {
+    const a = nullifierDigest(pre, 'secret-A');
+    expect(nullifierDigest(pre, 'secret-A')).toBe(a); // deterministic → idempotent dedup
+    expect(a).toMatch(/^[A-Za-z0-9_-]+$/); // Firestore-doc-id safe, no '/' or '+'
+  });
+  it('changes with the secret (key-bound) and with the pre-image', () => {
+    expect(nullifierDigest(pre, 'secret-A')).not.toBe(nullifierDigest(pre, 'secret-B'));
+    expect(nullifierDigest(pre, 'secret-A')).not.toBe(nullifierDigest(pre + '8', 'secret-A'));
+  });
+  it('refuses empty inputs', () => {
+    expect(() => nullifierDigest('', 'secret')).toThrow();
+    expect(() => nullifierDigest(pre, '')).toThrow();
   });
 });
 

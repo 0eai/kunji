@@ -30,8 +30,11 @@ A daily `issuerCleanup` sweeps any abandoned upload (>24h) so an ID image never 
 
 ```
 Credential TYPE registry  (issuer-functions/credentials.js)
-  age → { vct, label, ttlSeconds, brand, buildClaims(verified)→booleans, methods:['document-review'] }
-        ← add a credential type = one entry
+  age            → buildClaims(dob)→age_over_13/16/18/21 booleans · reviewFields:[dob]
+  residency      → buildClaims({country,region})→{country,region?}  · reviewFields:[country,region]
+  gender         → buildClaims({gender})→{gender}                    · reviewFields:[gender (select)]
+  verified_human → buildClaims(id)→{is_human:true} + nullifierFrom(id) (uniqueness) · reviewFields:[idType,country,idNumber]
+        ← add a credential type = one entry { vct, label, ttlSeconds, methods, reviewFields, buildClaims, nullifierFrom? }
 
 Verification METHOD registry  (issuer-functions/verify/)
   'document-review' (verify/documentReview.js): kind 'manual' — resolved by an operator review
@@ -39,6 +42,32 @@ Verification METHOD registry  (issuer-functions/verify/)
 
 verificationSessions/{sid}  { type, method, status: collecting|pending_review|verified|rejected, claims, … }
 ```
+
+Each type declares **`reviewFields`** (what the operator confirms — `text`/`date`/`select`); the admin
+review panel renders them dynamically and posts a `verifiedData` object (a bare `dob` is still accepted for
+the original age flow). `buildClaims(verifiedData)` is the **no-PII boundary**: raw inputs → coarse claims,
+discarded after. `residency`/`gender` are coarse attributes (country/region, gender marker) with no
+uniqueness.
+
+### Uniqueness — `verified_human` + the nullifier (roadmap 2.2)
+
+`verified_human` mints only `is_human: true` (never the ID number/name) and enforces **issuer-side
+uniqueness**: the operator enters `(idType, country, idNumber)`; `nullifierFrom` produces a **FROZEN**
+normalized pre-image (`verified_human|<CC>|<idType>|<NUMBER>` — uppercased, separators stripped, leading
+zeros kept; **never change it** — that re-buckets every prior enrollee); `issuer-functions/nullifier.js`
+turns it into a one-way **scrypt** digest keyed by the issuer-only secret **`KUNJI_NULLIFIER_KEY`**, recorded
+in the deny-all `issuerNullifiers` collection (`{createdAt}` only). Re-verifying the same ID is **idempotent**
+(one human, e.g. device loss — not a second identity); first-mint vs remint return identically (no
+operator-facing membership oracle); the nullifier is **NEVER** in the credential/claims/ledger.
+
+- **`KUNJI_NULLIFIER_KEY` is NON-ROTATING** — rotating it re-buckets everyone (raw IDs are discarded), so
+  uniqueness silently breaks. (Distinct from `KUNJI_ISSUER_SIGNING_KEY`, which IS a rotation-capable set.)
+- **Scope (be precise):** this delivers **issuer-side uniqueness** — the Sybil bar becomes "acquire N
+  distinct real government IDs". It does **NOT** give an RP **per-app dedup** ("one account per human"):
+  credentials present unlinkably (v2/v3), so an RP only learns "holds a verified-human credential". Per-app
+  dedup = per-verifier pseudonyms (roadmap 4.1, deferred). **Caveats:** uniqueness = "one per
+  *correctly-transcribed* ID" (operator-accuracy bound); one human with two ID documents → two credentials.
+  See `docs/verified-credentials.md` §7.
 
 The offer→token→credential path + `/status/{type}` + revoke are **type-agnostic**. Trust model: the issuer
 **publishes brand + per-type verification methods** in its metadata so an RP can recognize WHO issued it +

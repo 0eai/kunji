@@ -22,6 +22,19 @@ const ageFromDob = (dob) => {
   return age;
 };
 
+// FROZEN uniqueness pre-image for verified-human. DO NOT CHANGE — altering normalization (or the format)
+// re-buckets every prior enrollee, silently breaking uniqueness for them. Returns the canonical string a
+// nullifier is derived from, or null if the ID fields are incomplete/invalid. Leading zeros are PRESERVED
+// (significant in many ID formats); only whitespace + separators (- / .) are stripped; NFC + case-folded.
+const ID_TYPES = new Set(['passport', 'national_id', 'drivers_license']);
+const personhoodPreimage = ({ idType, country, idNumber } = {}) => {
+  const t = String(idType || '').trim().toLowerCase();
+  const c = String(country || '').trim().toUpperCase();
+  const n = String(idNumber || '').normalize('NFC').toUpperCase().replace(/[\s\-/.]/g, '');
+  if (!ID_TYPES.has(t) || !/^[A-Z]{2}$/.test(c) || n.length < 4) return null;
+  return `verified_human|${c}|${t}|${n}`;
+};
+
 export const CREDENTIAL_TYPES = {
   age: {
     vct: 'age',
@@ -90,6 +103,38 @@ export const CREDENTIAL_TYPES = {
       const g = String(gender || '').trim().toLowerCase();
       return ['female', 'male', 'x'].includes(g) ? { gender: g } : null;
     },
+  },
+
+  // Verified human — a coarse "is a real, unique person" predicate. The operator confirms a government ID;
+  // the credential carries ONLY `is_human: true` (never the ID number/name). Uniqueness is enforced
+  // issuer-side via `nullifierFrom` (a per-issuer one-way digest of the ID — see index.js): one human per
+  // real ID document, NOT per-app dedup (that needs per-verifier pseudonyms — roadmap 4.1). The nullifier is
+  // NEVER in the credential — putting it there would make a colluding-RP global identifier.
+  verified_human: {
+    vct: 'verified_human',
+    label: 'Verified human',
+    description: 'Prove you are a real, unique person — a coarse signal, never your ID number or name.',
+    ttlSeconds: 180 * DAY,
+    methods: ['document-review'],
+    reviewFields: [
+      {
+        key: 'idType',
+        label: 'ID type',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'passport', label: 'Passport' },
+          { value: 'national_id', label: 'National ID' },
+          { value: 'drivers_license', label: "Driver's license" },
+        ],
+      },
+      { key: 'country', label: 'Issuing country (ISO code)', type: 'text', required: true },
+      { key: 'idNumber', label: 'Document number', type: 'text', required: true },
+    ],
+    // Mints only from a complete, valid ID entry; returns ONLY the coarse predicate (no ID data leaks).
+    buildClaims: (data = {}) => (personhoodPreimage(data) ? { is_human: true } : null),
+    // The pre-image the issuer turns into a one-way nullifier for uniqueness (raw ID never stored).
+    nullifierFrom: (data = {}) => personhoodPreimage(data),
   },
 };
 

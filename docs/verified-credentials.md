@@ -211,6 +211,21 @@ complete** — unlinkable, presentable over OID4VP + login, and **holder-bound (
 only remaining BBS work is optional future hardening — **blind issuance** (closes S28) + per-verifier
 pseudonyms — both **deferred, blocked on the lib exporting the blind API** (see the tracked note above).
 
+### 7.1 Personhood / `verified_human` — issuer-side uniqueness, NOT per-app dedup
+
+The `verified_human` credential (issuer.kunji.cc; see `docs/issuer.md`) attests `is_human: true` and is made
+**unique per real government ID** by an **issuer-side nullifier** (a non-rotating, secret-keyed one-way
+scrypt digest of the normalized ID, recorded in the deny-all `issuerNullifiers` — never in the credential).
+This raises the **Sybil cost floor** to "acquire N distinct real IDs". It deliberately does **NOT** give a
+relying party **per-app dedup** ("one account per human"): because credentials present **unlinkably** (v2/v3),
+an RP only ever learns *"holds a verified-human credential"*, not whether two presentations are the same
+person. Per-app dedup needs a **per-verifier pseudonym** (a stable-per-RP, unlinkable-across-RPs value derived
+from the credential) — that is **roadmap 4.1**, the same deferred BBS work as above. The nullifier must
+**never** enter the credential: a stable value an RP sees would become a colluding-RP global identifier,
+breaking per-app unlinkability. Caveats: uniqueness is bound by **operator transcription accuracy** ("one per
+*correctly-transcribed* ID"); one human holding two ID documents enrolls twice → two credentials (a coarse
+signal, by design).
+
 ## 8. Issuance
 
 Two interoperating paths:

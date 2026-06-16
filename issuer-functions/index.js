@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto';
 import { verifyProofJwt } from './oid4vc.js';
 import { loadKeySet, issuerWellKnown, credentialIssuerMetadata, authServerMetadata, mintTypedCredential, MAX_BATCH } from './issuer.js';
 import { ISSUER_BRAND, CREDENTIAL_TYPES, getType } from './credentials.js';
+import { nullifierDigest } from './nullifier.js';
 import { getMethod } from './verify/index.js';
 import { verifyAssertion } from './loginVerify.js';
 
@@ -31,6 +32,9 @@ const bucket = () => getStorage().bucket();
 // Distinct from the kunji-demo's `ISSUER_SIGNING_KEY`: Firebase Secrets are PROJECT-scoped and both codebases
 // live in kunji-cc, so reusing that name would make the REAL issuer sign with the demo's (mints-to-anyone) key.
 const ISSUER_SIGNING_KEY = defineSecret('KUNJI_ISSUER_SIGNING_KEY');
+// Issuer-only pepper for the verified-human uniqueness nullifier (roadmap 2.2). NON-ROTATING — rotating it
+// re-buckets every prior enrollee (raw IDs are discarded), silently breaking uniqueness. See nullifier.js.
+const NULLIFIER_KEY = defineSecret('KUNJI_NULLIFIER_KEY');
 // Dev-only escape: mint without a verification (default OFF). Production issues only after a verified session.
 const OPEN_MINT = process.env.ISSUER_OPEN_MINT === 'true';
 
@@ -419,19 +423,57 @@ const adminReviewDoc = async (sid, res) => {
 // Approve (with the reviewer-confirmed fields) → verified + claims; or reject. Either way DELETE the ID
 // image. `verifiedData` is the type's reviewFields the operator filled in; a bare `dob` is accepted for
 // back-compat with the original age flow. buildClaims is the no-PII boundary: raw inputs → coarse claims.
+//
+// Uniqueness types (verified_human): we derive a one-way nullifier from the ID (the slow KDF runs BEFORE the
+// transaction) and record it in `issuerNullifiers` inside the txn (check-and-set). Re-verifying the SAME ID
+// is idempotent (one human, not a second identity); the nullifier is NEVER written to claims/credential/
+// ledger, and first-mint vs idempotent-remint return identically (no operator-facing membership oracle).
 const adminReviewDecision = async (admin, { sid, approve, verifiedData, dob }) => {
   const data = verifiedData && typeof verifiedData === 'object' ? verifiedData : dob != null ? { dob } : {};
   const ref = db.collection('verificationSessions').doc(String(sid || ''));
+
+  // Pre-read only to learn the type, so the slow nullifier KDF can run OUTSIDE the transaction. The txn
+  // below re-reads + re-checks `pending_review` for atomicity (TOCTOU-safe).
+  const pre = await ref.get();
+  const ps = pre.exists ? pre.data() : null;
+  if (!ps || ps.status !== 'pending_review') throw new Error('bad_session');
+  const t = getType(ps.type);
+  if (!t) throw new Error('bad_session');
+
+  if (!approve) {
+    const r = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists || snap.data().status !== 'pending_review') return { error: 'bad_session' };
+      tx.update(ref, { status: 'rejected', reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
+      return { docPath: snap.data().docPath, status: 'rejected' };
+    });
+    if (r.error) throw new Error(r.error);
+    if (r.docPath) await bucket().file(r.docPath).delete({ ignoreNotFound: true }).catch(() => {});
+    return { status: r.status };
+  }
+
+  const claims = t.buildClaims(data);
+  if (!claims) throw new Error('bad_claims');
+
+  // Uniqueness: derive the nullifier (memory-hard scrypt) here, before the transaction.
+  let nf = null;
+  if (t.nullifierFrom) {
+    const preimage = t.nullifierFrom(data);
+    if (!preimage) throw new Error('bad_claims');
+    nf = nullifierDigest(preimage, NULLIFIER_KEY.value());
+  }
+
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const s = snap.exists ? snap.data() : null;
     if (!s || s.status !== 'pending_review') return { error: 'bad_session' };
-    if (!approve) {
-      tx.update(ref, { status: 'rejected', reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
-      return { docPath: s.docPath, status: 'rejected' };
+    if (nf) {
+      // All reads before writes (Firestore txn rule). Record the nullifier on first sight; if it already
+      // exists this is the same human re-verifying → idempotent, proceed (no second distinct identity).
+      const nfRef = db.collection('issuerNullifiers').doc(nf);
+      const nfSnap = await tx.get(nfRef);
+      if (!nfSnap.exists) tx.set(nfRef, { createdAt: Date.now() });
     }
-    const claims = getType(s.type)?.buildClaims(data);
-    if (!claims) return { error: 'bad_claims' };
     tx.update(ref, { status: 'verified', claims, reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
     return { docPath: s.docPath, status: 'verified' };
   });
@@ -493,7 +535,7 @@ const adminSetRevoked = async (type, idx, revoke) => {
 };
 
 // /api/** (admin.kunji.cc rewrite) — one Function, internal path router; same-origin (no CORS).
-export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
+export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets: [NULLIFIER_KEY] }, async (req, res) => {
   const admin = await requireAdmin(req);
   if (!admin) return res.status(401).json({ error: 'unauthorized' });
   try {
