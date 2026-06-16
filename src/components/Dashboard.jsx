@@ -14,7 +14,7 @@ import {
   requestsProfile,
   requestsCredentials,
 } from '../services/identity';
-import { loadProfile } from '../services/profile';
+import { watchProfile } from '../services/profile';
 import {
   listCredentials,
   responseTargetTrusted,
@@ -100,12 +100,11 @@ const Dashboard = ({
     return unsub;
   }, [vaultId, cryptoKey]);
 
-  // Load the optional custom profile so the approval screen can offer to share it.
+  // Watch the optional custom profile so the approval screen can offer to share it. A live listener
+  // (like the apps list) means a profile set on another linked device shows up here without a reload.
   useEffect(() => {
-    if (!vaultId) return;
-    loadProfile(vaultId, cryptoKey)
-      .then(setProfile)
-      .catch(() => setProfile(null));
+    if (!vaultId) return undefined;
+    return watchProfile(vaultId, cryptoKey, setProfile);
   }, [vaultId, cryptoKey]);
 
   // Register this device in the shared linked-devices list (once per device). Best-effort — never

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Trash2 } from 'lucide-react';
 import { deriveVaultId } from '../lib/crypto';
-import { loadProfile, saveProfile } from '../services/profile';
+import { saveProfile, watchProfile } from '../services/profile';
 import { Field, Btn, Monogram } from './ui/primitives';
 import { useToast } from '../contexts/ToastContext';
 
@@ -58,23 +58,28 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
   const [shareByDefault, setShareByDefault] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Once the user touches a field, stop letting incoming snapshots overwrite their in-progress edits.
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
-    let alive = true;
-    deriveVaultId(cryptoKey).then(async (vid) => {
-      if (!alive) return;
+    let cancelled = false;
+    let unsub = null;
+    deriveVaultId(cryptoKey).then((vid) => {
+      if (cancelled) return;
       setVaultId(vid);
-      const p = await loadProfile(vid, cryptoKey);
-      if (!alive) return;
-      if (p) {
-        setDisplayName(p.displayName);
-        setAvatar(p.avatar);
-        setShareByDefault(p.shareByDefault);
-      }
-      setLoaded(true);
+      // Live listener (mirrors the apps list) so a profile from another linked device — or one that
+      // arrives a beat after open — populates the editor; the dirty guard protects active edits.
+      unsub = watchProfile(vid, cryptoKey, (p) => {
+        setLoaded(true);
+        if (dirtyRef.current) return;
+        setDisplayName(p?.displayName || '');
+        setAvatar(p?.avatar || '');
+        setShareByDefault(!!p?.shareByDefault);
+      });
     });
     return () => {
-      alive = false;
+      cancelled = true;
+      if (unsub) unsub();
     };
   }, [cryptoKey]);
 
@@ -88,6 +93,7 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
     }
     try {
       setAvatar(await resizeToDataUri(file));
+      dirtyRef.current = true;
     } catch {
       showToast("Couldn't read that image.", 'error');
     }
@@ -106,6 +112,7 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
       setDisplayName(clean.displayName);
       setAvatar(clean.avatar);
       setShareByDefault(clean.shareByDefault);
+      dirtyRef.current = false; // saved → local matches server; let live updates seed again
       showToast(clean.displayName || clean.avatar ? 'Profile saved.' : 'Profile cleared.');
     } catch (e) {
       showToast('Save failed: ' + e.message, 'error');
@@ -133,7 +140,10 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
           </label>
           {avatar && (
             <button
-              onClick={() => setAvatar('')}
+              onClick={() => {
+                dirtyRef.current = true;
+                setAvatar('');
+              }}
               className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted hover:text-danger px-2 transition-colors"
             >
               <Trash2 size={15} /> Remove
@@ -144,7 +154,10 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
 
       <Field
         value={displayName}
-        onChange={(e) => setDisplayName(e.target.value)}
+        onChange={(e) => {
+          dirtyRef.current = true;
+          setDisplayName(e.target.value);
+        }}
         placeholder="Display name"
         maxLength={60}
         className="mb-4"
@@ -154,7 +167,10 @@ const ProfileSettings = ({ userId, cryptoKey }) => {
           position of the per-login "Share your profile" toggle — the user can still turn it off. */}
       <button
         type="button"
-        onClick={() => setShareByDefault((v) => !v)}
+        onClick={() => {
+          dirtyRef.current = true;
+          setShareByDefault((v) => !v);
+        }}
         aria-pressed={shareByDefault}
         disabled={!displayName && !avatar}
         className="w-full flex items-center gap-3 text-left mb-4 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed"

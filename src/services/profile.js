@@ -1,4 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { encryptData, decryptData } from '../lib/crypto';
 import {
@@ -52,11 +52,10 @@ const writeProfile = async (vaultId, cryptoKey, op, docPayload) => {
   }
 };
 
-/** Load the custom profile, or null if none set. Returns { displayName, avatar, shareByDefault }. */
-export const loadProfile = async (vaultId, cryptoKey) => {
+// Decrypt one profile snapshot → { displayName, avatar, shareByDefault } | null (no doc / undecryptable).
+const decodeProfile = async (snap, cryptoKey) => {
+  if (!snap.exists()) return null;
   try {
-    const snap = await getDoc(profileRef(vaultId));
-    if (!snap.exists()) return null;
     const dec = await decryptData(snap.data(), cryptoKey);
     if (!dec) return null;
     return {
@@ -68,6 +67,18 @@ export const loadProfile = async (vaultId, cryptoKey) => {
     return null;
   }
 };
+
+/**
+ * Live custom-profile listener — mirrors `listenToApps` (services/identity.js). Invokes
+ * `cb(profile | null)` with the current value and on every change. Because it's an onSnapshot (not a
+ * one-shot read), the optional profile syncs across linked devices the same way the apps list does,
+ * and a transient read miss self-heals when the listener reconnects (the old one-shot getDoc did
+ * neither — it fired once and silently returned null on any hiccup). Returns an unsubscribe fn.
+ */
+export const watchProfile = (vaultId, cryptoKey, cb) =>
+  onSnapshot(profileRef(vaultId), async (snap) => {
+    cb(await decodeProfile(snap, cryptoKey));
+  });
 
 /**
  * Save (or clear) the custom profile. `avatar` is a small data-URI or ''. `shareByDefault` makes the
