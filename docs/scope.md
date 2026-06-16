@@ -114,6 +114,27 @@ Rules:
 `verifyCapabilityAssertion` already returns `scope`; the RP calls `scopeSatisfies(result.scope, …)`
 per protected action.
 
+### 5.1 Recommended TTLs (revocation reliability)
+
+Revocation is **advisory** — there is no kunji server in the agent↔RP path, so an RP checks the signed
+`revocations/{jti}` denylist (via `verifyCapabilityAssertion`'s `getRevocation`, honored only when the
+signature verifies against the capability's **own** per-app key), and the **short TTL is the real
+backstop**. Keep sensitive scopes short-lived. `@kunji/verify` ships these as advisory defaults for the
+minting side (`recommendedTtl` / `recommendedTtlForScopes` / `TTL_GUIDANCE`); the verifier always enforces
+the `exp` actually minted.
+
+| Scope verb | Recommended max TTL | Rationale |
+|---|---|---|
+| `payments:*`, `admin:*`, `delete:*` | **5 min** | money / privileged / destructive — minimize revocation latency |
+| `write:*` | 1 hour | mutations |
+| `read:*`, `profile` | 24 hours | read-only / low-risk |
+| _other (custom)_ | 1 hour (default) | unknown blast radius |
+
+A capability's effective TTL should be the **strictest** of its scopes (`recommendedTtlForScopes` returns
+the smallest) — a `payments` + `read` capability expires on the payments clock. RPs verifying capabilities
+for sensitive actions SHOULD also require a denylist read inside the same transaction that consumes the
+request (no TOCTOU).
+
 ## 6. Attenuation (narrowing) — delegation chains
 
 An agent should be able to **narrow** a capability and sub-delegate (e.g. hand a sub-task to another

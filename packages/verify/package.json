@@ -1,0 +1,37 @@
+{
+  "name": "@kunji/verify",
+  "version": "0.1.0",
+  "description": "Framework-agnostic RP-side verification for kunji discoverable login + agentic-delegation capabilities. Pure, no backend — the relying party verifies a signed assertion locally.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1"
+  },
+  "keywords": [
+    "kunji",
+    "authentication",
+    "passwordless",
+    "ed25519",
+    "verifiable-credentials",
+    "agentic",
+    "capability",
+    "zero-knowledge"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0eai/kunji.git",
+    "directory": "packages/verify"
+  },
+  "homepage": "https://kunji.cc"
+}
