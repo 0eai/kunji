@@ -435,9 +435,10 @@ const Dashboard = ({
   };
 
   return (
-    <div className="h-[100dvh] bg-paper text-ink flex flex-col overflow-hidden">
-      {/* Header — wordmark + minimal glyph actions */}
-      <header className="flex items-center justify-between max-w-[34rem] w-full mx-auto px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-5 shrink-0">
+    <div className="h-[100dvh] bg-paper text-ink flex flex-col overflow-y-auto [scrollbar-gutter:stable]">
+      {/* Header — wordmark + minimal glyph actions. Sticky (not in a separate scroll container) so the
+          page's single scrollbar reduces width uniformly for header/list/footer — they stay flush. */}
+      <header className="sticky top-0 z-20 bg-paper flex items-center justify-between max-w-[34rem] w-full mx-auto px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-5 shrink-0">
         <div className="flex items-center gap-2">
           <img src="/icons/icon.svg" alt="" className="w-7 h-7" />
           <div className="flex flex-col leading-none">
@@ -485,8 +486,8 @@ const Dashboard = ({
         </div>
       </header>
 
-      {/* App list — hairline rows, no cards */}
-      <div className="flex-1 overflow-y-auto">
+      {/* App list — hairline rows, no cards. Scrolls within the page-level scroller above. */}
+      <div className="flex-1">
         <div className="max-w-[34rem] w-full mx-auto px-6">
           {loading ? (
             <div className="pt-7">
@@ -536,7 +537,7 @@ const Dashboard = ({
       {/* Slim bottom action — hairline-topped, not a slab. Two ways in: scan the QR or type the
           code it shows (the typed path resolves against an app you've already added). */}
       {!loading && apps.length > 0 && (
-        <div className="shrink-0 border-t border-line">
+        <div className="sticky bottom-0 z-20 shrink-0 border-t border-line bg-paper">
           <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center">
             <button
               onClick={() => setShowScanner(true)}
