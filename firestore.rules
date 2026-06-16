@@ -116,6 +116,7 @@ service cloud.firestore {
     // and guards against a future rules change accidentally exposing the ledger / IDV sessions / tokens.
     match /issuerCredentials/{d} { allow read, write: if false; }
     match /issuerNullifiers/{d} { allow read, write: if false; }
+    match /issuerVerified/{d} { allow read, write: if false; }
     match /issuerStatusList/{d} { allow read, write: if false; }
     match /issuerOffers/{d} { allow read, write: if false; }
     match /issuerTokens/{d} { allow read, write: if false; }

@@ -31,3 +31,5 @@ export const startVerify = (type, method) => post('/verify/start', { type, metho
 export const uploadDoc = (sid, image, contentType) => post('/verify/upload', { sid, image, contentType }, true);
 export const checkStatus = (sid) => get(`/verify/status?sid=${encodeURIComponent(sid)}`);
 export const getOffer = (sid) => get(`/credential-offer?sid=${encodeURIComponent(sid)}`, true);
+// Re-add an already-earned credential to a wallet (no session, no re-verification).
+export const getOfferByType = (type) => get(`/credential-offer?type=${encodeURIComponent(type)}`, true);

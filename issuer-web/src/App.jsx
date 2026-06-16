@@ -28,11 +28,8 @@ const fileToDataUrl = (file, max = 1600, quality = 0.85) =>
   });
 
 const availableMethods = (t) => (t?.methods || []).filter((m) => m.status === 'available');
-// Pick the verification to resume: verified > pending_review > collecting.
-const pickActive = (items) => {
-  const rank = { verified: 3, pending_review: 2, collecting: 1 };
-  return (items || []).slice().sort((a, b) => (rank[b.status] || 0) - (rank[a.status] || 0))[0] || null;
-};
+// Human label for a credential type id (from the catalog), falling back to the id.
+const typeLabel = (catalog, id) => catalog?.types?.find((t) => t.id === id)?.label || id;
 
 const BackLink = ({ onClick }) => (
   <button onClick={onClick} className="block w-fit text-[13px] text-muted hover:text-ink transition-colors mb-4">
@@ -59,7 +56,8 @@ export default function App() {
   const [catalog, setCatalog] = useState(null);
   const [err, setErr] = useState('');
   // flow
-  const [step, setStep] = useState('chooseType'); // chooseType | chooseProvider | upload | review | done | rejected
+  const [step, setStep] = useState('chooseType'); // home | chooseType | chooseProvider | upload | review | done | rejected
+  const [creds, setCreds] = useState([]); // already-earned credentials ({ type, verifiedAt }) — re-addable
   const [selType, setSelType] = useState(null); // the chosen type object (catalog)
   const [sid, setSid] = useState('');
   const [preview, setPreview] = useState('');
@@ -87,7 +85,52 @@ export default function App() {
     }
   }, []);
 
-  // Boot: load the catalog, then resume (if a session token exists) or show login.
+  // Re-add an already-earned credential to a wallet (no re-verification).
+  const fetchOfferByType = useCallback(async (type) => {
+    setBusy(true);
+    setErr('');
+    try {
+      const { offerUri } = await api.getOfferByType(type);
+      setOfferLink(`${WALLET}/?offer=${encodeURIComponent(offerUri)}`);
+      setStep('done');
+    } catch (e) {
+      if (e.status === 401) {
+        api.setToken('');
+        setPhase('login');
+      } else setErr('Could not prepare the credential. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // After auth: resume an in-flight verification, else show the "Your credentials" home (if any earned),
+  // else the type chooser. Shared by boot + login-approval.
+  const routeAfterAuth = useCallback(async () => {
+    try {
+      const { items, credentials } = await api.myVerifications();
+      const inflight = (items || []).find((x) => x.status === 'collecting' || x.status === 'pending_review');
+      setCreds(credentials || []);
+      setPhase('flow');
+      if (inflight) {
+        setSid(inflight.sid);
+        setStep(inflight.status === 'collecting' ? 'upload' : 'review');
+      } else if ((credentials || []).length) {
+        setStep('home');
+      } else {
+        setStep('chooseType');
+      }
+    } catch (e) {
+      if (e.status === 401) {
+        api.setToken('');
+        setPhase('login');
+      } else {
+        setPhase('flow');
+        setStep('chooseType');
+      }
+    }
+  }, []);
+
+  // Boot: load the catalog, then resume/route (if a session token exists) or show login.
   useEffect(() => {
     (async () => {
       try {
@@ -95,26 +138,10 @@ export default function App() {
       } catch {
         setErr('Could not reach the issuer.');
       }
-      if (api.getToken()) {
-        try {
-          const active = pickActive((await api.myVerifications()).items);
-          if (active) {
-            setSid(active.sid);
-            setPhase('flow');
-            if (active.status === 'collecting') setStep('upload');
-            else setStep('review'); // pending_review | verified → the review poll resolves it
-            return;
-          }
-          setPhase('flow');
-          setStep('chooseType');
-          return;
-        } catch (e) {
-          if (e.status === 401) api.setToken(''); // expired → re-login
-        }
-      }
-      setPhase('login');
+      if (api.getToken()) await routeAfterAuth();
+      else setPhase('login');
     })();
-  }, []);
+  }, [routeAfterAuth]);
 
   // Auto-start a login session when the login screen appears (renders the QR + code).
   useEffect(() => {
@@ -151,8 +178,7 @@ export default function App() {
           clearInterval(loginPoll.current);
           api.setToken(sessionToken);
           setLogin(null);
-          setPhase('flow');
-          setStep('chooseType');
+          routeAfterAuth();
         }
       } catch {
         /* transient / not-yet — keep polling */
@@ -160,7 +186,7 @@ export default function App() {
     };
     loginPoll.current = setInterval(tick, 2500);
     return () => clearInterval(loginPoll.current);
-  }, [phase, login]);
+  }, [phase, login, routeAfterAuth]);
 
   // Auto-collapse the type stage when there's exactly one type.
   useEffect(() => {
@@ -304,14 +330,50 @@ export default function App() {
 
   // ── flow view ──
   function FlowView() {
+    if (step === 'home') {
+      return (
+        <>
+          <SectionLabel>Your credentials</SectionLabel>
+          <h1 className="text-[1.7rem] leading-[1.1] font-semibold tracking-tight mt-2">Your verified credentials</h1>
+          <p className="text-[15px] text-muted mt-2">Add any to your kunji wallet — no need to verify again.</p>
+          <div className="mt-6 divide-y divide-line border-y border-line">
+            {creds.map((c) => (
+              <div key={c.type} className="flex items-center gap-3 py-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] text-ink">
+                    {typeLabel(catalog, c.type)} <span className="text-success">✓</span>
+                  </p>
+                  {c.verifiedAt && (
+                    <p className="text-[12px] text-faint mt-0.5">Verified {new Date(c.verifiedAt).toLocaleDateString()}</p>
+                  )}
+                </div>
+                <Btn variant="quiet" onClick={() => fetchOfferByType(c.type)} disabled={busy}>
+                  Add to wallet
+                </Btn>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => {
+              setSelType(null);
+              setStep('chooseType');
+            }}
+            className="mt-6 text-sm font-medium text-accent hover:text-ink transition-colors"
+          >
+            + Get another credential
+          </button>
+        </>
+      );
+    }
     if (step === 'chooseType') {
       return (
         <>
+          {creds.length > 0 && <BackLink onClick={() => setStep('home')} />}
           <SectionLabel>Get a credential</SectionLabel>
           <h1 className="text-[1.7rem] leading-[1.1] font-semibold tracking-tight mt-2">What do you want to prove?</h1>
           <div className="mt-6 divide-y divide-line border-y border-line">
             {(catalog?.types || []).map((t) => (
-              <button key={t.id} onClick={() => chooseType(t)} className="w-full text-left py-4 hover:bg-line/30 transition-colors -mx-6 px-6">
+              <button key={t.id} onClick={() => chooseType(t)} className="w-full text-left py-4 hover:bg-line/30 transition-colors">
                 <p className="text-[15px] text-ink">{t.label}</p>
                 {t.description && <p className="text-[12px] text-faint mt-0.5">{t.description}</p>}
               </button>
@@ -334,7 +396,7 @@ export default function App() {
                   key={m.id}
                   disabled={soon || busy}
                   onClick={() => beginVerify(selType.id, m.id)}
-                  className={`w-full text-left py-4 -mx-6 px-6 transition-colors ${soon ? 'opacity-50 cursor-default' : 'hover:bg-line/30'}`}
+                  className={`w-full text-left py-4 transition-colors ${soon ? 'opacity-50 cursor-default' : 'hover:bg-line/30'}`}
                 >
                   <p className="text-[15px] text-ink flex items-center gap-2">
                     {m.label}
@@ -422,6 +484,12 @@ export default function App() {
           >
             Open in kunji
           </a>
+          <button
+            onClick={routeAfterAuth}
+            className="block mt-5 text-sm font-medium text-muted hover:text-ink transition-colors"
+          >
+            ← My credentials
+          </button>
         </>
       );
     }

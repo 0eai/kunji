@@ -257,7 +257,11 @@ export const issuerVerifyMine = onRequest(vcOpts([]), async (req, res) => {
     .map((d) => ({ sid: d.id, ...d.data() }))
     .filter((x) => ['collecting', 'pending_review', 'verified'].includes(x.status))
     .map((x) => ({ sid: x.sid, type: x.type, method: x.method, status: x.status }));
-  res.json({ items });
+  // Durable, already-earned credentials (re-add to a wallet without re-verifying). Coarse, per-user.
+  const vSnap = await db.collection('issuerVerified').doc(sub).get();
+  const types = vSnap.exists ? vSnap.data()?.types || {} : {};
+  const credentials = Object.entries(types).map(([type, v]) => ({ type, verifiedAt: v?.verifiedAt || null }));
+  res.json({ items, credentials });
 });
 
 // ── Issuer metadata + trust anchor (the key SET + brand a verifier fetches cross-origin) ──
@@ -273,6 +277,7 @@ const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
 export const issuerOffer = onRequest(vcOpts([]), async (req, res) => {
   if (await rateLimited(req.ip)) return res.status(429).json({ error: 'rate_limited' });
   const sid = String(req.query.sid || '');
+  const typeParam = String(req.query.type || '');
   let type = null;
   let claims = null;
   if (sid) {
@@ -289,6 +294,16 @@ export const issuerOffer = onRequest(vcOpts([]), async (req, res) => {
     if (!verified) return res.status(403).json({ error: 'not_verified' });
     type = verified.type;
     claims = verified.claims || null;
+  } else if (typeParam) {
+    // Re-add a previously-earned credential to a wallet — no session, no re-verification. Builds a fresh
+    // offer from the durable per-user record (issuerVerified/{sub}); a user can only re-add their OWN.
+    const sub = await requireUser(req);
+    if (!sub) return res.status(401).json({ error: 'login_required' });
+    const snap = await db.collection('issuerVerified').doc(sub).get();
+    const entry = snap.exists ? snap.data()?.types?.[typeParam] : null;
+    if (!entry?.claims) return res.status(403).json({ error: 'not_verified' });
+    type = typeParam;
+    claims = entry.claims;
   } else if (OPEN_MINT) {
     type = 'age';
     claims = getType('age').buildClaims({ age: 30 }); // dev-only test path
@@ -475,6 +490,16 @@ const adminReviewDecision = async (admin, { sid, approve, verifiedData, dob }) =
       if (!nfSnap.exists) tx.set(nfRef, { createdAt: Date.now() });
     }
     tx.update(ref, { status: 'verified', claims, reviewer: admin.email || admin.uid, reviewedAt: Date.now(), docPath: null });
+    // Durable per-user record so the user can re-add this credential on relogin / a new device without
+    // re-verifying. COARSE claims only (no PII); deny-all; issuer-internal (never reaches an RP). See
+    // issuerOffer (?type=) + issuerVerifyMine.
+    if (s.sub) {
+      tx.set(
+        db.collection('issuerVerified').doc(s.sub),
+        { types: { [s.type]: { claims, verifiedAt: Date.now() } } },
+        { merge: true },
+      );
+    }
     return { docPath: s.docPath, status: 'verified' };
   });
   if (result.error) throw new Error(result.error);
