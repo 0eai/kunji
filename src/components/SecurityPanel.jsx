@@ -35,7 +35,7 @@ const Row = ({ icon: Icon, title, count, open, onToggle, children }) => (
   <div>
     <button
       onClick={onToggle}
-      className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left group transition-colors
+      className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left group transition-colors
         hover:bg-line/40 active:bg-line/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
     >
       <Icon size={17} strokeWidth={1.75} className="text-muted shrink-0" />
@@ -260,7 +260,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
               onClose();
               onLock();
             }}
-            className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <Lock size={17} strokeWidth={1.75} className="text-muted" />{' '}
             <span className="text-[15px] font-medium">Lock now</span>
@@ -271,7 +271,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onClose }) => {
             setConfirmText('');
             setShowSignOut(true);
           }}
-          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-danger hover:bg-danger-soft active:opacity-80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
+          className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-danger hover:bg-danger-soft active:opacity-80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
         >
           <LogOut size={17} strokeWidth={1.75} />{' '}
           <span className="text-[15px] font-medium">Sign out of this device</span>

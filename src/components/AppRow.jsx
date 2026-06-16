@@ -7,7 +7,7 @@ import { Monogram } from './ui/primitives';
 const AppRow = ({ app, onOpen }) => (
   <button
     onClick={onOpen}
-    className="w-full flex items-center gap-4 py-4 px-3 -mx-3 rounded-xl text-left group transition-colors
+    className="w-[calc(100%_+_1.5rem)] flex items-center gap-4 py-4 px-3 -mx-3 rounded-xl text-left group transition-colors
       hover:bg-line/40 active:bg-line/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
   >
     <Monogram name={app.name} seed={app.domain} src={app.iconUrl} />

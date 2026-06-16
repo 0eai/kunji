@@ -100,7 +100,7 @@ const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode
       <div className="divide-y divide-line border-t border-line">
         <button
           onClick={() => setShowActivitySheet(true)}
-          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           <Activity size={17} strokeWidth={1.75} className="text-muted" />
           <span className="flex-1 text-[15px] font-medium">Recent activity</span>
@@ -108,14 +108,14 @@ const AppDetailsModal = ({ app, userId, cryptoKey, profile, onClose, onEnterCode
         </button>
         <button
           onClick={onEnterCode}
-          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-accent hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-accent hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           <KeyRound size={17} strokeWidth={1.75} />{' '}
           <span className="text-[15px] font-medium">Sign in with a code</span>
         </button>
         <button
           onClick={onDelete}
-          className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-danger hover:bg-danger-soft active:opacity-80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
+          className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-danger hover:bg-danger-soft active:opacity-80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
         >
           <Trash2 size={17} strokeWidth={1.75} />{' '}
           <span className="text-[15px] font-medium">Remove app</span>

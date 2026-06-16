@@ -24,7 +24,7 @@ const InstallButton = ({ variant = 'block' }) => {
     variant === 'row' ? (
       <button
         onClick={onClick}
-        className="w-full flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left text-ink hover:bg-line/40 active:bg-line/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       >
         <Download size={17} strokeWidth={1.75} className="text-muted" />{' '}
         <span className="text-[15px] font-medium">Install kunji</span>
