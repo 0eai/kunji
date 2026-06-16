@@ -8,6 +8,7 @@
 import { deriveChannelId, deriveVaultWriteKeyPair, exportEd25519PublicKey, signWithEd25519 } from '../lib/crypto';
 import { base64ToBuffer } from '../lib/crypto/helpers';
 import { okpJwk } from '../lib/capability';
+import { thisDeviceId } from './devices';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
 const PUSH_REGISTER_URL = import.meta.env.VITE_PUSH_REGISTER_URL || '/push/register';
@@ -62,16 +63,68 @@ export const enablePushForAudience = async (cryptoKey, audience, requesterPubB64
   const channelId = await deriveChannelId(cryptoKey, audience);
   const postKeyJwk = okpJwk(new Uint8Array(base64ToBuffer(requesterPubB64)));
   // pushSub = { endpoint, keys:{p256dh,auth} } — web-push E2E-encrypts the payload to it. expiresAt/ttl
-  // are set server-side by the function. The signed payload binds the subscription + poster key.
-  await pushChannelWrite(cryptoKey, channelId, 'set', { postKeyJwk, pushSub: sub.toJSON() });
+  // are set server-side. The channel keeps a subscription PER DEVICE (keyed by deviceId), so every device
+  // the user enables receives; the signed payload binds this device's subscription + the poster key.
+  await pushChannelWrite(cryptoKey, channelId, 'set', {
+    deviceId: thisDeviceId(),
+    postKeyJwk,
+    pushSub: sub.toJSON(),
+  });
+  addLocalPushAudience(audience);
   return { channelId };
 };
 
-/** Revoke push for `audience` — a signed delete so the channel can no longer be pinged. */
+/** Stop receiving for `audience` on THIS device — a signed delete of just this device's subscription.
+ *  Other linked devices that enabled it keep receiving. */
 export const revokePushForAudience = async (cryptoKey, audience) => {
   const channelId = await deriveChannelId(cryptoKey, audience);
-  await pushChannelWrite(cryptoKey, channelId, 'delete', {});
+  await pushChannelWrite(cryptoKey, channelId, 'delete', { deviceId: thisDeviceId() });
+  removeLocalPushAudience(audience);
 };
+
+/** Tear down the whole channel for `audience` across ALL devices (used when the agent itself is revoked). */
+export const revokePushAllDevices = async (cryptoKey, audience) => {
+  const channelId = await deriveChannelId(cryptoKey, audience);
+  await pushChannelWrite(cryptoKey, channelId, 'delete', { all: true });
+  removeLocalPushAudience(audience);
+};
+
+// ── Per-device subscription state ─────────────────────────────────────────────────────────────────
+// Whether THIS device receives for an audience is per-device truth: the channel doc is unreadable to
+// clients, so we remember locally which audiences this device subscribed to. (The old synced agent flag
+// caused the "shows on but not allowed here" bug across linked devices.)
+const LOCAL_PUSH_KEY = 'kunji.pushAudiences';
+const readLocalSet = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(LOCAL_PUSH_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+};
+const writeLocalSet = (set) => {
+  try {
+    localStorage.setItem(LOCAL_PUSH_KEY, JSON.stringify([...set]));
+  } catch {
+    /* storage blocked — preference just won't persist */
+  }
+};
+const addLocalPushAudience = (audience) => {
+  const s = readLocalSet();
+  s.add(audience);
+  writeLocalSet(s);
+};
+const removeLocalPushAudience = (audience) => {
+  const s = readLocalSet();
+  s.delete(audience);
+  writeLocalSet(s);
+};
+/** The audiences THIS device is subscribed to receive for. */
+export const localPushAudiences = () => readLocalSet();
+/** Is this device actually set up to receive for `audience` — subscribed here AND OS permission granted? */
+export const isPushOnHere = (audience) =>
+  readLocalSet().has(audience) &&
+  typeof Notification !== 'undefined' &&
+  Notification.permission === 'granted';
 
 // Global "let agents notify me" master switch. Per-DEVICE (localStorage), since the underlying Web Push
 // subscription is per-device anyway — and a single shared channel can't exist (each channel binds one

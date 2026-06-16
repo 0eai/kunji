@@ -7,6 +7,8 @@ import {
   pushSupported,
   enablePushForAudience,
   revokePushForAudience,
+  revokePushAllDevices,
+  localPushAudiences,
   agentNotifyAllowed,
   setAgentNotifyAllowed,
 } from '../services/push';
@@ -45,6 +47,11 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
   const supportsPush = pushSupported();
   const [globalNotify, setGlobalNotify] = useState(agentNotifyAllowed()); // per-device master switch
   const [globalBusy, setGlobalBusy] = useState(false);
+  // Audiences THIS device receives for (per-device truth; mirrors the localStorage set in push.js so the
+  // toggle re-renders). Whether a given agent is "on here" also requires OS permission still granted.
+  const [pushHere, setPushHere] = useState(() => new Set(localPushAudiences()));
+  const isOnHere = (audience) =>
+    pushHere.has(audience) && typeof Notification !== 'undefined' && Notification.permission === 'granted';
 
   const refresh = useCallback(() => {
     listAgents(masterKey)
@@ -59,8 +66,13 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
     setRevoking(a.jti);
     try {
       await revokeAgent(userId, masterKey, { jti: a.jti, audience: a.audience });
-      // Also tear down its push channel (best-effort) so a revoked agent can't be pinged.
-      if (a.pushEnabled) await revokePushForAudience(masterKey, a.audience).catch(() => {});
+      // The agent is gone → tear down its push channel for ALL devices (best-effort) so none can be pinged.
+      if (a.pushEnabled) await revokePushAllDevices(masterKey, a.audience).catch(() => {});
+      setPushHere((s) => {
+        const n = new Set(s);
+        n.delete(a.audience);
+        return n;
+      });
       showToast('Agent revoked.');
       setAgents((list) => (list || []).filter((x) => x.jti !== a.jti));
       return true;
@@ -72,9 +84,9 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
     }
   };
 
-  // The master switch. Off is a kill-switch: tear down every enabled agent's channel on this device so
-  // nothing can ping you, and block enabling until it's back on. On just re-allows per-agent toggles
-  // (it never auto-enables an agent). Per-device, like the push subscription itself.
+  // The master switch (per-device, like the push subscription itself). Off is a kill-switch: drop THIS
+  // device's subscription for every audience it receives for (other linked devices keep theirs) and block
+  // enabling until it's back on. On just re-allows the per-agent toggles (never auto-enables an agent).
   const toggleGlobalNotify = async () => {
     if (!globalNotify) {
       setAgentNotifyAllowed(true);
@@ -84,36 +96,41 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
     }
     setGlobalBusy(true);
     try {
-      const enabled = (agents || []).filter((a) => a.pushEnabled);
-      for (const a of enabled) {
-        await revokePushForAudience(masterKey, a.audience).catch(() => {});
-        await setAgentPushEnabled(masterKey, a, false).catch(() => {});
+      const auds = [...localPushAudiences()];
+      for (const aud of auds) {
+        await revokePushForAudience(masterKey, aud).catch(() => {}); // this device only
       }
-      setAgents((list) => (list || []).map((x) => ({ ...x, pushEnabled: false })));
+      setPushHere(new Set());
       setAgentNotifyAllowed(false);
       setGlobalNotify(false);
-      showToast(enabled.length ? 'Agent notifications off — all agents turned off.' : 'Agent notifications off.');
+      showToast(auds.length ? 'Agent notifications off on this device.' : 'Agent notifications off.');
     } finally {
       setGlobalBusy(false);
     }
   };
 
-  // Toggle the per-app push channel: on → register (re-subscribes this device); off → signed delete.
+  // Per-agent, per-DEVICE: on → subscribe + register this device's push channel; off → remove just this
+  // device's subscription (other devices the user enabled keep receiving). State of "on" is this device's.
   const toggleNotify = async (a) => {
     setPushBusy(a.jti);
+    const wasOnHere = isOnHere(a.audience);
     try {
-      if (a.pushEnabled) {
+      if (wasOnHere) {
         await revokePushForAudience(masterKey, a.audience);
-        await setAgentPushEnabled(masterKey, a, false);
-        showToast('Notifications turned off.');
+        setPushHere((s) => {
+          const n = new Set(s);
+          n.delete(a.audience);
+          return n;
+        });
+        showToast('Notifications off on this device.');
       } else {
         await enablePushForAudience(masterKey, a.audience, a.agentPub);
-        await setAgentPushEnabled(masterKey, a, true);
-        showToast('Notifications turned on.');
+        await setAgentPushEnabled(masterKey, a, true); // synced hint: configured on some device
+        setPushHere((s) => new Set(s).add(a.audience));
+        showToast('Notifications on for this device.');
       }
-      setAgents((list) => (list || []).map((x) => (x.jti === a.jti ? { ...x, pushEnabled: !a.pushEnabled } : x)));
     } catch (e) {
-      showToast((a.pushEnabled ? 'Could not turn off: ' : 'Could not turn on: ') + (e.message || e), 'error');
+      showToast((wasOnHere ? 'Could not turn off: ' : 'Could not turn on: ') + (e.message || e), 'error');
     } finally {
       setPushBusy('');
     }
@@ -183,17 +200,26 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
                   {(a.scope || []).map(scopeId).join(', ')} ·{' '}
                   <span className={expiryTone(a.exp)}>{expiryLabel(a.exp)}</span>
                 </p>
-                {supportsPush && globalNotify && (
-                  <button
-                    onClick={() => toggleNotify(a)}
-                    disabled={pushBusy === a.jti}
-                    className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:opacity-80 transition-opacity disabled:opacity-50"
-                    title={a.pushEnabled ? 'Turn off notifications for this app' : 'Let this app notify you to approve more access'}
-                  >
-                    {a.pushEnabled ? <BellRing size={12} /> : <Bell size={12} />}
-                    {pushBusy === a.jti ? '…' : a.pushEnabled ? 'Notifications on' : 'Turn on notifications'}
-                  </button>
-                )}
+                {supportsPush &&
+                  globalNotify &&
+                  (() => {
+                    const onHere = isOnHere(a.audience);
+                    return (
+                      <button
+                        onClick={() => toggleNotify(a)}
+                        disabled={pushBusy === a.jti}
+                        className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:opacity-80 transition-opacity disabled:opacity-50"
+                        title={
+                          onHere
+                            ? 'Stop notifications on this device'
+                            : 'Receive notifications on this device to approve more access'
+                        }
+                      >
+                        {onHere ? <BellRing size={12} /> : <Bell size={12} />}
+                        {pushBusy === a.jti ? '…' : onHere ? 'Notifications on' : 'Turn on notifications'}
+                      </button>
+                    );
+                  })()}
               </div>
               <button
                 onClick={() => setConfirm(a)}
@@ -219,6 +245,7 @@ const AgentsSheet = ({ userId, masterKey, onClose }) => {
           onClose={() => {
             setShowAuthorize(false);
             refresh(); // a newly-authorized agent should appear in the list
+            setPushHere(new Set(localPushAudiences())); // pick up a just-enabled notification opt-in
           }}
         />
       )}

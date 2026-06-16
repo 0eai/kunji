@@ -101,19 +101,30 @@ notification permission, subscribes to Web Push (the SW registered at load), der
 
 ```
 pushChannels/{channelId} = {
-  pushSub:        <the Web Push subscription — web-push E2E-encrypts the payload to it>,
+  subs: { [deviceId]: <Web Push subscription> },  // ONE per linked device that opted in (multi-device)
   postKeyJwk:     <OKP jwk>,   // who may post (holder-of-key) — the agent's Ed25519 pubkey
   writePublicKey: <OKP raw>,   // the vault-write key bound (TOFU) at first registration — gates writes
   expiresAt, ttl               // 30-day TTL (server-set); the requester re-subscribes after expiry
 }
 ```
 
+The channel keeps a subscription **per device** (keyed by the stable per-device `deviceId` from
+`services/devices.js`), so every linked device the user enables receives — `pushDispatch` fans the opaque
+ping out to all of them and prunes any the push service reports gone (404/410). *Back-compat:* channels
+written before this change hold a single `pushSub`; `pushDispatch` still delivers to it until a device
+re-registers (which migrates the doc to `subs`). Whether a device receives is **per-device** (the channel
+is unreadable to clients, so the wallet tracks its own subscribed audiences locally) — it does not sync
+across devices, which is correct and fixes the prior "shows on but not allowed on this device" bug.
+
 (The return is per-session at approval time via `agentSessions`, so no per-channel ECDH pub is stored.)
 The wallet **registers this via a SIGNED write** through the `pushChannelRegister` Function (the
-master-key-derived vault-write key signs `{channelId, op, postKeyJwk, pushSub, publicKey, timestamp}`,
-the same contract as `vaultWrite`); the Function TOFU-binds `writePublicKey` per `channelId`. So a leaked
-`channelId` alone can't overwrite/delete the channel without the master key's signature (closes S22).
-The channel stays **opaque** (no `vaultId` linkage — the TOFU binding is per-channelId).
+master-key-derived vault-write key signs `{channelId, op, deviceId, postKeyJwk, pushSub, publicKey,
+timestamp}` for `set`, the same contract as `vaultWrite`); the Function TOFU-binds `writePublicKey` per
+`channelId` and merges `subs[deviceId]`. `delete` is either **per-device** (signed `{…, deviceId}` →
+removes one device's sub) or **full teardown** (signed `{…, all:true}` → tombstones the whole channel, on
+agent revoke). So a leaked `channelId` alone can't add/remove a subscription without the master key's
+signature (S22). The channel stays **opaque** (no `vaultId` linkage; `deviceId` is a random per-device id,
+server-visible only).
 
 ### 5.2 Request → push → approve → deliver
 

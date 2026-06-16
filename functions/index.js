@@ -416,28 +416,48 @@ export const pushDispatch = onRequest(
     // Per-IP first (bounds anonymous spam), then prove holder-of-key, then per-channel (bounds a valid poster).
     if (await rateLimited(req.ip, 20, 60 * 1000, 'push'))
       return res.status(429).json({ error: 'rate_limited' });
-    const snap = await db.collection('pushChannels').doc(channelId).get();
+    const ref = db.collection('pushChannels').doc(channelId);
+    const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: 'not_found' });
     const ch = snap.data();
-    if (ch.revoked || !ch.pushSub) return res.status(404).json({ error: 'not_found' }); // a revoked tombstone [S27]
+    if (ch.revoked) return res.status(404).json({ error: 'not_found' }); // a revoked tombstone [S27]
     if (Date.now() > ch.expiresAt) return res.status(410).json({ error: 'expired' });
     if (!verifyPostProof(proof, ch.postKeyJwk, channelId, requestId))
       return res.status(401).json({ error: 'bad_proof' });
     if (await rateLimited(channelId, 10, 60 * 1000, 'pushch'))
       return res.status(429).json({ error: 'rate_limited' });
-    // The Web Push payload is the OPAQUE pointer only (web-push E2E-encrypts it to the subscription).
-    try {
-      webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY.value(), VAPID_PRIVATE_KEY.value());
-      await webpush.sendNotification(ch.pushSub, JSON.stringify({ requestId }));
-    } catch (e) {
-      // 404/410 = the subscription is gone (uninstalled/expired) — drop the channel so it stops being pinged.
-      if (e?.statusCode === 404 || e?.statusCode === 410) {
-        await db.collection('pushChannels').doc(channelId).delete().catch(() => {});
-        return res.status(410).json({ error: 'subscription_gone' });
+    // Receiver set: the per-device `subs` map; fall back to a legacy single `pushSub` for channels not yet
+    // re-registered since the multi-device change (back-compat). `[deviceKey, subscription]` pairs.
+    const subs =
+      ch.subs && typeof ch.subs === 'object'
+        ? Object.entries(ch.subs)
+        : ch.pushSub
+          ? [['_legacy', ch.pushSub]]
+          : [];
+    if (!subs.length) return res.status(404).json({ error: 'not_found' });
+    // Fan out to EVERY registered device. The payload is the OPAQUE pointer only (web-push E2E-encrypts it).
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY.value(), VAPID_PRIVATE_KEY.value());
+    const results = await Promise.allSettled(
+      subs.map(([, sub]) => webpush.sendNotification(sub, JSON.stringify({ requestId }))),
+    );
+    // Prune any subscription the push service reports gone (404/410); a legacy single-sub channel → drop the doc.
+    const dead = subs.filter(
+      (_, i) => results[i].status === 'rejected' && [404, 410].includes(results[i].reason?.statusCode),
+    );
+    if (dead.length) {
+      if (ch.subs) {
+        const upd = {};
+        for (const [k] of dead) upd[`subs.${k}`] = FieldValue.delete();
+        await ref.update(upd).catch(() => {});
+      } else {
+        await ref.delete().catch(() => {});
       }
-      return res.status(502).json({ error: 'push_failed' });
     }
-    return res.json({ status: 'ok' });
+    const delivered = results.filter((r) => r.status === 'fulfilled').length;
+    if (delivered) return res.json({ status: 'ok', delivered });
+    // None delivered: all subs gone ⇒ dead channel (410); otherwise a transient push failure (502).
+    const allGone = dead.length === subs.length;
+    return res.status(allGone ? 410 : 502).json({ error: allGone ? 'subscription_gone' : 'push_failed' });
   },
 );
 
@@ -451,11 +471,15 @@ export const pushChannelRegister = onRequest(
   async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-    const { channelId, op, pushSub, postKeyJwk, publicKey, signedToken, timestamp } = req.body || {};
+    const { channelId, op, deviceId, all, pushSub, postKeyJwk, publicKey, signedToken, timestamp } = req.body || {};
     // 1. shape
     if (!HEX64_SESSION.test(channelId || '') || (op !== 'set' && op !== 'delete') || !publicKey || !signedToken || typeof timestamp !== 'number')
       return res.status(400).json({ error: 'bad_request' });
     if (Math.abs(Date.now() - timestamp) > 120_000) return res.status(400).json({ error: 'stale' });
+    const deletingAll = op === 'delete' && all === true; // full teardown vs. removing one device's subscription
+    // `set` and a per-device `delete` name which device's subscription; a full revoke (all) does not.
+    if ((op === 'set' || (op === 'delete' && !deletingAll)) && !SAFE_ID.test(deviceId || ''))
+      return res.status(400).json({ error: 'bad_device' });
     if (op === 'set') {
       if (!pushSub || typeof pushSub !== 'object' || Array.isArray(pushSub) || typeof pushSub.endpoint !== 'string')
         return res.status(400).json({ error: 'bad_subscription' });
@@ -465,8 +489,13 @@ export const pushChannelRegister = onRequest(
     // 2. signature over the canonical request (excludes signedToken). Same contract + key as vaultWrite.
     const payload = { channelId, op, publicKey, timestamp };
     if (op === 'set') {
+      payload.deviceId = deviceId;
       payload.postKeyJwk = postKeyJwk;
       payload.pushSub = pushSub;
+    } else if (deletingAll) {
+      payload.all = true;
+    } else {
+      payload.deviceId = deviceId;
     }
     if (!verifySignedWrite(payload, signedToken, publicKey)) return res.status(401).json({ error: 'bad_signature' });
     if (await rateLimited(req.ip, 20, 60 * 1000, 'pushreg')) return res.status(429).json({ error: 'rate_limited' });
@@ -482,13 +511,34 @@ export const pushChannelRegister = onRequest(
         const expiresAt = Date.now() + CHANNEL_TTL_MS;
         const ttl = Timestamp.fromMillis(expiresAt + 5 * 60 * 1000);
         if (op === 'delete') {
-          // Tombstone (not a hard delete): keep the writePublicKey binding sticky so a revoked channelId
-          // can't be squatted by a different key — only the original (user's) key re-registers. Drops
-          // pushSub/postKeyJwk so pushDispatch treats it as gone. Self-cleans via the TTL. [S27]
-          tx.set(ref, { writePublicKey: publicKey, revoked: true, expiresAt, ttl });
+          if (!existing.exists) return; // nothing to revoke — don't create a doc
+          if (deletingAll) {
+            // Full teardown → tombstone: keep the writePublicKey binding sticky so a revoked channelId can't
+            // be squatted by a different key (only the original key re-registers); drop all subs/postKeyJwk so
+            // pushDispatch treats it as gone. Self-cleans via the TTL. [S27]
+            tx.set(ref, { writePublicKey: publicKey, revoked: true, expiresAt, ttl });
+          } else {
+            // Per-device → remove only this device's subscription; other devices keep receiving. (Nested
+            // FieldValue.delete in a merge — a dotted key in set/merge would be a literal field name.)
+            tx.set(ref, { subs: { [deviceId]: FieldValue.delete() }, writePublicKey: publicKey, expiresAt, ttl }, { merge: true });
+          }
           return;
         }
-        tx.set(ref, { pushSub, postKeyJwk, writePublicKey: publicKey, expiresAt, ttl });
+        // set: merge THIS device's subscription (preserving other devices'), (re)bind postKeyJwk, and clear any
+        // legacy single-sub field + a prior tombstone (the original key may re-activate a revoked channel).
+        tx.set(
+          ref,
+          {
+            subs: { [deviceId]: pushSub },
+            postKeyJwk,
+            writePublicKey: publicKey,
+            expiresAt,
+            ttl,
+            pushSub: FieldValue.delete(),
+            revoked: FieldValue.delete(),
+          },
+          { merge: true },
+        );
       });
     } catch (e) {
       if (e?.message === 'not_authorized') return res.status(403).json({ error: 'not_authorized' });
