@@ -57,7 +57,9 @@ const AgentsView = ({ userId, masterKey, onBack, onCountChange }) => {
       for (const aud of auds) await revokePushForAudience(masterKey, aud).catch(() => {});
       setAgentNotifyAllowed(false);
       setGlobalNotify(false);
-      showToast(auds.length ? 'Agent notifications off on this device.' : 'Agent notifications off.');
+      showToast(
+        auds.length ? 'Agent notifications off on this device.' : 'Agent notifications off.',
+      );
     } finally {
       setGlobalBusy(false);
     }
@@ -66,71 +68,77 @@ const AgentsView = ({ userId, masterKey, onBack, onCountChange }) => {
   const soon = (agents || []).filter((a) => a.exp && a.exp * 1000 - Date.now() < SOON_MS).length;
 
   return (
-    <div className="animate-rise pb-8">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-1 text-[13px] text-muted hover:text-ink mb-3 -mt-1 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
-      >
-        <ArrowLeft size={15} /> Apps
-      </button>
-
-      {soon ? (
-        <p className="text-[12px] text-accent bg-accent-soft border border-line rounded-lg px-3 py-2 mb-4">
-          {soon === 1 ? '1 agent is' : `${soon} agents are`} expired or expiring soon — re-authorize to keep access.
-        </p>
-      ) : null}
-
-      {supportsPush && (
+    // NOTE: the entrance animation (transform) must wrap ONLY the content — a transformed ancestor becomes
+    // the containing block for `position: fixed`, which would mis-position the nested sheets. So the sheets
+    // render as siblings of the animate-rise div, under this non-transformed wrapper → fixed = viewport.
+    <div className="pb-8">
+      <div className="animate-rise">
         <button
-          type="button"
-          onClick={toggleGlobalNotify}
-          aria-pressed={globalNotify}
-          disabled={globalBusy}
-          className="w-full flex items-center gap-3 text-left mb-5 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-[13px] text-muted hover:text-ink mb-3 -mt-1 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
         >
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] font-medium text-ink">Agent notifications</span>
-            <span className="block text-[12px] text-muted">
-              {globalNotify
-                ? 'Agents you enable can ping you to approve more access. Turning this off blocks them all on this device.'
-                : 'Off — no agent can notify you on this device. Turn on to enable notifications per agent.'}
-            </span>
-          </span>
-          <span
-            className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
-              globalNotify ? 'bg-accent-fill' : 'bg-line'
-            }`}
-          >
-            <span
-              className={`block w-4 h-4 rounded-full bg-white transition-transform ${
-                globalNotify ? 'translate-x-4' : ''
-              }`}
-            />
-          </span>
+          <ArrowLeft size={15} /> Apps
         </button>
-      )}
 
-      <SectionLabel count={agents?.length} className="pt-1 pb-1">
-        Agents
-      </SectionLabel>
-      {agents === null ? (
-        <p className="text-[13px] text-faint py-4">Loading…</p>
-      ) : agents.length === 0 ? (
-        <p className="text-[15px] text-muted leading-relaxed py-4">
-          No active agents. Authorize an AI assistant, script, or service to act for you at an app —
-          scoped, expiring, and revocable.
-        </p>
-      ) : (
-        <div className="divide-y divide-line">
-          {agents.map((a) => (
-            <AgentRow key={a.jti} agent={a} onOpen={() => setDetail(a)} />
-          ))}
-        </div>
-      )}
+        {soon ? (
+          <p className="text-[12px] text-accent bg-accent-soft border border-line rounded-lg px-3 py-2 mb-4">
+            {soon === 1 ? '1 agent is' : `${soon} agents are`} expired or expiring soon —
+            re-authorize to keep access.
+          </p>
+        ) : null}
 
-      <Btn variant="primary" onClick={() => setShowAuthorize(true)} className="w-full mt-6">
-        <ShieldCheck size={16} /> Authorize an agent
-      </Btn>
+        {supportsPush && (
+          <button
+            type="button"
+            onClick={toggleGlobalNotify}
+            aria-pressed={globalNotify}
+            disabled={globalBusy}
+            className="w-full flex items-center gap-3 text-left mb-5 rounded-xl border border-line p-3.5 hover:bg-line/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink">Agent notifications</span>
+              <span className="block text-[12px] text-muted">
+                {globalNotify
+                  ? 'Agents you enable can ping you to approve more access. Turning this off blocks them all on this device.'
+                  : 'Off — no agent can notify you on this device. Turn on to enable notifications per agent.'}
+              </span>
+            </span>
+            <span
+              className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+                globalNotify ? 'bg-accent-fill' : 'bg-line'
+              }`}
+            >
+              <span
+                className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                  globalNotify ? 'translate-x-4' : ''
+                }`}
+              />
+            </span>
+          </button>
+        )}
+
+        <SectionLabel count={agents?.length} className="pt-1 pb-1">
+          Agents
+        </SectionLabel>
+        {agents === null ? (
+          <p className="text-[13px] text-faint py-4">Loading…</p>
+        ) : agents.length === 0 ? (
+          <p className="text-[15px] text-muted leading-relaxed py-4">
+            No active agents. Authorize an AI assistant, script, or service to act for you at an app
+            — scoped, expiring, and revocable.
+          </p>
+        ) : (
+          <div className="divide-y divide-line">
+            {agents.map((a) => (
+              <AgentRow key={a.jti} agent={a} onOpen={() => setDetail(a)} />
+            ))}
+          </div>
+        )}
+
+        <Btn variant="primary" onClick={() => setShowAuthorize(true)} className="w-full mt-6">
+          <ShieldCheck size={16} /> Authorize an agent
+        </Btn>
+      </div>
 
       {showAuthorize && (
         <AuthorizeAgentSheet
