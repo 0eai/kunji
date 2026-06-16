@@ -44,8 +44,16 @@ function readIncomingLinks() {
   // A Web Push notification opens app.kunji.cc/?push=<requestId> (the agent-request relay code).
   const pushRaw = new URLSearchParams(window.location.search).get('push');
   const push = pushRaw && /^\d{6}$/.test(pushRaw) ? pushRaw : null;
-  if (approve || authorize || vp || offer || push) history.replaceState(null, '', window.location.pathname);
-  return { approve, authorize, vp, offer, push };
+  // An OpenID4VCI authorization_code issuer redirects back to app.kunji.cc/?code=&state= (leg 2 of the
+  // sign-in on-ramp). Both must be present + token-safe; completed by Dashboard after unlock.
+  const sp = new URLSearchParams(window.location.search);
+  const codeRaw = sp.get('code');
+  const stateRaw = sp.get('state');
+  const tokenSafe = (s) => typeof s === 'string' && /^[A-Za-z0-9._~-]{1,512}$/.test(s);
+  const authCode = tokenSafe(codeRaw) && tokenSafe(stateRaw) ? { code: codeRaw, state: stateRaw } : null;
+  if (approve || authorize || vp || offer || push || authCode)
+    history.replaceState(null, '', window.location.pathname);
+  return { approve, authorize, vp, offer, push, authCode };
 }
 
 export default function App() {
@@ -245,6 +253,7 @@ export default function App() {
       incomingPresentation={incoming.vp}
       incomingOffer={incoming.offer}
       incomingPush={incoming.push}
+      incomingAuthCode={incoming.authCode}
       onLock={() => {
         logActivity(user.uid, 'Vault Locked', 'info', 'Lock', cryptoKey);
         lockVault();

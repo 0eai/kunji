@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { DownloadCloud } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn } from './ui/primitives';
-import { receiveViaOffer } from '../services/credentials';
+import { receiveViaOffer, offerNeedsSignIn, beginAuthCodeFlow } from '../services/credentials';
 import { parseCredentialOffer } from '../lib/oid4vc';
 import { useToast } from '../contexts/ToastContext';
 
@@ -28,16 +28,24 @@ const ReceiveOfferSheet = ({ offer, masterKey, onClose }) => {
   } catch {
     /* malformed offer — the receive call below surfaces the error */
   }
+  // An authorization_code offer can't be redeemed in place — it needs the sign-in (redirect) on-ramp.
+  const needsSignIn = offerNeedsSignIn(offer);
 
   const receive = async () => {
     setBusy(true);
     try {
+      if (needsSignIn) {
+        // Leg 1: persist the PKCE context, then navigate the tab to the issuer's /authorize. The issuer
+        // redirects back to ?code=&state=, which the wallet completes after re-unlock (Dashboard).
+        const url = await beginAuthCodeFlow(offer);
+        window.location.assign(url);
+        return; // navigating away — leave `busy` set
+      }
       const r = await receiveViaOffer(masterKey, offer);
       showToast(r?.count > 1 ? `Received ${r.count} single-use copies.` : 'Credential received.');
       onClose();
     } catch (e) {
       showToast(e.message || 'Could not accept the offer.', 'error');
-    } finally {
       setBusy(false);
     }
   };
@@ -58,6 +66,13 @@ const ReceiveOfferSheet = ({ offer, masterKey, onClose }) => {
       <p className="text-[12px] text-faint leading-relaxed mb-6">
         kunji can't vouch for this issuer — only accept credentials from sources you trust. The credential
         stays in your wallet; nothing is shared until you choose to present it.
+        {needsSignIn && (
+          <>
+            {' '}
+            This issuer asks you to <span className="text-muted">sign in</span> first — you'll be sent to{' '}
+            <span className="font-mono">{host}</span> and returned to finish.
+          </>
+        )}
       </p>
 
       <div className="flex gap-3">
@@ -65,7 +80,7 @@ const ReceiveOfferSheet = ({ offer, masterKey, onClose }) => {
           Cancel
         </Btn>
         <Btn variant="primary" onClick={receive} disabled={busy} className="flex-1">
-          {busy ? 'Receiving…' : 'Receive'}
+          {needsSignIn ? (busy ? 'Redirecting…' : 'Sign in to receive') : busy ? 'Receiving…' : 'Receive'}
         </Btn>
       </div>
     </Sheet>

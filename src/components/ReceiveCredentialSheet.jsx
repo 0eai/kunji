@@ -2,7 +2,13 @@ import React, { useState, lazy, Suspense } from 'react';
 import { DownloadCloud, ScanLine } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, Field, SheetHeading } from './ui/primitives';
-import { receiveFromIssuer, receiveBbsFromIssuer, receiveViaOffer } from '../services/credentials';
+import {
+  receiveFromIssuer,
+  receiveBbsFromIssuer,
+  receiveViaOffer,
+  offerNeedsSignIn,
+  beginAuthCodeFlow,
+} from '../services/credentials';
 import { useToast } from '../contexts/ToastContext';
 
 const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
@@ -34,6 +40,11 @@ const ReceiveCredentialSheet = ({ masterKey, onClose, onReceived }) => {
     setShowScanner(false);
     setBusy(true);
     try {
+      if (offerNeedsSignIn(value)) {
+        // authorization_code offer → sign-in (redirect) on-ramp; navigate to the issuer's /authorize.
+        window.location.assign(await beginAuthCodeFlow(value));
+        return; // navigating away — leave `busy` set
+      }
       done(received(await receiveViaOffer(masterKey, value)));
     } catch (e) {
       showToast(e.message || 'Could not accept the offer.', 'error');

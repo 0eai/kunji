@@ -32,12 +32,17 @@ import {
   buildBbsVpToken,
   buildVpResponse,
   parseClientIdScheme,
+  generatePkce,
+  buildAuthorizationRequest,
+  resolveAuthorizationEndpoint,
 } from '../lib/oid4vc';
 import { encryptJwe } from '../lib/jwe';
 import { resolveDidKey, didWebToUrl } from '../lib/did';
 import { verifyX5cChain, verifyEs256Jws } from '../lib/x509';
+import { saveAuthContext, takeAuthContext } from './oid4vcAuth';
 
 const PRE_AUTH_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
+const AUTH_CODE_GRANT = 'authorization_code';
 
 // Unlinkability v2 (verified-credentials.md §7): ask the issuer for a small batch of one-time-use
 // copies, each bound to a DISTINCT random holder key, so the wallet can spend a fresh copy per
@@ -490,31 +495,17 @@ const issuerDeclineMessage = async (resp, fallback) => {
   return fallback;
 };
 
-export const receiveViaOffer = async (cryptoKey, offerInput) => {
-  let offer;
-  try {
-    offer = parseCredentialOffer(offerInput);
-  } catch {
-    throw new Error('Not a valid credential offer.');
-  }
-  const issuer = String(offer.credentialIssuer || '')
-    .trim()
-    .replace(/\/$/, '');
-  if (!httpsOrLoopback(issuer)) throw new Error('Credential offer issuer must be an https:// URL.'); // [S21]
-  if (!offer.preAuthorizedCode) {
-    // The authorization_code grant needs an authorization-server redirect, which a QR/no-redirect wallet
-    // doesn't drive — kunji supports pre-authorized offers. (lib + demos exercise authorization_code.)
-    if (offer.authorizationCode) throw new Error('This issuer requires sign-in (authorization_code); kunji accepts pre-authorized offers.');
-    throw new Error('Unsupported offer (needs a pre-authorized code).');
-  }
-
+// Shared token+credential leg: redeem a token (`tokenBody` is grant-specific) at `tokenUrl`, request a
+// batch of one-time credential copies, and store them. Used by BOTH the pre-authorized_code path and
+// the authorization_code on-ramp — they differ only in the grant/token endpoint.
+const redeemAndStore = async (cryptoKey, issuer, tokenBody, tokenUrl = `${issuer}/token`) => {
   // A fresh ephemeral DPoP key per receive (issuer-facing only — no linkability concern). We always
   // present a DPoP proof at /token; if the issuer echoes token_type:'DPoP' we sender-constrain the
   // credential request too. A legacy issuer ignores the header and returns a bearer token → unchanged. [DPoP]
   const dpopKey = generateEd25519KeyPair();
-  const dpopFor = (path, accessToken) =>
+  const dpopFor = (htu, accessToken) =>
     buildDpopProof({
-      htu: `${issuer}${path}`,
+      htu,
       htm: 'POST',
       accessToken,
       holderSecretKey: dpopKey.secretKey,
@@ -523,10 +514,10 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
 
   let tokenResp;
   try {
-    tokenResp = await fetch(`${issuer}/token`, {
+    tokenResp = await fetch(tokenUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', DPoP: await dpopFor('/token') },
-      body: JSON.stringify({ grant_type: PRE_AUTH_GRANT, 'pre-authorized_code': offer.preAuthorizedCode }),
+      headers: { 'Content-Type': 'application/json', DPoP: await dpopFor(tokenUrl) },
+      body: JSON.stringify(tokenBody),
     });
   } catch {
     throw new Error('Could not reach the issuer.');
@@ -541,7 +532,7 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
     buildProofJwt({ holderSecretKey: h.secretKey, holderPublicKey: h.publicKey, audience: issuer, cNonce: c_nonce }),
   );
   const credHeaders = useDpop
-    ? { 'Content-Type': 'application/json', Authorization: `DPoP ${access_token}`, DPoP: await dpopFor('/credential', access_token) }
+    ? { 'Content-Type': 'application/json', Authorization: `DPoP ${access_token}`, DPoP: await dpopFor(`${issuer}/credential`, access_token) }
     : { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` };
   let credResp;
   try {
@@ -561,6 +552,104 @@ export const receiveViaOffer = async (cryptoKey, offerInput) => {
   if (!credResp.ok) throw new Error(await issuerDeclineMessage(credResp, 'The issuer declined to issue a credential.'));
   const sdjwts = credentialsFrom(await credResp.json().catch(() => ({})));
   return storeBatch(cryptoKey, issuer, sdjwts, holderKeys);
+};
+
+const offerIssuer = (offer) =>
+  String(offer.credentialIssuer || '')
+    .trim()
+    .replace(/\/$/, '');
+
+export const receiveViaOffer = async (cryptoKey, offerInput) => {
+  let offer;
+  try {
+    offer = parseCredentialOffer(offerInput);
+  } catch {
+    throw new Error('Not a valid credential offer.');
+  }
+  const issuer = offerIssuer(offer);
+  if (!httpsOrLoopback(issuer)) throw new Error('Credential offer issuer must be an https:// URL.'); // [S21]
+  if (!offer.preAuthorizedCode) {
+    // An authorization_code offer needs the sign-in (redirect) on-ramp — see beginAuthCodeFlow.
+    if (offer.authorizationCode) throw new Error('This issuer requires sign-in — use “Sign in to receive”.');
+    throw new Error('Unsupported offer (needs a pre-authorized code).');
+  }
+  return redeemAndStore(cryptoKey, issuer, {
+    grant_type: PRE_AUTH_GRANT,
+    'pre-authorized_code': offer.preAuthorizedCode,
+  });
+};
+
+// True when an offer requires the authorization_code (sign-in/redirect) on-ramp rather than a
+// pre-authorized code. The receive sheets use it to show “Sign in to receive”. Returns false on a
+// malformed offer (receiveViaOffer surfaces the parse error).
+export const offerNeedsSignIn = (offerInput) => {
+  try {
+    const offer = parseCredentialOffer(offerInput);
+    return Boolean(offer.authorizationCode && !offer.preAuthorizedCode);
+  } catch {
+    return false;
+  }
+};
+
+// Leg 1 of the authorization_code on-ramp: resolve the issuer's authorization endpoint, generate a
+// PKCE pair + CSRF `state`, persist the flow context (codeVerifier stays on-device), and return the
+// issuer's /authorize URL for the caller to navigate to. The issuer redirects back to our origin with
+// ?code=&state=, completed by completeAuthCodeFlow.
+export const beginAuthCodeFlow = async (offerInput) => {
+  let offer;
+  try {
+    offer = parseCredentialOffer(offerInput);
+  } catch {
+    throw new Error('Not a valid credential offer.');
+  }
+  const issuer = offerIssuer(offer);
+  if (!httpsOrLoopback(issuer)) throw new Error('Credential offer issuer must be an https:// URL.'); // [S21]
+  if (!offer.authorizationCode) throw new Error('This offer does not use sign-in.');
+
+  const { authorizationEndpoint, tokenEndpoint } = await resolveAuthorizationEndpoint(issuer);
+  const pkce = await generatePkce();
+  const state = bytesToB64u(crypto.getRandomValues(new Uint8Array(16)));
+  const redirectUri = `${window.location.origin}/`;
+  const configurationId = offer.configurationIds?.[0];
+
+  saveAuthContext(state, {
+    codeVerifier: pkce.codeVerifier,
+    credentialIssuer: issuer,
+    tokenEndpoint,
+    redirectUri,
+  });
+
+  const { url } = buildAuthorizationRequest({
+    authorizationEndpoint,
+    clientId: redirectUri,
+    redirectUri,
+    codeChallenge: pkce.codeChallenge,
+    state,
+    issuerState: offer.authorizationCode.issuerState,
+    credentialIssuer: issuer,
+    configurationId,
+  });
+  return url;
+};
+
+// Leg 2: the issuer redirected back to ?code=&state=. Match the single-use state (CSRF), redeem the
+// code + on-device codeVerifier at the saved token endpoint, and store the credential.
+export const completeAuthCodeFlow = async (cryptoKey, code, state) => {
+  const ctx = takeAuthContext(state);
+  if (!ctx) throw new Error('This sign-in link is unknown or expired — start again.');
+  const issuer = String(ctx.credentialIssuer || '').replace(/\/$/, '');
+  if (!httpsOrLoopback(issuer)) throw new Error('Invalid issuer.');
+  return redeemAndStore(
+    cryptoKey,
+    issuer,
+    {
+      grant_type: AUTH_CODE_GRANT,
+      code,
+      code_verifier: ctx.codeVerifier,
+      redirect_uri: ctx.redirectUri,
+    },
+    ctx.tokenEndpoint || `${issuer}/token`,
+  );
 };
 
 /**

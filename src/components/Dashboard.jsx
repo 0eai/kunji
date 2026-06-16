@@ -27,6 +27,7 @@ import {
   holderKeyFor,
   spendIfOneTime,
   presentBbsForLogin,
+  completeAuthCodeFlow,
 } from '../services/credentials';
 import { buildPresentation } from '../lib/vc';
 import { resolveAuthorizationRequest, requestQuery, verifyRequestObject } from '../lib/oid4vc';
@@ -59,6 +60,7 @@ const Dashboard = ({
   incomingPresentation,
   incomingOffer,
   incomingPush,
+  incomingAuthCode,
 }) => {
   const { showToast } = useToast();
   const [apps, setApps] = useState([]);
@@ -84,6 +86,7 @@ const Dashboard = ({
   const presentationHandled = useRef(false);
   const offerHandled = useRef(false);
   const pushHandled = useRef(false);
+  const authCodeHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
   useEffect(() => {
@@ -170,6 +173,22 @@ const Dashboard = ({
     handleCredentialOffer(incomingOffer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, incomingOffer]);
+
+  // OpenID4VCI authorization_code on-ramp (leg 2): the issuer redirected back to ?code=&state= and the
+  // vault has since been re-unlocked. Match the single-use state, redeem the code, store the credential.
+  useEffect(() => {
+    if (!vaultId || !incomingAuthCode || authCodeHandled.current) return;
+    authCodeHandled.current = true;
+    (async () => {
+      try {
+        const r = await completeAuthCodeFlow(cryptoKey, incomingAuthCode.code, incomingAuthCode.state);
+        showToast(r?.count > 1 ? `Received ${r.count} single-use copies.` : 'Credential received.');
+      } catch (e) {
+        showToast(e.message || 'Could not finish receiving the credential.', 'error');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultId, incomingAuthCode]);
 
   // Web Push (push-relay.md Transport ②): a tapped notification points at a step-up request id (the
   // agent-relay code). Look it up and open the SAME re-consent sheet as the ?authorize= deep link.
