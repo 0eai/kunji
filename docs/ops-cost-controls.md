@@ -87,6 +87,58 @@ identity wallet, and the function's service account needs **Billing Account Admi
 to alert-only; only wire this up as a conscious "rather go dark than get billed" decision. If built,
 put it in its own Functions codebase so it never prunes `app`.
 
+## 4. Data lifecycle — TTL policies + the scheduled sweep (storage growth)
+
+Relay/session docs and rate-limit buckets would accumulate forever without cleanup. Two layers handle this;
+both are operator-visible in the **admin console → Data health** (per-collection counts, oldest doc, a
+"needs attention" flag, and a "purge expired now" button that runs the sweep on demand).
+
+**a) Firestore TTL policies (one-time, manual — set after the first deploy).** The relay/session collections
+write a `ttl` Timestamp (or the activity log's `expiresAt` Timestamp); Firestore auto-deletes past it once a
+*policy* exists. Policies are not in `firebase.json`, so apply them once with the committed script:
+
+```bash
+./scripts/configure-ttl.sh           # project kunji-cc (override with PROJECT=…)
+gcloud firestore fields ttls list --project=kunji-cc --database='(default)'   # verify
+```
+
+Covered (Timestamp `ttl`): `agentSessions`, `agentRequests`, `credentialSessions`, `pushChannels`,
+`issuerOffers`, `issuerTokens`, `issuerLoginSessions`, `issuerSessions`, `verificationSessions`, `opsDaily`;
+plus `expiresAt` on the `activity` collection-group. NOT TTL-able (no Timestamp field) → swept instead:
+`linkSessions` (number `expiresAt`), `rateLimits` + `issuerRateLimits`, `revocations`.
+
+**b) The scheduled sweep + daily snapshot (`issuerCleanup`, codebase `issuer`, daily).** Already swept the
+Storage `verify-docs/**` ID images; now also: deletes **provably-dead** Firestore docs (the same predicates as
+the console's purge — `issuer-functions/opsClean.js`): expired relay/session docs (belt-and-suspenders behind
+the TTL policy), stale rate-limit buckets (window elapsed), and `revocations` past the **30-day cap-expiry
+floor** (the longest capability TTL is 7d, so a 30-day-old revocation is for a long-expired cap that RPs
+reject regardless). It then writes the daily **aggregate** snapshot `opsDaily/{YYYY-MM-DD}` for the Users
+trends chart. **Never** touched: the issuance ledger (`issuerCredentials`), `issuerStatusList`,
+`issuerNullifiers` (the Sybil floor), `issuerVerified`, `issuerUsers`, and `vaults/*` — only the allow-list in
+`SWEEP_SPECS` is ever deleted.
+
+**ZK note:** `opsDaily` holds **aggregate counts only** (vaults, verified users, issuer logins, issued,
+accounts) — never any per-user or per-app data. "Active users" in the console is counts, not identities.
+
+## 5. Cloud Monitoring access for the Metrics view (one-time, manual)
+
+The admin console's **Metrics** view shows per-function call counts / error rate / avg latency by querying
+Cloud Monitoring server-side (`issuerAdminApi` → `@google-cloud/monitoring`). Grant the issuer functions'
+runtime service account read-only metrics access once:
+
+```bash
+PROJ=kunji-cc
+SA="$(gcloud functions describe issuerAdminApi --region=us-central1 --project=$PROJ \
+       --gen2 --format='value(serviceConfig.serviceAccountEmail)')"
+gcloud projects add-iam-policy-binding "$PROJ" \
+  --member="serviceAccount:$SA" --role="roles/monitoring.viewer"
+```
+
+Least-privilege (read-only project metrics, no user data). Until granted, the Metrics view shows
+"No metrics available" gracefully. The 2nd-gen functions report under
+`cloudfunctions.googleapis.com/function/execution_{count,times}`; if a function is missing, confirm the metric
+type in Metrics Explorer.
+
 ## Deferred
 Firebase App Check enforcement on `vaultWrite`/`linkLookup` (stronger bot defense; changes the
 write-path + needs reCAPTCHA Enterprise + carries lockout risk) is intentionally **not** done yet —

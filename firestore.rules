@@ -126,5 +126,7 @@ service cloud.firestore {
     match /issuerLoginSessions/{d} { allow read, write: if false; }
     match /issuerSessions/{d} { allow read, write: if false; }
     match /issuerUsers/{d} { allow read, write: if false; }
+    // Ops daily aggregate snapshot (admin console trends) — AGGREGATE COUNTS only, function-written; never client.
+    match /opsDaily/{d} { allow read, write: if false; }
   }
 }

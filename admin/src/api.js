@@ -35,3 +35,18 @@ export const reviewDecision = (sid, approve, verifiedData) =>
   call('/review/decision', { method: 'POST', body: JSON.stringify({ sid, approve, verifiedData }) });
 export const revoke = (type, idx) => call('/revoke', { method: 'POST', body: JSON.stringify({ type, idx }) });
 export const unrevoke = (type, idx) => call('/unrevoke', { method: 'POST', body: JSON.stringify({ type, idx }) });
+
+// ── Ops console (observability + data lifecycle) ─────────────────────────────────────────────────────────
+export const fetchOpsUsers = () => call('/ops/users');
+export const fetchOpsTrends = (days = 30) => call(`/ops/trends?days=${days}`);
+export const fetchOpsMetrics = (window = '24h') => call(`/ops/metrics?window=${window}`);
+export const fetchDataHealth = () => call('/ops/data-health');
+export const purgeExpired = () => call('/ops/purge', { method: 'POST', body: JSON.stringify({}) });
+
+// Signing keys come from the issuer's public .well-known (cross-origin, no auth) — best-effort display.
+const ISSUER_ORIGIN = import.meta.env.VITE_ISSUER_ORIGIN || 'https://issuer-kunji-cc.web.app';
+export const fetchKeys = async () => {
+  const res = await fetch(`${ISSUER_ORIGIN}/.well-known/kunji-issuer.json`);
+  if (!res.ok) throw new Error('keys_failed');
+  return res.json();
+};

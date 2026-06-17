@@ -23,6 +23,8 @@ import { nullifierDigest } from './nullifier.js';
 import { randomGestureSequence, validateLivenessUpload } from './liveness.js';
 import { getMethod } from './verify/index.js';
 import { verifyAssertion } from './loginVerify.js';
+import { sweepPlan, toMillis, SWEEP_SPECS } from './opsClean.js';
+import { shapeMetrics, shapeTrends, shapeDataHealth, COLLECTION_INFO } from './opsShape.js';
 
 const ISSUER_ORIGIN = process.env.ISSUER_ORIGIN || 'https://issuer-kunji-cc.web.app';
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET || 'kunji-cc.firebasestorage.app';
@@ -625,8 +627,148 @@ const adminSetRevoked = async (type, idx, revoke) => {
   return { type, idx: n, revoked: revoke };
 };
 
+// ── Operator observability + data lifecycle (admin.kunji.cc ops console) ─────────────────────────────────
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// "Active users" — AGGREGATE COUNTS ONLY (kunji keeps no per-user identity / cross-app activity by design).
+// Live cheap counts (vaults, verified users, issuer-login recency); the expensive paged listUsers() count
+// (anonAccounts) is read from the daily snapshot, not scanned per request.
+const adminOpsUsers = async (now = Date.now()) => {
+  const [vaults, verified, l7, l30, latest] = await Promise.all([
+    db.collection('vaults').count().get(),
+    db.collection('issuerVerified').count().get(),
+    db.collection('issuerUsers').where('lastLoginAt', '>=', now - 7 * DAY_MS).count().get(),
+    db.collection('issuerUsers').where('lastLoginAt', '>=', now - 30 * DAY_MS).count().get(),
+    db.collection('opsDaily').orderBy('ts', 'desc').limit(1).get(),
+  ]);
+  const anonAccounts = latest.empty ? null : (latest.docs[0].data().anonAccounts ?? null);
+  return {
+    vaults: vaults.data().count,
+    verifiedUsers: verified.data().count,
+    issuerLogins7d: l7.data().count,
+    issuerLogins30d: l30.data().count,
+    anonAccounts, // total accounts (existence, not activity) — from the daily snapshot
+  };
+};
+
+// Daily aggregate trends (from opsDaily snapshots). Aggregate counts only — no per-user/per-app data.
+const adminOpsTrends = async (req) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+  const snap = await db.collection('opsDaily').orderBy('ts', 'desc').limit(days).get();
+  return shapeTrends(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+};
+
+// Per-function metrics from Cloud Monitoring (execution_count grouped by status + execution_times). Read-only
+// project metrics — no user data. Lazy-imports the client so the heavy dep isn't on the public endpoints' cold
+// path. Returns {functions:[]} gracefully if the API/IAM isn't available.
+const adminOpsMetrics = async (req, now = Date.now()) => {
+  const window = req.query.window === '7d' ? '7d' : '24h';
+  const windowMs = window === '7d' ? 7 * DAY_MS : DAY_MS;
+  try {
+    const { MetricServiceClient } = await import('@google-cloud/monitoring');
+    const client = new MetricServiceClient();
+    const project = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'kunji-cc';
+    const interval = {
+      startTime: { seconds: Math.floor((now - windowMs) / 1000) },
+      endTime: { seconds: Math.floor(now / 1000) },
+    };
+    const aggregation = { alignmentPeriod: { seconds: Math.floor(windowMs / 1000) }, perSeriesAligner: 'ALIGN_DELTA' };
+    const q = (metric) =>
+      client.listTimeSeries({
+        name: client.projectPath(project),
+        filter: `metric.type="cloudfunctions.googleapis.com/function/${metric}"`,
+        interval,
+        aggregation,
+        view: 'FULL',
+      });
+    const [[counts], [times]] = await Promise.all([q('execution_count'), q('execution_times')]);
+    return { window, functions: shapeMetrics(counts, times) };
+  } catch (e) {
+    console.warn('ops metrics unavailable:', e?.message || e);
+    return { window, functions: [], error: 'metrics_unavailable' };
+  }
+};
+
+// Per-collection counts + lifecycle metadata (TTL / swept / permanent) + oldest-doc age, so the operator can
+// spot a collection growing without cleanup. Counts only — never reads doc contents.
+const adminOpsDataHealth = async (now = Date.now()) => {
+  const rows = await Promise.all(
+    Object.keys(COLLECTION_INFO).map(async (collection) => {
+      const c = await db.collection(collection).count().get().catch(() => null);
+      let oldestMs = null;
+      const spec = SWEEP_SPECS.find((s) => s.collection === collection);
+      if (spec) {
+        const o = await db.collection(collection).orderBy(spec.tsField, 'asc').limit(1).get().catch(() => null);
+        if (o && !o.empty) oldestMs = toMillis(o.docs[0].data()[spec.tsField]);
+      }
+      return { collection, count: c ? c.data().count : 0, oldestMs };
+    }),
+  );
+  return { collections: shapeDataHealth(rows, now), now };
+};
+
+// Execute the sweep plan: for each allow-listed collection, delete docs whose time field is past the dead
+// cutoff (typed per field). Batched + bounded passes. NEVER touches a collection outside SWEEP_SPECS, so the
+// ledger / nullifiers / issuerVerified / issuerUsers / vaults are structurally safe. Returns {collection: n}.
+const SWEEP_BATCH = 400;
+const runSweep = async (now = Date.now()) => {
+  const deleted = {};
+  for (const spec of sweepPlan(now)) {
+    const cutoff = spec.tsType === 'timestamp' ? Timestamp.fromMillis(spec.cutoffMs) : spec.cutoffMs;
+    let total = 0;
+    for (let pass = 0; pass < 50; pass++) {
+      const snap = await db.collection(spec.collection).where(spec.tsField, '<', cutoff).limit(SWEEP_BATCH).get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      total += snap.size;
+      if (snap.size < SWEEP_BATCH) break;
+    }
+    if (total) deleted[spec.collection] = total;
+  }
+  return deleted;
+};
+
+// Total Firebase Auth accounts (anon + linked) via paged listUsers — existence, not activity. Bounded.
+const countAccounts = async () => {
+  let count = 0;
+  let pageToken;
+  do {
+    const res = await getAuth().listUsers(1000, pageToken);
+    count += res.users.length;
+    pageToken = res.pageToken;
+  } while (pageToken && count < 5_000_000);
+  return count;
+};
+
+// Write the daily aggregate snapshot opsDaily/{YYYY-MM-DD}. AGGREGATE COUNTS ONLY — no per-user/per-app data,
+// so the ZK posture is preserved. Itself TTL'd (~400d). Used by the trends chart + the anonAccounts readout.
+const writeDailySnapshot = async (now = Date.now()) => {
+  const dayId = new Date(now).toISOString().slice(0, 10);
+  const [vaults, verified, l7, issued] = await Promise.all([
+    db.collection('vaults').count().get(),
+    db.collection('issuerVerified').count().get(),
+    db.collection('issuerUsers').where('lastLoginAt', '>=', now - DAY_MS).count().get(),
+    db.collection('issuerCredentials').count().get(),
+  ]);
+  const anonAccounts = await countAccounts().catch(() => null);
+  await db.collection('opsDaily').doc(dayId).set(
+    {
+      vaults: vaults.data().count,
+      verifiedUsers: verified.data().count,
+      issuerLogins: l7.data().count,
+      issued: issued.data().count,
+      anonAccounts,
+      ts: now,
+      ttl: ttlAfter(400 * DAY_MS),
+    },
+    { merge: true },
+  );
+};
+
 // /api/** (admin.kunji.cc rewrite) — one Function, internal path router; same-origin (no CORS).
-export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30, secrets: [NULLIFIER_KEY] }, async (req, res) => {
+export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: '256MiB', timeoutSeconds: 60, secrets: [NULLIFIER_KEY] }, async (req, res) => {
   const admin = await requireAdmin(req);
   if (!admin) return res.status(401).json({ error: 'unauthorized' });
   try {
@@ -638,6 +780,12 @@ export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: 
       return res.json(await adminReviewDecision(admin, req.body || {}));
     if (req.method === 'POST' && req.path === '/api/revoke') return res.json(await adminSetRevoked(req.body?.type || 'age', req.body?.idx, true));
     if (req.method === 'POST' && req.path === '/api/unrevoke') return res.json(await adminSetRevoked(req.body?.type || 'age', req.body?.idx, false));
+    // Ops console (observability + data lifecycle) — all read-only except /purge (operator-confirmed sweep).
+    if (req.method === 'GET' && req.path === '/api/ops/users') return res.json(await adminOpsUsers());
+    if (req.method === 'GET' && req.path === '/api/ops/trends') return res.json(await adminOpsTrends(req));
+    if (req.method === 'GET' && req.path === '/api/ops/metrics') return res.json(await adminOpsMetrics(req));
+    if (req.method === 'GET' && req.path === '/api/ops/data-health') return res.json(await adminOpsDataHealth());
+    if (req.method === 'POST' && req.path === '/api/ops/purge') return res.json({ deleted: await runSweep() });
     return res.status(404).json({ error: 'not_found' });
   } catch (e) {
     const known = ['bad_idx', 'bad_dob', 'bad_claims', 'bad_session'].includes(e?.message);
@@ -645,9 +793,11 @@ export const issuerAdminApi = onRequest({ cors: false, maxInstances: 5, memory: 
   }
 });
 
-// Daily sweep: delete abandoned ID images (uploaded but never reviewed) older than DOC_MAX_AGE_MS, so an ID
-// document never lingers. Reviewed images are already deleted on the decision.
-export const issuerCleanup = onSchedule({ schedule: 'every 24 hours', maxInstances: 1 }, async () => {
+// Daily maintenance: (1) delete abandoned ID images older than DOC_MAX_AGE_MS from Storage (reviewed images
+// are already deleted on the decision); (2) sweep provably-dead Firestore docs (expired relay/session docs,
+// stale rate-limit buckets, revocations past the 30-day cap-expiry floor) — never the ledger/nullifiers/
+// issuerVerified/issuerUsers/vaults; (3) write the daily aggregate snapshot for the trends chart.
+export const issuerCleanup = onSchedule({ schedule: 'every 24 hours', maxInstances: 1, timeoutSeconds: 300 }, async () => {
   const [files] = await bucket().getFiles({ prefix: 'verify-docs/' });
   const cutoff = Date.now() - DOC_MAX_AGE_MS;
   await Promise.all(
@@ -655,4 +805,6 @@ export const issuerCleanup = onSchedule({ schedule: 'every 24 hours', maxInstanc
       .filter((f) => new Date(f.metadata.timeCreated).getTime() < cutoff)
       .map((f) => f.delete({ ignoreNotFound: true }).catch(() => {})),
   );
+  await runSweep().catch((e) => console.warn('firestore sweep failed:', e?.message || e));
+  await writeDailySnapshot().catch((e) => console.warn('daily snapshot failed:', e?.message || e));
 });

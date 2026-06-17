@@ -7,6 +7,7 @@
   "main": "index.js",
   "dependencies": {
     "@digitalbazaar/bbs-signatures": "^3.1.0",
+    "@google-cloud/monitoring": "^5.3.3",
     "@noble/curves": "^2.0.1",
     "firebase-admin": "^12.7.0",
     "firebase-functions": "^6.1.1"

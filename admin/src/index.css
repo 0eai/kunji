@@ -89,9 +89,20 @@ body {
     transform: rotate(360deg);
   }
 }
+@keyframes kunji-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
 
 .animate-fade {
   animation: kunji-fade 0.18s ease-out;
+}
+.animate-fade-out {
+  animation: kunji-fade-out 0.2s ease-in both;
 }
 .animate-rise {
   animation: kunji-rise 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -102,6 +113,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-fade,
+  .animate-fade-out,
   .animate-rise,
   .spin {
     animation: none !important;

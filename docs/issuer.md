@@ -115,9 +115,22 @@ slot in as new method modules.
 ## Admin console (`admin.kunji.cc`)
 Standalone Vite+React SPA (`admin/`), wallet-matched. **Auth = Google sign-in + the `admin:true` custom
 claim** (being signed in is NOT enough — this project also mints anonymous wallet tokens; the claim is the
-gate). One claim-gated Function `issuerAdminApi` at `admin.kunji.cc/api/*`: **review queue** (`/api/reviews`,
-`/api/review/doc`, `/api/review/decision`), **ledger** + **revoke/un-revoke**, **stats**, read-only **keys**.
-It holds **no signing secret** (keys read from the public `.well-known`) — it can review/revoke/read, never sign.
+gate). It holds **no signing secret** (keys read from the public `.well-known`) — it can review/revoke/read,
+never sign. A **navigable console** (dependency-free hash routes, left nav, dark mode, toasts, confirm
+dialogs, skeletons, empty states) over one claim-gated Function `issuerAdminApi` at `admin.kunji.cc/api/*`:
+
+- **Overview** — issuance/verification funnel + a pending-review nudge + headline user counts + a vaults trend.
+- **Reviews** — the review queue + inline review detail (`/api/reviews`, `/api/review/doc`, `/api/review/decision`).
+- **Ledger** — issued credentials with load-more pagination + confirm-gated revoke/un-revoke.
+- **Users** — `/api/ops/users` aggregate counts (vaults, accounts, verified users, issuer logins 7d/30d) +
+  `/api/ops/trends` daily charts. **Aggregate counts only** — kunji keeps no per-user identity / cross-app
+  activity (ZK); the daily snapshot `opsDaily` stores counts, never per-user data.
+- **Data health** — `/api/ops/data-health` per-collection size + lifecycle (TTL / swept / permanent) + oldest
+  doc + a confirm-gated `/api/ops/purge` "purge expired now" (the same provably-dead sweep the daily
+  `issuerCleanup` runs; never the ledger/nullifiers/verified/vaults). See `docs/ops-cost-controls.md §4`.
+- **Metrics** — `/api/ops/metrics` per-function call count / error rate / avg latency from Cloud Monitoring
+  (needs the `monitoring.viewer` IAM grant — `docs/ops-cost-controls.md §5`).
+- **Keys** — read-only signing keys from the public `.well-known`.
 
 Grant an operator (one-time; they sign in once first so the account exists):
 ```
