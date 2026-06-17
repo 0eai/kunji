@@ -66,6 +66,35 @@ export const buildRequest = async (audience, scope) => {
   };
 };
 
+/**
+ * Build a PORTFOLIO request (4.2): ONE agent asking to be authorized at SEVERAL apps in one approval.
+ * `apps` = [{ audience, scope }]. One shared ECDH transport key (its public half rides the request); each
+ * app gets its own relay `sessionId` (the wallet deposits each per-app capability to its own session,
+ * encrypted to the same transport key). Poll each with `pollCapability(item.sessionId)` / `awaitCapability`.
+ */
+export const buildPortfolioRequest = async (apps, label) => {
+  const { publicKey, privateKey } = await genECDH();
+  const transportPub = await exportSpkiB64(publicKey);
+  const transportPriv = await exportPkcs8B64(privateKey);
+  const items = (apps || []).map(({ audience, scope }) => {
+    const sessionId = randomBytes(32).toString('hex');
+    transportKeys.set(sessionId, transportPriv); // SAME transport key decrypts every item's session
+    return { audience, scope: scope && scope.length ? scope : ['login'], sessionId };
+  });
+  const req = { kunjiCap: 'portfolio-v1', agentPub: agentPubB64(), transportPub, items };
+  if (label) req.label = label;
+  return req;
+};
+
+/** Decode a capability JWT's payload (no verification — for demo display of aud/scope/sub). */
+export const decodeCapability = (jwt) => {
+  try {
+    return JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+};
+
 /** Register the request with the live relay → a short 6-digit OTP code (best-effort; null on failure). */
 export const postForCode = async (req) => {
   try {

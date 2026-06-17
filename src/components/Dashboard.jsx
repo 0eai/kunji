@@ -39,13 +39,14 @@ import AppDetailsModal from './AppDetailsModal';
 import SecurityPanel from './SecurityPanel';
 import AgentsView from './AgentsView';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
+import AuthorizePortfolioSheet from './AuthorizePortfolioSheet';
 import PresentCredentialSheet from './PresentCredentialSheet';
 import ReceiveOfferSheet from './ReceiveOfferSheet';
 import CodeEntryModal from './CodeEntryModal';
 import CodePickerSheet from './CodePickerSheet';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Btn } from './ui/primitives';
-import { listAgents, lookupAgentRequest } from '../services/capability';
+import { listAgents, lookupAgentRequest, isPortfolioRequest } from '../services/capability';
 import { useToast } from '../contexts/ToastContext';
 
 // Lazy: the camera scanner (jsqr) loads only when opened.
@@ -658,17 +659,28 @@ const Dashboard = ({
       )}
 
 
-      {pendingAuthorize && (
-        <AuthorizeAgentSheet
-          userId={user.uid}
-          masterKey={cryptoKey}
-          initialRequest={pendingAuthorize}
-          onClose={() => {
-            setPendingAuthorize(null);
-            refreshAgents();
-          }}
-        />
-      )}
+      {pendingAuthorize &&
+        (isPortfolioRequest(pendingAuthorize) ? (
+          <AuthorizePortfolioSheet
+            userId={user.uid}
+            masterKey={cryptoKey}
+            initialRequest={pendingAuthorize}
+            onClose={() => {
+              setPendingAuthorize(null);
+              refreshAgents();
+            }}
+          />
+        ) : (
+          <AuthorizeAgentSheet
+            userId={user.uid}
+            masterKey={cryptoKey}
+            initialRequest={pendingAuthorize}
+            onClose={() => {
+              setPendingAuthorize(null);
+              refreshAgents();
+            }}
+          />
+        ))}
 
       {pendingPresentation && (
         <PresentCredentialSheet

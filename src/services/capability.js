@@ -39,6 +39,19 @@ const RELAY_TTL_MS = 5 * 60 * 1000; // the agent should poll promptly; short-liv
  *   v2: …plus { transportPub:<base64 ECDH-P256 SPKI>, sessionId:<64-hex> }          (relay hand-off)
  * The agent generates its own keypair(s) and presents the public key(s) here (holder-of-key).
  */
+// Sanitize an optional RP-supplied scopeLabels map — human labels for custom scope ids, shown in
+// consent marked "unverified" (the RP can type anything; these are NOT trusted). Keep only string→string
+// entries, bounded in count + length, so a malformed/oversized map can't bloat or break the consent sheet.
+const sanitizeScopeLabels = (raw) => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const labels = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k === 'string' && typeof v === 'string' && k.length <= 64 && v.length <= 120) labels[k] = v;
+    if (Object.keys(labels).length >= 16) break;
+  }
+  return Object.keys(labels).length ? labels : null;
+};
+
 export const parseAgentRequest = (raw) => {
   let req;
   try {
@@ -64,19 +77,8 @@ export const parseAgentRequest = (raw) => {
     scope: req.scope,
     agentPub: req.agentPub,
   };
-  // Optional RP-supplied human labels for custom scope ids — shown in consent marked "unverified"
-  // (the RP can type anything; these are NOT trusted). Keep only string→string entries, bounded in
-  // count + length, so a malformed/oversized map can't bloat or break the consent sheet.
-  if (req.scopeLabels && typeof req.scopeLabels === 'object' && !Array.isArray(req.scopeLabels)) {
-    const labels = {};
-    for (const [k, v] of Object.entries(req.scopeLabels)) {
-      if (typeof k === 'string' && typeof v === 'string' && k.length <= 64 && v.length <= 120) {
-        labels[k] = v;
-      }
-      if (Object.keys(labels).length >= 16) break;
-    }
-    if (Object.keys(labels).length) out.scopeLabels = labels;
-  }
+  const labels = sanitizeScopeLabels(req.scopeLabels);
+  if (labels) out.scopeLabels = labels;
   // v2 adds the relay transport key + session id. Both must be well-formed or we reject —
   // a malformed v2 must not silently downgrade to the paste-only path.
   if (req.kunjiCap === 'v2') {
@@ -87,6 +89,75 @@ export const parseAgentRequest = (raw) => {
     out.sessionId = String(req.sessionId);
   }
   return out;
+};
+
+const MAX_PORTFOLIO_ITEMS = 10; // bound the consolidated review so one request can't fan out unbounded
+
+/**
+ * Parse + validate a PORTFOLIO authorization request (4.2) — ONE agent asking to be authorized at
+ * SEVERAL apps in a single approval. Shape:
+ *   { kunjiCap:'portfolio-v1', agentPub:<base64 Ed25519>, transportPub:<base64 ECDH-P256 SPKI>,
+ *     label?:<string>, items:[ { audience, scope:[…], sessionId:<64-hex>, scopeLabels? }, … ] }
+ * One shared agent key + relay transport key; each item is an independent per-app ask (its own audience,
+ * scope, and relay session). Minting stays per-item (one capability per audience, each signed by its own
+ * per-app key + deposited to its own session) — so per-app unlinkability is preserved; this is purely a
+ * batched UX over the existing single-agent path. Duplicate audiences are rejected (one cap per audience).
+ */
+export const parsePortfolioRequest = (raw) => {
+  let req;
+  try {
+    req = JSON.parse(raw);
+  } catch {
+    throw new Error('invalid_request');
+  }
+  if (
+    req?.kunjiCap !== 'portfolio-v1' ||
+    typeof req.agentPub !== 'string' ||
+    !ED25519_PUB_B64.test(req.agentPub) ||
+    typeof req.transportPub !== 'string' ||
+    !B64.test(req.transportPub) ||
+    !Array.isArray(req.items) ||
+    req.items.length === 0 ||
+    req.items.length > MAX_PORTFOLIO_ITEMS
+  ) {
+    throw new Error('invalid_request');
+  }
+  const items = req.items.map((it) => {
+    if (
+      !it ||
+      typeof it !== 'object' ||
+      Array.isArray(it) ||
+      typeof it.audience !== 'string' ||
+      !it.audience ||
+      !HEX64.test(it.sessionId || '') ||
+      !Array.isArray(it.scope) ||
+      it.scope.length === 0 ||
+      it.scope.length > 16 ||
+      !it.scope.every(isValidScopeItem)
+    ) {
+      throw new Error('invalid_request');
+    }
+    const item = { audience: String(it.audience), scope: it.scope, sessionId: String(it.sessionId) };
+    const labels = sanitizeScopeLabels(it.scopeLabels);
+    if (labels) item.scopeLabels = labels;
+    return item;
+  });
+  // One capability per audience per agent — duplicate audiences would mint colliding records (same
+  // per-app key), so reject them up front rather than silently overwriting.
+  if (new Set(items.map((i) => i.audience)).size !== items.length) throw new Error('invalid_request');
+  const out = { agentPub: req.agentPub, transportPub: req.transportPub, items };
+  if (typeof req.label === 'string' && req.label.trim() && req.label.length <= 80) out.label = req.label.trim();
+  return out;
+};
+
+/** True if `raw` is a portfolio-v1 request (so the caller can route to the portfolio sheet). Cheap peek;
+ *  the full validator (`parsePortfolioRequest`) still runs inside the sheet. */
+export const isPortfolioRequest = (raw) => {
+  try {
+    return JSON.parse(raw)?.kunjiCap === 'portfolio-v1';
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -188,9 +259,12 @@ const agentVaultWrite = async (cryptoKey, op, jti, docPayload) => {
 /** Persist a just-minted capability's metadata (NOT the capability) so the user can see + revoke it.
  *  `pushEnabled` records whether the user turned on notifications for this agent — so the connected-apps
  *  list can show + toggle the per-app push channel (it's re-derivable from `audience`). */
-export const recordAgent = async (cryptoKey, { jti, audience, scope, exp, agentPub, pushEnabled }) => {
+export const recordAgent = async (cryptoKey, { jti, audience, scope, exp, agentPub, pushEnabled, agentLabel }) => {
   const record = { audience, scope, exp, agentPub, issuedAt: Math.floor(Date.now() / 1000) };
   if (pushEnabled) record.pushEnabled = true;
+  // Optional friendly name (from a portfolio request's `label`) so the agents list can group the
+  // same agent's per-app capabilities under one heading. Absent on legacy/single-app records.
+  if (agentLabel) record.agentLabel = agentLabel;
   const payload = await encryptData(record, cryptoKey);
   await agentVaultWrite(cryptoKey, 'set', jti, payload);
 };

@@ -29,7 +29,8 @@ function decodeB64urlParam(name) {
 
 // Same-device deep links an RP/agent/verifier/issuer can open:
 //   app.kunji.cc/?approve=<base64url(JSON login QR)>        → the login approval modal
-//   app.kunji.cc/?authorize=<base64url(JSON agent request)> → the agent re-consent sheet (step-up)
+//   app.kunji.cc/?authorize=<base64url(JSON agent request)> → the agent re-consent sheet (step-up);
+//        a portfolio-v1 request (kunjiCap:'portfolio-v1') routes to the multi-app AuthorizePortfolioSheet
 //   app.kunji.cc/?vp=<url-encoded openid4vp:// request>     → the OpenID4VP present sheet
 //   app.kunji.cc/?offer=<url-encoded openid-credential-offer:// uri> → the OpenID4VCI receive-offer sheet
 // Decode once at startup; clear the query so a refresh doesn't replay it.

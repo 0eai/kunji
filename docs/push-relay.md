@@ -102,11 +102,24 @@ notification permission, subscribes to Web Push (the SW registered at load), der
 ```
 pushChannels/{channelId} = {
   subs: { [deviceId]: <Web Push subscription> },  // ONE per linked device that opted in (multi-device)
-  postKeyJwk:     <OKP jwk>,   // who may post (holder-of-key) — the agent's Ed25519 pubkey
+  postKeyJwks: { [pubB64url]: <OKP jwk> },         // who may post (holder-of-key) — one OR MORE agents (4.3)
+  postKeyJwk:     <OKP jwk>,   // legacy single poster (pre-4.3 channels) + the most-recent key (rollback-safe)
   writePublicKey: <OKP raw>,   // the vault-write key bound (TOFU) at first registration — gates writes
   expiresAt, ttl               // 30-day TTL (server-set); the requester re-subscribes after expiry
 }
 ```
+
+**Multi-poster (4.3).** Several agents can act for the user at the *same* audience (e.g. a second assistant);
+each needs holder-of-key authorization to ping the shared per-audience channel. So the channel holds a
+**`postKeyJwks` map** keyed by the poster's base64url Ed25519 pubkey, not a single key. A `set` **appends** the
+agent's key (merge — siblings preserved) and also keeps the legacy single `postKeyJwk` = the most-recent key
+so a pre-4.3 `pushDispatch` still works during rollout; `pushDispatch` verifies the holder-of-key proof against
+**any** key in `postKeyJwks ∪ {postKeyJwk}`. Turning off (or revoking) one agent removes just that poster key
+(a signed per-poster `delete`, see §5.1); the device subscriptions and other agents' keys stay. *Privacy
+trade (accepted Low):* the channel now reveals **how many agents** post to one audience — but only to **kunji
+ops** (`pushChannels` is deny-all to clients, so the RP and a network observer never see it; the channelId is
+still opaque and uncorrelated to the vault/app). Before 4.3 a second agent fell back to the Transport ① deep
+link; that fallback still works, so this is convenience, not a capability gain.
 
 The channel keeps a subscription **per device** (keyed by the stable per-device `deviceId` from
 `services/devices.js`), so every linked device the user enables receives — `pushDispatch` fans the opaque
@@ -120,17 +133,20 @@ across devices, which is correct and fixes the prior "shows on but not allowed o
 The wallet **registers this via a SIGNED write** through the `pushChannelRegister` Function (the
 master-key-derived vault-write key signs `{channelId, op, deviceId, postKeyJwk, pushSub, publicKey,
 timestamp}` for `set`, the same contract as `vaultWrite`); the Function TOFU-binds `writePublicKey` per
-`channelId` and merges `subs[deviceId]`. `delete` is either **per-device** (signed `{…, deviceId}` →
-removes one device's sub) or **full teardown** (signed `{…, all:true}` → tombstones the whole channel, on
-agent revoke). So a leaked `channelId` alone can't add/remove a subscription without the master key's
-signature (S22). The channel stays **opaque** (no `vaultId` linkage; `deviceId` is a random per-device id,
+`channelId`, merges `subs[deviceId]`, and appends `postKeyJwks[pubB64url]` (multi-poster). `delete` removes
+any combination of: one device's sub (signed `{…, deviceId}`), one **poster's key** (signed `{…, postKeyFp}`
+where `postKeyFp` = the poster's base64url pubkey — 4.3), or the **whole channel** (signed `{…, all:true}` →
+tombstone, on the last agent's revoke). A scoped delete signs exactly the fields it carries, so a captured
+delete can't be re-targeted. So a leaked `channelId` alone can't add/remove a subscription **or a poster**
+without the master key's signature — the TOFU `writePublicKey` is unchanged, so the same user gates every
+add/remove (S22). The channel stays **opaque** (no `vaultId` linkage; `deviceId` is a random per-device id,
 server-visible only).
 
 ### 5.2 Request → push → approve → deliver
 
 ```
 agent/app ──POST {channelId, encryptedRequest, postProof}──▶ pushDispatch (kunji Fn)
-            └ verifies postProof against postKeyJwk (holder-of-key), rate-limits per channel
+            └ verifies postProof against ANY authorized poster (postKeyJwks ∪ legacy), rate-limits per channel
 pushDispatch ──Web Push (opaque pointer only)──▶ wallet service worker
 wallet ──fetch encryptedRequest by id ──▶ decrypt client-side ──▶ re-consent sheet
 user approves ──▶ mint capability / present VC ──▶ deposit ECDH-encrypted into the return relay
@@ -220,8 +236,12 @@ metadata-bearing state that kunji otherwise doesn't keep.
    `pushDispatch` (holder-of-key + per-IP/per-channel rate limit + `web-push`/VAPID), the default-off
    notification opt-in, and a cost-controls entry. The new persistent state + client attack surface in §7
    is why ② is gated behind the user's explicit per-app opt-in and ① stays the default. The dispatch
-   authorizes on the **registered `postKeyJwk` (holder-of-key)** — a kunji-cap+jwt with a `channel:post`
-   scope (§12) was considered but the direct postKeyJwk model is simpler and equally sound.
+   authorizes on the **registered poster key(s) (holder-of-key)** — a kunji-cap+jwt with a `channel:post`
+   scope (§12) was considered but the direct poster-key model is simpler and equally sound.
+3. **Multi-poster ② — implemented (4.3).** The single `postKeyJwk` became a `postKeyJwks` map so several
+   agents at one audience can each receive (the second no longer falls back to ①). Per-poster add/remove via
+   the signed registration; dispatch verifies any authorized poster. Trade: the per-audience agent count is
+   visible to kunji ops only (deny-all channel) — accepted Low (see §5.1 / SECURITY_AUDIT.md).
 
 ## 12. Decisions (resolved — both transports shipped)
 
@@ -232,9 +252,10 @@ metadata-bearing state that kunji otherwise doesn't keep.
 - **`channelId` lifetime — RESOLVED: 30-day TTL + re-subscribe; no rotation.** `channelId` is a per-audience
   HKDF derivation (opaque, unlinkable across apps); it isn't rotated — turning notifications off is a
   signed `delete` (`revokePushForAudience`), and the channel re-registers on the next opt-in.
-- **Posting authorization — RESOLVED: direct `postKeyJwk` holder-of-key.** `pushDispatch` verifies the
-  poster's Ed25519 signature over `(channelId, requestId)` against the registered `postKeyJwk`. A distinct
-  `channel:post` `kunji-cap+jwt` was considered but the direct model is simpler and equally sound — not used.
+- **Posting authorization — RESOLVED: direct poster-key holder-of-key (multi-poster, 4.3).** `pushDispatch`
+  verifies the poster's Ed25519 signature over `(channelId, requestId)` against **any** registered poster key
+  (`postKeyJwks` map ∪ legacy single `postKeyJwk`). A distinct `channel:post` `kunji-cap+jwt` was considered
+  but the direct model is simpler and equally sound — not used.
 - **VAPID custody — RESOLVED.** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` live in Functions Secret Manager
   (codebase `app`); the public half ships to the wallet as `VITE_VAPID_PUBLIC_KEY`. See
   [`ops-cost-controls.md`](./ops-cost-controls.md).

@@ -1,8 +1,9 @@
 // Opt-in Web Push (push-relay.md Transport ②, wallet side). On the user's explicit opt-in, subscribe to
 // Web Push and register a per-app push channel so a channel-less requester (a headless agent / an app
 // with no UI to the user) can later ping the wallet for a step-up. The channel is addressed by an opaque,
-// per-audience `channelId` (master-key-derived → kunji can't correlate it) and authorizes exactly one
-// poster key (`postKeyJwk` = the requester's Ed25519 pubkey, holder-of-key). Registration is a SIGNED
+// per-audience `channelId` (master-key-derived → kunji can't correlate it) and authorizes one or more
+// poster keys (`postKeyJwks` = a map of requesters' Ed25519 pubkeys, holder-of-key; multi-poster, 4.3 —
+// several agents at the same audience can each receive). Registration is a SIGNED
 // write through the `pushChannelRegister` function (master-key-derived vault-write key, TOFU-bound per
 // channelId — S22), so a leaked channelId alone can't overwrite/delete it; `pushDispatch` reads it.
 import { deriveChannelId, deriveVaultWriteKeyPair, exportEd25519PublicKey, signWithEd25519 } from '../lib/crypto';
@@ -72,6 +73,21 @@ export const enablePushForAudience = async (cryptoKey, audience, requesterPubB64
   });
   addLocalPushAudience(audience);
   return { channelId };
+};
+
+/**
+ * Multi-poster (4.3): remove ONE agent's authorization to post on the audience's channel — leaving other
+ * agents (and the device subscriptions) intact. `dropDeviceSub` ALSO unsubscribes THIS device for the
+ * audience; pass it only when no other push-enabled agent remains at the audience (else other agents lose
+ * reception here). The poster fingerprint is the agent's base64url Ed25519 pubkey = the `postKeyJwks` map key.
+ */
+export const disablePushForAgent = async (cryptoKey, audience, requesterPubB64, { dropDeviceSub = false } = {}) => {
+  const channelId = await deriveChannelId(cryptoKey, audience);
+  const postKeyFp = okpJwk(new Uint8Array(base64ToBuffer(requesterPubB64))).x;
+  const extra = { postKeyFp };
+  if (dropDeviceSub) extra.deviceId = thisDeviceId();
+  await pushChannelWrite(cryptoKey, channelId, 'delete', extra);
+  if (dropDeviceSub) removeLocalPushAudience(audience);
 };
 
 /** Stop receiving for `audience` on THIS device — a signed delete of just this device's subscription.

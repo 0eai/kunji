@@ -104,6 +104,23 @@ relay above). The request object is:
   JSON as a QR; the wallet scanner ingests it directly.
 - **Paste** — the raw JSON, unchanged.
 
+**Portfolio request (4.2) — N apps in one approval.** A shopping/concierge agent that needs to act at
+*several* apps can batch them into a single review with a `portfolio-v1` request — one shared agent key +
+transport key, an `items[]` of per-app `{audience, scope, sessionId}` (≤10, distinct audiences):
+
+```json
+{ "kunjiCap": "portfolio-v1", "agentPub": "<base64 Ed25519 pub>",
+  "transportPub": "<base64 ECDH-P256 SPKI>", "label": "Concierge",
+  "items": [ { "audience": "shop.example",  "scope": ["login"], "sessionId": "<64-hex>" },
+             { "audience": "travel.example","scope": ["login","read:profile"], "sessionId": "<64-hex>" } ] }
+```
+
+It opens the wallet's **multi-app review** (deep link `?authorize=` or scan); the user approves once and the
+wallet mints **N independent per-app capabilities** — each signed by its own per-app key, deposited to its
+own `sessionId`, recorded under its own `jti`. This is **not** a single cross-app grant (that would break
+unlinkability); it's purely a batched UX over the single-app flow, so each app still sees an unrelated `sub`.
+The agent polls each item's `sessionId` exactly as in the single-app flow.
+
 The code/QR carry **no secret** (only public keys + scope): the minted capability is ECDH-encrypted to
 `transportPub` and bound to `agentPub`, so a guessed/leaked code authorizes nothing. The relay is
 per-IP rate-limited and the code is short-TTL + function-mediated both ways (`agentRequests/{code}` is

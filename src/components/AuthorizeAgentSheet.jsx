@@ -10,6 +10,7 @@ import {
   recordAgent,
   revokeAgent,
   listAgents,
+  isPortfolioRequest,
 } from '../services/capability';
 import { scopeId, scopeSatisfies } from '../lib/capability';
 import { formatConstraints } from '../lib/scopeFormat';
@@ -36,7 +37,7 @@ const RESERVED_LABELS = {
 // Wallet flow to authorize an agent: scan/paste the agent's request, review the requested
 // scope + audience, pick a TTL, then explicitly approve to mint a capability the agent
 // holds. The agent never receives any kunji key — only this scoped, expiring capability.
-const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => {
+const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onPortfolio, onClose }) => {
   const { showToast } = useToast();
   const [phase, setPhase] = useState('scan'); // scan → review → issued
   const [showScanner, setShowScanner] = useState(false);
@@ -80,6 +81,11 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
   const ingest = (raw) => {
     setShowScanner(false);
     setError('');
+    // A multi-app (portfolio) request can't be reviewed here — hand it up to the portfolio sheet.
+    if (onPortfolio && isPortfolioRequest(raw)) {
+      onPortfolio(raw);
+      return;
+    }
     try {
       setReq(parseAgentRequest(raw));
       setGrantedIds(new Set()); // default-deny: nothing granted until the user toggles it on
@@ -94,6 +100,7 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onClose }) => 
   // Deep-link / programmatic entry (?authorize=…): ingest a provided request straight to review.
   useEffect(() => {
     if (initialRequest) ingest(initialRequest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRequest]);
 
   // Step-up awareness: when a request is under review, look up any capability THIS SAME agent

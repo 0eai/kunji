@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMasterKey, deriveChannelId, generateEd25519KeyPair } from '../src/lib/crypto/index.js';
 import { buildAgentProof, okpJwk } from '../src/lib/capability.js';
-import { verifyPostProof } from '../functions/pushProof.js';
+import { verifyPostProof, verifyPostProofAny } from '../functions/pushProof.js';
 
 // Push relay (push-relay.md Transport ②). The channelId is an opaque, per-audience mailbox derived
 // from the master key; only the holder of the channel's registered key (postKeyJwk) can ping it,
@@ -58,5 +58,46 @@ describe('verifyPostProof (holder-of-key gate for pushDispatch)', () => {
     expect(verifyPostProof(old, postKeyJwk, CHANNEL, REQ)).toBe(false);
     expect(verifyPostProof('not.a.jwt', postKeyJwk, CHANNEL, REQ)).toBe(false);
     expect(verifyPostProof(null, postKeyJwk, CHANNEL, REQ)).toBe(false);
+  });
+});
+
+describe('verifyPostProofAny (multi-poster dispatch gate, 4.3)', () => {
+  const CHANNEL = 'c'.repeat(64);
+  const REQ = '123456';
+  const poster = () => {
+    const agent = generateEd25519KeyPair();
+    return {
+      jwk: okpJwk(agent.publicKey),
+      proof: buildAgentProof(agent.secretKey, { audience: CHANNEL, challenge: REQ, capJti: CHANNEL }),
+    };
+  };
+
+  it('accepts a proof from ANY authorized poster in the postKeyJwks map', () => {
+    const a = poster();
+    const b = poster();
+    const map = { [a.jwk.x]: a.jwk, [b.jwk.x]: b.jwk };
+    expect(verifyPostProofAny(a.proof, map, CHANNEL, REQ)).toBe(true);
+    expect(verifyPostProofAny(b.proof, map, CHANNEL, REQ)).toBe(true);
+  });
+
+  it('rejects a proof from an UNauthorized key not in the map', () => {
+    const a = poster();
+    const stranger = poster();
+    expect(verifyPostProofAny(stranger.proof, { [a.jwk.x]: a.jwk }, CHANNEL, REQ)).toBe(false);
+  });
+
+  it('a removed poster (dropped from the map) can no longer ping', () => {
+    const a = poster();
+    const b = poster();
+    const after = { [b.jwk.x]: b.jwk }; // a was removed
+    expect(verifyPostProofAny(a.proof, after, CHANNEL, REQ)).toBe(false);
+    expect(verifyPostProofAny(b.proof, after, CHANNEL, REQ)).toBe(true);
+  });
+
+  it('accepts an array of keys and an empty/missing set rejects', () => {
+    const a = poster();
+    expect(verifyPostProofAny(a.proof, [a.jwk], CHANNEL, REQ)).toBe(true);
+    expect(verifyPostProofAny(a.proof, {}, CHANNEL, REQ)).toBe(false);
+    expect(verifyPostProofAny(a.proof, undefined, CHANNEL, REQ)).toBe(false);
   });
 });

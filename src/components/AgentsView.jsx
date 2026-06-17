@@ -12,8 +12,37 @@ import {
 import { SOON_MS } from '../lib/agentFormat';
 import { useToast } from '../contexts/ToastContext';
 import AuthorizeAgentSheet from './AuthorizeAgentSheet';
+import AuthorizePortfolioSheet from './AuthorizePortfolioSheet';
 import AgentRow from './AgentRow';
+import AgentGroupRow from './AgentGroupRow';
 import AgentDetailsSheet from './AgentDetailsSheet';
+
+// Group an agent list into display entries: the same agent (one agentPub) spanning ≥2 distinct apps becomes
+// one expandable group; everything else stays a single row. Iterates the already-sorted list so order is
+// preserved (a group appears at its earliest-sorted member). Legacy records without agentPub stay singletons.
+const buildAgentEntries = (list) => {
+  const byPub = new Map();
+  for (const a of list) {
+    const k = a.agentPub || `__${a.jti}`;
+    if (!byPub.has(k)) byPub.set(k, []);
+    byPub.get(k).push(a);
+  }
+  const seen = new Set();
+  const entries = [];
+  for (const a of list) {
+    const k = a.agentPub || `__${a.jti}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const members = byPub.get(k);
+    const distinctApps = new Set(members.map((m) => m.audience)).size;
+    if (members.length > 1 && distinctApps > 1) {
+      entries.push({ type: 'group', key: k, agents: members, label: members.find((m) => m.agentLabel)?.agentLabel });
+    } else {
+      for (const m of members) entries.push({ type: 'single', key: m.jti, agent: m });
+    }
+  }
+  return entries;
+};
 
 // The agents list as a Dashboard BODY view (rendered in place of the apps list when the user taps the
 // agents chip / Security → Authorized agents). Holds the global notifications switch + "Authorize an agent";
@@ -23,6 +52,7 @@ const AgentsView = ({ userId, masterKey, onBack, onCountChange }) => {
   const { showToast } = useToast();
   const [agents, setAgents] = useState(null); // null = loading
   const [showAuthorize, setShowAuthorize] = useState(false);
+  const [portfolioReq, setPortfolioReq] = useState(null); // raw portfolio request routed from a scan/paste
   const [detail, setDetail] = useState(null);
   const supportsPush = pushSupported();
   const [globalNotify, setGlobalNotify] = useState(agentNotifyAllowed());
@@ -129,9 +159,21 @@ const AgentsView = ({ userId, masterKey, onBack, onCountChange }) => {
           </p>
         ) : (
           <div className="divide-y divide-line">
-            {agents.map((a) => (
-              <AgentRow key={a.jti} agent={a} onOpen={() => setDetail(a)} />
-            ))}
+            {buildAgentEntries(agents).map((e) =>
+              e.type === 'group' ? (
+                <AgentGroupRow
+                  key={e.key}
+                  agents={e.agents}
+                  label={e.label}
+                  userId={userId}
+                  masterKey={masterKey}
+                  onOpen={(a) => setDetail(a)}
+                  onRevokedGroup={refresh}
+                />
+              ) : (
+                <AgentRow key={e.key} agent={e.agent} onOpen={() => setDetail(e.agent)} />
+              ),
+            )}
           </div>
         )}
 
@@ -144,8 +186,24 @@ const AgentsView = ({ userId, masterKey, onBack, onCountChange }) => {
         <AuthorizeAgentSheet
           userId={userId}
           masterKey={masterKey}
+          onPortfolio={(raw) => {
+            setShowAuthorize(false);
+            setPortfolioReq(raw);
+          }}
           onClose={() => {
             setShowAuthorize(false);
+            refresh();
+          }}
+        />
+      )}
+
+      {portfolioReq && (
+        <AuthorizePortfolioSheet
+          userId={userId}
+          masterKey={masterKey}
+          initialRequest={portfolioReq}
+          onClose={() => {
+            setPortfolioReq(null);
             refresh();
           }}
         />

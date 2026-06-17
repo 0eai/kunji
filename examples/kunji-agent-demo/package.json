@@ -6,7 +6,8 @@
   "description": "Framework-free, Firebase-free kunji relying party that accepts both human logins and agent (capability) logins.",
   "scripts": {
     "start": "node server.js",
-    "agent": "node agent-sim.js"
+    "agent": "node agent-sim.js",
+    "portfolio": "node portfolio-sim.js"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1",

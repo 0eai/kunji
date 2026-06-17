@@ -25,3 +25,11 @@ export const verifyPostProof = (proof, postKeyJwk, channelId, requestId, now = D
     return false;
   }
 };
+
+/** True if the proof is valid under ANY of the channel's authorized poster keys (multi-poster, 4.3) — a
+ *  channel may hold several posters (`postKeyJwks` map) plus a legacy single `postKeyJwk`. Pass either a
+ *  map of jwks or an array; each is checked with the same per-key verification above. */
+export const verifyPostProofAny = (proof, postKeyJwks, channelId, requestId, now = Date.now()) => {
+  const keys = Array.isArray(postKeyJwks) ? postKeyJwks : Object.values(postKeyJwks || {});
+  return keys.some((jwk) => verifyPostProof(proof, jwk, channelId, requestId, now));
+};

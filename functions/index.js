@@ -10,7 +10,7 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { randomInt } from 'node:crypto';
 import webpush from 'web-push';
-import { verifyPostProof } from './pushProof.js';
+import { verifyPostProofAny } from './pushProof.js';
 import { verifySignedWrite } from './signedWrite.js';
 
 initializeApp();
@@ -422,7 +422,10 @@ export const pushDispatch = onRequest(
     const ch = snap.data();
     if (ch.revoked) return res.status(404).json({ error: 'not_found' }); // a revoked tombstone [S27]
     if (Date.now() > ch.expiresAt) return res.status(410).json({ error: 'expired' });
-    if (!verifyPostProof(proof, ch.postKeyJwk, channelId, requestId))
+    // Multi-poster (4.3): a channel may authorize several agents — the `postKeyJwks` map — plus a legacy
+    // single `postKeyJwk` (pre-4.3 channels). Any one valid holder-of-key proof passes.
+    const posterKeys = [...Object.values(ch.postKeyJwks || {}), ...(ch.postKeyJwk ? [ch.postKeyJwk] : [])];
+    if (!verifyPostProofAny(proof, posterKeys, channelId, requestId))
       return res.status(401).json({ error: 'bad_proof' });
     if (await rateLimited(channelId, 10, 60 * 1000, 'pushch'))
       return res.status(429).json({ error: 'rate_limited' });
@@ -471,15 +474,22 @@ export const pushChannelRegister = onRequest(
   async (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-    const { channelId, op, deviceId, all, pushSub, postKeyJwk, publicKey, signedToken, timestamp } = req.body || {};
+    const { channelId, op, deviceId, all, pushSub, postKeyJwk, postKeyFp, publicKey, signedToken, timestamp } = req.body || {};
     // 1. shape
     if (!HEX64_SESSION.test(channelId || '') || (op !== 'set' && op !== 'delete') || !publicKey || !signedToken || typeof timestamp !== 'number')
       return res.status(400).json({ error: 'bad_request' });
     if (Math.abs(Date.now() - timestamp) > 120_000) return res.status(400).json({ error: 'stale' });
-    const deletingAll = op === 'delete' && all === true; // full teardown vs. removing one device's subscription
-    // `set` and a per-device `delete` name which device's subscription; a full revoke (all) does not.
-    if ((op === 'set' || (op === 'delete' && !deletingAll)) && !SAFE_ID.test(deviceId || ''))
-      return res.status(400).json({ error: 'bad_device' });
+    const deletingAll = op === 'delete' && all === true; // full teardown vs. a scoped removal
+    // A delete may remove (a) the whole channel [all], (b) one device's subscription [deviceId], and/or
+    // (c) one poster's key [postKeyFp] (multi-poster, 4.3) — at least one of those must be named. A base64url
+    // Ed25519 pubkey (the postKeyJwks map key) is the 43-char `x`. `set` always names this device.
+    const POSTKEY_FP = /^[A-Za-z0-9_-]{43}$/;
+    const hasDevice = SAFE_ID.test(deviceId || '');
+    const hasPosterFp = POSTKEY_FP.test(postKeyFp || '');
+    if (op === 'set' && !hasDevice) return res.status(400).json({ error: 'bad_device' });
+    if (op === 'delete' && !deletingAll && !hasDevice && !hasPosterFp)
+      return res.status(400).json({ error: 'bad_request' }); // a non-all delete must name a device and/or a poster
+    if (op === 'delete' && deviceId !== undefined && !hasDevice) return res.status(400).json({ error: 'bad_device' });
     if (op === 'set') {
       if (!pushSub || typeof pushSub !== 'object' || Array.isArray(pushSub) || typeof pushSub.endpoint !== 'string')
         return res.status(400).json({ error: 'bad_subscription' });
@@ -495,7 +505,10 @@ export const pushChannelRegister = onRequest(
     } else if (deletingAll) {
       payload.all = true;
     } else {
-      payload.deviceId = deviceId;
+      // A scoped delete signs exactly the fields it carries (device and/or poster), so a captured
+      // delete can't be re-targeted by adding a field.
+      if (hasDevice) payload.deviceId = deviceId;
+      if (hasPosterFp) payload.postKeyFp = postKeyFp;
     }
     if (!verifySignedWrite(payload, signedToken, publicKey)) return res.status(401).json({ error: 'bad_signature' });
     if (await rateLimited(req.ip, 20, 60 * 1000, 'pushreg')) return res.status(429).json({ error: 'rate_limited' });
@@ -514,22 +527,33 @@ export const pushChannelRegister = onRequest(
           if (!existing.exists) return; // nothing to revoke — don't create a doc
           if (deletingAll) {
             // Full teardown → tombstone: keep the writePublicKey binding sticky so a revoked channelId can't
-            // be squatted by a different key (only the original key re-registers); drop all subs/postKeyJwk so
+            // be squatted by a different key (only the original key re-registers); drop all subs/poster keys so
             // pushDispatch treats it as gone. Self-cleans via the TTL. [S27]
             tx.set(ref, { writePublicKey: publicKey, revoked: true, expiresAt, ttl });
           } else {
-            // Per-device → remove only this device's subscription; other devices keep receiving. (Nested
+            // Scoped removal: drop this device's subscription and/or this poster's key (multi-poster, 4.3);
+            // everything else stays, so other devices keep receiving and other agents keep posting. (Nested
             // FieldValue.delete in a merge — a dotted key in set/merge would be a literal field name.)
-            tx.set(ref, { subs: { [deviceId]: FieldValue.delete() }, writePublicKey: publicKey, expiresAt, ttl }, { merge: true });
+            const upd = { writePublicKey: publicKey, expiresAt, ttl };
+            if (hasDevice) upd.subs = { [deviceId]: FieldValue.delete() };
+            if (hasPosterFp) {
+              upd.postKeyJwks = { [postKeyFp]: FieldValue.delete() };
+              // Also clear the legacy single field if it's the poster being removed, so it can't keep posting.
+              if (existing.data().postKeyJwk?.x === postKeyFp) upd.postKeyJwk = FieldValue.delete();
+            }
+            tx.set(ref, upd, { merge: true });
           }
           return;
         }
-        // set: merge THIS device's subscription (preserving other devices'), (re)bind postKeyJwk, and clear any
-        // legacy single-sub field + a prior tombstone (the original key may re-activate a revoked channel).
+        // set: merge THIS device's subscription (preserving other devices'), APPEND this poster's key to the
+        // `postKeyJwks` map (keyed by its base64url pubkey — multi-poster, 4.3; merge preserves other posters),
+        // keep the legacy single `postKeyJwk` = the most-recent key (so a pre-4.3 pushDispatch still works
+        // mid-rollout), and clear any legacy single-sub field + a prior tombstone.
         tx.set(
           ref,
           {
             subs: { [deviceId]: pushSub },
+            postKeyJwks: { [postKeyJwk.x]: postKeyJwk },
             postKeyJwk,
             writePublicKey: publicKey,
             expiresAt,

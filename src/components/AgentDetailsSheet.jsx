@@ -6,11 +6,11 @@ import ActivitySheet from './ActivitySheet';
 import { scopeId } from '../lib/capability';
 import { relTime } from '../lib/activityFormat';
 import { expiryLabel, expiryTone } from '../lib/agentFormat';
-import { revokeAgent, setAgentPushEnabled } from '../services/capability';
+import { revokeAgent, setAgentPushEnabled, listAgents } from '../services/capability';
 import {
   pushSupported,
   enablePushForAudience,
-  revokePushForAudience,
+  disablePushForAgent,
   revokePushAllDevices,
   agentNotifyAllowed,
   isPushOnHere,
@@ -29,8 +29,17 @@ const AgentDetailsSheet = ({ agent, userId, masterKey, onClose, onRevoked }) => 
   const [copied, setCopied] = useState(false);
   const supportsPush = pushSupported();
   const globalNotify = agentNotifyAllowed();
-  const [onHere, setOnHere] = useState(() => isPushOnHere(agent.audience)); // this device receives?
+  // This agent's per-device notification state = device receives for this audience AND this agent is the
+  // intent (multi-poster: several agents can share an audience channel, but each manages its own poster key).
+  const [onHere, setOnHere] = useState(() => agent.pushEnabled !== false && isPushOnHere(agent.audience));
   const [pushBusy, setPushBusy] = useState(false);
+
+  // Other push-enabled agents sharing this audience's channel — we keep the device subscription alive for
+  // them when this agent's notifications are turned off / revoked (multi-poster, 4.3).
+  const otherPushAgentsHere = async () =>
+    (await listAgents(masterKey)).filter(
+      (a) => a.audience === agent.audience && a.agentPub !== agent.agentPub && a.pushEnabled,
+    );
 
   const copyKey = () => {
     navigator.clipboard.writeText(agent.agentPub || '');
@@ -43,7 +52,11 @@ const AgentDetailsSheet = ({ agent, userId, masterKey, onClose, onRevoked }) => 
     setPushBusy(true);
     try {
       if (onHere) {
-        await revokePushForAudience(masterKey, agent.audience);
+        // Remove only THIS agent's poster key; keep the device subscription if another push-enabled agent
+        // still uses this audience's channel (multi-poster, 4.3).
+        const others = await otherPushAgentsHere();
+        await disablePushForAgent(masterKey, agent.audience, agent.agentPub, { dropDeviceSub: others.length === 0 });
+        await setAgentPushEnabled(masterKey, agent, false);
         setOnHere(false);
         await logActivity(userId, `Turned off agent notifications for ${agent.audience}`, 'info', 'BellOff', masterKey, {
           agentJti: agent.jti,
@@ -70,8 +83,14 @@ const AgentDetailsSheet = ({ agent, userId, masterKey, onClose, onRevoked }) => 
   const doRevoke = async () => {
     setRevoking(true);
     try {
+      // Drop this agent's poster key before deleting the record (so the lookup still sees siblings). Tear the
+      // whole channel down only if no other push-enabled agent remains at this audience (multi-poster, 4.3).
+      if (agent.pushEnabled) {
+        const others = await otherPushAgentsHere();
+        if (others.length) await disablePushForAgent(masterKey, agent.audience, agent.agentPub).catch(() => {});
+        else await revokePushAllDevices(masterKey, agent.audience).catch(() => {});
+      }
       await revokeAgent(userId, masterKey, { jti: agent.jti, audience: agent.audience });
-      if (agent.pushEnabled) await revokePushAllDevices(masterKey, agent.audience).catch(() => {});
       showToast('Agent revoked.');
       onRevoked?.(agent.jti);
       onClose?.();

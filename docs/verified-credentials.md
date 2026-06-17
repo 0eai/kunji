@@ -209,7 +209,11 @@ can't see), a future hardening — **deferred, blocked on the dependency.**
 verified credential is more identifiable than the default per-app `sub`, a §9.2-style caveat). **v3 is
 complete** — unlinkable, presentable over OID4VP + login, and **holder-bound (non-transferable)**. The
 only remaining BBS work is optional future hardening — **blind issuance** (closes S28) + per-verifier
-pseudonyms — both **deferred, blocked on the lib exporting the blind API** (see the tracked note above).
+pseudonyms (roadmap 4.1) — both **deferred, blocked by the same upstream gate**: `@digitalbazaar/bbs-signatures`
+ships the code (`lib/bbs/blind`, `lib/bbs/pseudonym/*`) but its `exports` map is `"./lib/index.js"` only and
+that entrypoint exports neither the blind nor the `ProofGenWithPseudonym`/`ProofVerifyWithPseudonym` API — deep
+imports are hard-blocked (the crypto is proven in-package; only the export decision blocks it). See the tracked
+note above.
 
 ### 7.1 Personhood / `verified_human` — issuer-side uniqueness, NOT per-app dedup
 

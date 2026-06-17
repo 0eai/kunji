@@ -112,6 +112,18 @@ node agent-sim.js                          # copy the printed request → wallet
 CAP="<capability JWT>" node agent-sim.js   # log in with the pasted capability
 ```
 
+#### Portfolio (multi-app) authorization — roadmap 4.2
+
+One agent, several apps, **one** approval. `portfolio-sim.js` builds a `portfolio-v1` request for N
+audiences (one shared agent key) and prints a single deep link / QR; the wallet opens a multi-app review
+and the agent receives an **independent per-app capability** for each (distinct `sub` per audience —
+unlinkability preserved):
+
+```sh
+npm run portfolio                                                  # 3 sample apps, label "Concierge agent"
+APPS="shop.example,travel.example,tickets.example" LABEL="Concierge" node portfolio-sim.js
+```
+
 ### c) Real MCP bridge
 
 Run this RP, then drive the [`kunji-mcp`](../kunji-mcp) bridge with the relay pointed at the hosted

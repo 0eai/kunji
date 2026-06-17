@@ -39,6 +39,18 @@ describe('push channel signed-write contract (S22)', () => {
     expect(verifySignedWrite(all, signWithEd25519(all, secretKey), publicKey)).toBe(true);
   });
 
+  it('a per-poster delete (postKeyFp) and a combined device+poster delete round-trip (multi-poster, 4.3)', async () => {
+    const { secretKey, publicKey } = await vaultWriteKey(await generateMasterKey());
+    const FP = 'A'.repeat(43); // a base64url Ed25519 pubkey (the postKeyJwks map key)
+    const perPoster = { channelId: CHANNEL, op: 'delete', postKeyFp: FP, publicKey, timestamp: Date.now() };
+    expect(verifySignedWrite(perPoster, signWithEd25519(perPoster, secretKey), publicKey)).toBe(true);
+    const combined = { channelId: CHANNEL, op: 'delete', deviceId: DEVICE, postKeyFp: FP, publicKey, timestamp: Date.now() };
+    expect(verifySignedWrite(combined, signWithEd25519(combined, secretKey), publicKey)).toBe(true);
+    // The signature binds the poster fingerprint — a captured delete can't be re-targeted at a different poster.
+    const signed = signWithEd25519(perPoster, secretKey);
+    expect(verifySignedWrite({ ...perPoster, postKeyFp: 'B'.repeat(43) }, signed, publicKey)).toBe(false);
+  });
+
   it('rejects a tampered field (canonical JSON binds every field, incl. deviceId)', async () => {
     const { secretKey, publicKey } = await vaultWriteKey(await generateMasterKey());
     const payload = { channelId: CHANNEL, op: 'delete', deviceId: DEVICE, publicKey, timestamp: Date.now() };
