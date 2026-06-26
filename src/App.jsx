@@ -163,10 +163,13 @@ export default function App() {
     };
     drain(); // catch a pointer stashed before this mounted (cold open from a tapped notification)
     const onVis = () => document.visibilityState === 'visible' && drain();
+    const onShow = () => drain(); // bfcache restore (iOS back-forward / resume)
     document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pageshow', onShow);
     return () => {
       cancelled = true;
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pageshow', onShow);
     };
   }, []);
 
