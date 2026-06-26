@@ -266,6 +266,42 @@ const getJson = async (url) => {
 };
 
 /**
+ * A stateful step-up session that keeps ONE agent key across many rounds, so the wallet recognizes the same
+ * agent and shows a DELTA re-consent ("already granted" for prior scopes) each time. Drives an on-demand
+ * "step up again" UI: call `authorize(scope)` repeatedly with a growing scope set; each is one approval.
+ */
+export const createStepUpSession = ({
+  relayUrl = 'https://app.kunji.cc',
+  rpBase = 'https://kunji-demo.web.app',
+  audience,
+  pollMs = 3000,
+  maxPolls = 100,
+} = {}) => {
+  const relay = relayUrl.replace(/\/$/, '');
+  const base = rpBase.replace(/\/$/, '');
+  const aud = audience || new URL(base).hostname;
+  const agentSk = ed25519.keygen().secretKey; // ONE key for the whole session → the wallet sees one agent
+  let round = 0;
+  let scope = [];
+  return {
+    agentPub: bytesToB64(ed25519.getPublicKey(agentSk)),
+    scope: () => scope.slice(),
+    // Authorize the agent for the full `nextScope` set (one delta approval in the wallet); returns the new
+    // capability claims + the RP login session. Reuses the session's agent key across rounds.
+    authorize: async (nextScope, { onStep = () => {}, signal } = {}) => {
+      round += 1;
+      scope = nextScope;
+      const opts = { relay, base, aud, agentSk, onStep, signal, pollMs, maxPolls };
+      const r = await authorizeRound({ ...opts, scope: nextScope, round });
+      const l = await loginRound({ ...opts, capability: r.capability, capClaims: r.capClaims, round });
+      return { capClaims: r.capClaims, status: l.status, rpSessionId: l.rpSessionId, scope: nextScope };
+    },
+    // Call the RP's scope-gated demo action (read:profile) with a login session.
+    callProfile: (rpSessionId) => getJson(`${base}/api/profile?sessionId=${rpSessionId}`),
+  };
+};
+
+/**
  * Step-up demo (Transport ①): connect at `['login']`, hit a scope-gated RP action (`/api/profile`),
  * get a 403 insufficient_scope, then re-authorize the SAME agent at `['login', need]` — the wallet
  * shows a DELTA re-consent — and retry the action to a 200. Two real approvals in your wallet.
@@ -431,4 +467,4 @@ export const runPushStepUp = async ({
 export const renderQr = (el, data) =>
   renderBrandedQr(el, { data: typeof data === 'string' ? data : JSON.stringify(data), size: 200 });
 
-window.kunjiAgentDemo = { run, runStepUp, runPushStepUp, renderQr };
+window.kunjiAgentDemo = { run, runStepUp, runPushStepUp, createStepUpSession, renderQr };

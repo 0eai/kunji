@@ -8,6 +8,10 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 // kunji-agent-demo CLI.
 const short = (s, n = 14) => (s ? String(s).slice(0, n) + '…' : '');
 
+// Extra scopes the "Step up again" button requests, one per press (not RP-gated — they just demonstrate the
+// wallet's repeated DELTA consent for the same agent: prior scopes show "already granted", the new one "new").
+const EXTRA_SCOPES = ['read:email', 'payments:charge', 'read:contacts'];
+
 export default function StepUpDemo({ onBack }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { scope, profile, steppedUp }
@@ -15,6 +19,9 @@ export default function StepUpDemo({ onBack }) {
   const [pushResult, setPushResult] = useState(null);
   const [showChannel, setShowChannel] = useState(false); // reveal the channel-id paste field mid-flow
   const [channelInput, setChannelInput] = useState('');
+  const [extraIdx, setExtraIdx] = useState(0); // how many "step up again" extras have been granted
+  const [againBusy, setAgainBusy] = useState(false);
+  const sessionRef = useRef(null); // the retained step-up session (one agent key across rounds)
   const termRef = useRef(null);
   const codeRef = useRef(null);
   const qrRef = useRef(null);
@@ -99,8 +106,8 @@ export default function StepUpDemo({ onBack }) {
   );
 
   const run = useCallback(async () => {
-    if (busy || !window.kunjiAgentDemo?.runStepUp) {
-      if (!window.kunjiAgentDemo?.runStepUp) termLine('tac', '  ✗ demo module failed to load');
+    if (busy || !window.kunjiAgentDemo?.createStepUpSession) {
+      if (!window.kunjiAgentDemo?.createStepUpSession) termLine('tac', '  ✗ demo module failed to load');
       return;
     }
     if (termRef.current) termRef.current.replaceChildren();
@@ -108,20 +115,45 @@ export default function StepUpDemo({ onBack }) {
     if (qrRef.current) qrRef.current.replaceChildren();
     if (statusRef.current) statusRef.current.textContent = 'Idle.';
     setResult(null);
+    setExtraIdx(0);
+    sessionRef.current = null;
     setBusy(true);
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
     termLine('tdim', '# live — approve TWICE in your kunji wallet (connect, then step-up)');
     try {
-      const r = await window.kunjiAgentDemo.runStepUp({
+      // One retained session (one agent key) so later "step up again" presses show a DELTA, not a new agent.
+      const session = window.kunjiAgentDemo.createStepUpSession({
         relayUrl: 'https://app.kunji.cc',
         rpBase: 'https://kunji-demo.web.app',
         audience: 'kunji-demo.web.app',
-        onStep: handleStep,
-        signal: abortRef.current.signal,
       });
-      setResult(r);
-      if (statusRef.current) statusRef.current.textContent = r.steppedUp ? 'Stepped up — access granted.' : 'Done.';
+      sessionRef.current = session;
+      handleStep({ step: 'keygen', data: { agentPub: session.agentPub } });
+
+      // Round 1 — connect with the narrow `login` scope, then hit the scope-gated action.
+      const a1 = await session.authorize(['login'], { onStep: handleStep, signal });
+      let gated = await session.callProfile(a1.rpSessionId);
+      if (gated.status === 200) {
+        handleStep({ step: 'gated-ok', data: { status: 200 } });
+        setResult({ scope: a1.scope, profile: gated.body.profile, steppedUp: false });
+      } else {
+        const need = gated.body?.need || 'read:profile';
+        handleStep({ step: 'gated-denied', data: { need, status: gated.status } });
+        handleStep({ step: 'stepup', data: { need } });
+        // Round 2 — step up to read:profile, then retry → 200.
+        const a2 = await session.authorize(['login', need], { onStep: handleStep, signal });
+        gated = await session.callProfile(a2.rpSessionId);
+        handleStep({ step: 'gated-ok', data: { status: gated.status } });
+        setResult({
+          scope: a2.scope,
+          profile: gated.body.profile,
+          steppedUp: true,
+          io: { need, round2: a2.capClaims, profile: gated.body },
+        });
+      }
+      if (statusRef.current) statusRef.current.textContent = 'Access granted — try “Step up again” for more.';
     } catch (e) {
       termLine('tac', '  ✗ ' + (e.message || String(e)));
       if (statusRef.current) statusRef.current.textContent = 'Stopped: ' + (e.message || e);
@@ -129,6 +161,31 @@ export default function StepUpDemo({ onBack }) {
       setBusy(false);
     }
   }, [busy, handleStep, termLine]);
+
+  // "Step up again": request one more scope on demand, reusing the SAME agent — the wallet shows a fresh
+  // delta ("already granted" for everything so far, "new" for this one). Not RP-gated; it demonstrates that
+  // step-up composes and scope accumulates under one agent.
+  const stepUpAgain = useCallback(async () => {
+    const session = sessionRef.current;
+    if (!session || againBusy || busy || extraIdx >= EXTRA_SCOPES.length) return;
+    const next = EXTRA_SCOPES[extraIdx];
+    setAgainBusy(true);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    termLine('tdim', `  ↑ step-up: requesting "${next}" — approve the delta in your wallet`);
+    if (statusRef.current) statusRef.current.textContent = `Requesting +${next} — approve the delta in your wallet…`;
+    try {
+      const a = await session.authorize([...session.scope(), next], { onStep: handleStep, signal: abortRef.current.signal });
+      setExtraIdx((i) => i + 1);
+      setResult((r) => ({ ...(r || {}), scope: a.scope, steppedUp: true }));
+      if (statusRef.current) statusRef.current.textContent = `Granted +${next}. Scope is now ${a.scope.join(', ')}.`;
+    } catch (e) {
+      termLine('tac', '  ✗ ' + (e.message || String(e)));
+      if (statusRef.current) statusRef.current.textContent = 'Stopped: ' + (e.message || e);
+    } finally {
+      setAgainBusy(false);
+    }
+  }, [againBusy, busy, extraIdx, handleStep, termLine]);
 
   // Push step-up (Transport ②): connect, then ping the wallet via Web Push to approve the delta. The wallet
   // shows a NOTIFICATION; tapping it opens the re-consent sheet. Needs the channel id the wallet reveals when
@@ -251,6 +308,20 @@ export default function StepUpDemo({ onBack }) {
           <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink mt-2">
             {JSON.stringify(result.profile, null, 2)}
           </pre>
+          {/* Repeat the step-up on demand — each press is a fresh delta approval for the SAME agent. */}
+          {extraIdx < EXTRA_SCOPES.length ? (
+            <button
+              onClick={stepUpAgain}
+              disabled={busy || againBusy || pushBusy}
+              className="inline-flex items-center justify-center px-4 py-2 text-[13px] mt-3 border border-line hover:border-ink/40 text-ink font-semibold rounded-full transition-colors disabled:opacity-50"
+            >
+              {againBusy ? 'Requesting…' : `Step up again (+${EXTRA_SCOPES[extraIdx]})`}
+            </button>
+          ) : (
+            <p className="text-[13px] text-success mt-3">
+              All demo scopes granted — the wallet showed a delta each time, under one agent.
+            </p>
+          )}
         </div>
       )}
 
