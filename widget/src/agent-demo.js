@@ -303,9 +303,110 @@ export const runStepUp = async ({
   };
 };
 
+/**
+ * Push step-up demo (push-relay.md Transport ②): connect the agent at `['login']` (the user approves AND
+ * turns on "Notify me" in the wallet, which registers this agent as a push poster + reveals a channel id),
+ * then step up via WEB PUSH — the agent pings the channel, the wallet shows a notification, and the user
+ * approves the delta. ONE agent key across both rounds so the wallet recognizes the same agent and the
+ * holder-of-key proof matches the registered poster key. `getChannelId` is an async callback the UI resolves
+ * from a paste field (the channel id the wallet showed). Mirrors the Node `requestViaPush` + `awaitCapability`.
+ */
+export const runPushStepUp = async ({
+  relayUrl = 'https://app.kunji.cc',
+  rpBase = 'https://kunji-demo.web.app',
+  audience,
+  getChannelId,
+  onStep = () => {},
+  signal,
+  pollMs = 3000,
+  maxPolls = 100,
+} = {}) => {
+  const relay = relayUrl.replace(/\/$/, '');
+  const base = rpBase.replace(/\/$/, '');
+  const aud = audience || new URL(base).hostname;
+  const aborted = () => signal && signal.aborted;
+  const step = (s, label, data) => onStep({ step: s, label, data });
+  if (typeof getChannelId !== 'function') throw new Error('getChannelId callback is required');
+
+  const agentSk = ed25519.keygen().secretKey; // ONE key: authorize → push proof must match the poster key
+  const agentPub = bytesToB64(ed25519.getPublicKey(agentSk));
+  step('keygen', 'Generated the agent key', { agentPub });
+
+  // Round 1 — connect at `login` (Transport ①). The UI tells the user to ALSO toggle "Notify me" ON.
+  const opts = { relay, base, aud, agentSk, onStep, signal, pollMs, maxPolls };
+  const r1 = await authorizeRound({ ...opts, scope: ['login'], round: 1 });
+  await loginRound({ ...opts, capability: r1.capability, capClaims: r1.capClaims, round: 1 });
+
+  // The wallet showed a channel id when notifications were enabled — the UI collects it.
+  step('need-channel', 'Turn on “Notify me” in the wallet, then paste the channel id it shows');
+  const channelId = String((await getChannelId()) || '').trim();
+  if (!/^[0-9a-f]{64}$/i.test(channelId)) throw new Error('That doesn’t look like a channel id (64 hex).');
+
+  // Round 2 — step up via PUSH. Deposit a v2 request bound to the SAME agent key → a 6-digit relay code (the
+  // opaque push pointer); ping the channel with a holder-of-key proof; await the deposited capability.
+  const ecdh = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
+  const transportPub = bytesToB64(await subtle.exportKey('spki', ecdh.publicKey));
+  const sessionId = randHex(32);
+  const request = { kunjiCap: 'v2', audience: aud, scope: ['login', 'read:profile'], agentPub, transportPub, sessionId };
+  const reg = await post(`${relay}/agent/request`, request);
+  const requestId = /^\d{6}$/.test(String(reg.code)) ? reg.code : null;
+  if (!requestId) throw new Error(reg.error === 'rate_limited' ? 'Relay rate-limited — wait a moment.' : 'Relay unavailable.');
+
+  const proof = signJWS(
+    { alg: 'EdDSA', typ: 'kunji-agentproof+jwt' },
+    { aud: channelId, challenge: requestId, iat: Math.floor(Date.now() / 1000), jti: randHex(16), cap: channelId },
+    agentSk,
+  );
+  const disp = await post(`${relay}/push/dispatch`, { channelId, requestId, proof });
+  if (disp.error)
+    throw new Error(
+      disp.error === 'not_found'
+        ? 'Channel not found — enable notifications for this app in the wallet first.'
+        : disp.error === 'bad_proof'
+          ? 'Push rejected — the wallet hasn’t authorized this agent to push (re-enable “Notify me”).'
+          : 'Push dispatch failed: ' + disp.error,
+    );
+  step('dispatched', 'Pushed to the wallet — approve the notification', { requestId, delivered: disp.delivered });
+
+  step('await', 'Waiting for you to approve the notification…');
+  let deposited = null;
+  let warned429 = false;
+  for (let i = 0; i < maxPolls; i++) {
+    if (aborted()) throw new Error('aborted');
+    const r = await fetch(`${relay}/agent/capability?sessionId=${sessionId}`);
+    if (r.status === 410) throw new Error('Authorization expired before approval.');
+    if (r.ok) { deposited = await r.json(); break; }
+    if (r.status === 429) { if (!warned429) { step('await', 'Relay busy — backing off, still waiting…'); warned429 = true; } await sleep(pollMs * 2); continue; }
+    await sleep(pollMs);
+  }
+  if (!deposited) throw new Error('Timed out waiting for approval.');
+
+  const walletPub = await subtle.importKey('spki', b64ToBytes(deposited.walletPubE), { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+  const aesKey = await subtle.deriveKey({ name: 'ECDH', public: walletPub }, ecdh.privateKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const { iv, data } = deposited.encryptedCapability;
+  const ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(iv) }, aesKey, b64ToBytes(data));
+  const capability = JSON.parse(new TextDecoder().decode(ptBuf));
+  const capClaims = jwtPayload(capability);
+  step('capability', 'Capability received & decrypted', {
+    capabilityClaims: { sub: capClaims.sub, aud: capClaims.aud, scope: capClaims.scope, exp: capClaims.exp, jti: capClaims.jti },
+  });
+
+  const l2 = await loginRound({ ...opts, capability, capClaims, round: 2 });
+  const gated = await getJson(`${base}/api/profile?sessionId=${l2.rpSessionId}`);
+  step('gated-ok', `GET /api/profile → ${gated.status} — released`, { status: gated.status, profile: gated.body.profile });
+  return {
+    status: l2.status.status || 'approved',
+    scope: l2.status.scope || capClaims.scope || null,
+    profile: gated.body.profile || null,
+    via: 'push',
+    steppedUp: true,
+    io: { channelId, requestId, round2: capClaims, profile: gated.body },
+  };
+};
+
 // Render a branded QR of a request (string or object) into `el` — used by both the live flow and
 // the recorded replay so the card skin can show the same QR the wallet would scan.
 export const renderQr = (el, data) =>
   renderBrandedQr(el, { data: typeof data === 'string' ? data : JSON.stringify(data), size: 200 });
 
-window.kunjiAgentDemo = { run, runStepUp, renderQr };
+window.kunjiAgentDemo = { run, runStepUp, runPushStepUp, renderQr };

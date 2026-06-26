@@ -86,7 +86,7 @@ const Dashboard = ({
   const authorizeHandled = useRef(false);
   const presentationHandled = useRef(false);
   const offerHandled = useRef(false);
-  const pushHandled = useRef(false);
+  const pushHandled = useRef(null); // the last push requestId handled (per-id guard, not one-shot)
   const authCodeHandled = useRef(false);
 
   // Derive the shared vault id from the master key (same on every linked device).
@@ -205,22 +205,14 @@ const Dashboard = ({
     [showToast],
   );
 
-  // Cold open from a tapped notification: app.kunji.cc/?push=<requestId>, once the vault is ready.
+  // A tapped notification points here via `incomingPush` — both the cold open (app.kunji.cc/?push=<id>) and the
+  // warm open (the SW postMessages an already-open/locked wallet; App buffers it into this prop). Process once
+  // the vault is ready; a per-id guard (not a one-shot boolean) so a NEW pointer after one was handled still fires.
   useEffect(() => {
-    if (!vaultId || !incomingPush || pushHandled.current) return;
-    pushHandled.current = true;
+    if (!vaultId || !incomingPush || pushHandled.current === incomingPush) return;
+    pushHandled.current = incomingPush;
     handlePushPointer(incomingPush);
   }, [vaultId, incomingPush, handlePushPointer]);
-
-  // Warm open: the service worker postMessages an already-open wallet when a notification is tapped.
-  useEffect(() => {
-    if (!vaultId || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
-    const onMsg = (e) => {
-      if (e?.data?.type === 'kunji-push' && /^\d{6}$/.test(e.data.requestId || '')) handlePushPointer(e.data.requestId);
-    };
-    navigator.serviceWorker.addEventListener('message', onMsg);
-    return () => navigator.serviceWorker.removeEventListener('message', onMsg);
-  }, [vaultId, handlePushPointer]);
 
   // OpenID4VP: a verifier asked the wallet to present a credential (a distinct flow from the kunji
   // login QR — docs/oid4vc.md). Match held credentials to the request and open the present sheet.

@@ -60,6 +60,10 @@ function readIncomingLinks() {
 export default function App() {
   const { user, cryptoKey, loading, lockReason, setAuthUser, unlockVault, lockVault } = useVault();
   const [incoming] = useState(readIncomingLinks);
+  // A warm-tapped push notification (SW postMessage) → buffer the requestId here, even while LOCKED, so it
+  // survives until the vault unlocks and the Dashboard can open the re-consent sheet (the listener below lives
+  // at App level — Dashboard only mounts when unlocked, so a tap-while-locked would otherwise be dropped).
+  const [pushPointer, setPushPointer] = useState(null);
   const [authError, setAuthError] = useState(false);
   // Set when an inbound email sign-in link arrives but we can't determine the email
   // (it was requested on another device) — prompt for it. Holds the link href.
@@ -126,6 +130,18 @@ export default function App() {
     const t = setTimeout(() => setAuthError(true), 8000);
     return () => clearTimeout(t);
   }, [user]);
+
+  // Web Push (Transport ②) warm open: the service worker postMessages a tapped notification's requestId.
+  // Listen at App level (always mounted, incl. LockScreen) so a tap while the wallet is open-but-LOCKED is
+  // buffered into `pushPointer` and processed by Dashboard once unlocked, instead of being lost.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMsg = (e) => {
+      if (e?.data?.type === 'kunji-push' && /^\d{6}$/.test(e.data.requestId || '')) setPushPointer(e.data.requestId);
+    };
+    navigator.serviceWorker.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg);
+  }, []);
 
   // Auto-lock on inactivity (default 20 hours, stored in localStorage as kunji_autolock minutes)
   useEffect(() => {
@@ -253,7 +269,7 @@ export default function App() {
       incomingAuthorize={incoming.authorize}
       incomingPresentation={incoming.vp}
       incomingOffer={incoming.offer}
-      incomingPush={incoming.push}
+      incomingPush={pushPointer || incoming.push}
       incomingAuthCode={incoming.authCode}
       onLock={() => {
         logActivity(user.uid, 'Vault Locked', 'info', 'Lock', cryptoKey);

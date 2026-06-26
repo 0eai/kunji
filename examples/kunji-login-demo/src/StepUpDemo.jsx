@@ -11,6 +11,10 @@ const short = (s, n = 14) => (s ? String(s).slice(0, n) + '…' : '');
 export default function StepUpDemo({ onBack }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { scope, profile, steppedUp }
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushResult, setPushResult] = useState(null);
+  const [showChannel, setShowChannel] = useState(false); // reveal the channel-id paste field mid-flow
+  const [channelInput, setChannelInput] = useState('');
   const termRef = useRef(null);
   const codeRef = useRef(null);
   const qrRef = useRef(null);
@@ -18,6 +22,7 @@ export default function StepUpDemo({ onBack }) {
   const statusRef = useRef(null);
   const abortRef = useRef(null);
   const resultRef = useRef(null);
+  const channelResolveRef = useRef(null); // resolves runPushStepUp's getChannelId() promise
   // Stop the in-flight two-round flow (relay polling) if the user navigates away mid-run.
   useEffect(() => () => abortRef.current?.abort(), []);
   // Move focus to the granted panel when it appears (keyboard/SR users land on the result).
@@ -73,6 +78,14 @@ export default function StepUpDemo({ onBack }) {
         case 'stepup':
           termLine('tdim', `  ↑ step-up: requesting "${d.need}" — approve the delta in your wallet`);
           break;
+        case 'need-channel':
+          termLine('tdim', '  ⠿ enable “Notify me” in the wallet, then paste the channel id below');
+          if (statusRef.current) statusRef.current.textContent = 'Turn on “Notify me” in the wallet, then paste its channel id.';
+          break;
+        case 'dispatched':
+          termLine('tok', '  ✓ pushed to the wallet — approve the notification on your device');
+          if (statusRef.current) statusRef.current.textContent = 'Pushed — approve the notification on your device.';
+          break;
         case 'gated-ok':
           termLine('tok', `  ✓ GET /api/profile → ${d.status || 200} — released`);
           break;
@@ -112,6 +125,60 @@ export default function StepUpDemo({ onBack }) {
       setBusy(false);
     }
   }, [busy, handleStep, termLine]);
+
+  // Push step-up (Transport ②): connect, then ping the wallet via Web Push to approve the delta. The wallet
+  // shows a NOTIFICATION; tapping it opens the re-consent sheet. Needs the channel id the wallet reveals when
+  // you turn on "Notify me" — collected mid-flow via the getChannelId callback.
+  const runPush = useCallback(async () => {
+    if (busy || pushBusy || !window.kunjiAgentDemo?.runPushStepUp) {
+      if (!window.kunjiAgentDemo?.runPushStepUp) termLine('tac', '  ✗ demo module failed to load');
+      return;
+    }
+    if (termRef.current) termRef.current.replaceChildren();
+    if (codeRef.current) codeRef.current.textContent = '— — —';
+    if (qrRef.current) qrRef.current.replaceChildren();
+    if (statusRef.current) statusRef.current.textContent = 'Idle.';
+    setResult(null);
+    setPushResult(null);
+    setShowChannel(false);
+    setChannelInput('');
+    setPushBusy(true);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    termLine('tdim', '# push demo — approve to connect + turn on “Notify me”, then ping via push');
+    try {
+      const r = await window.kunjiAgentDemo.runPushStepUp({
+        relayUrl: 'https://app.kunji.cc',
+        rpBase: 'https://kunji-demo.web.app',
+        audience: 'kunji-demo.web.app',
+        onStep: handleStep,
+        signal: abortRef.current.signal,
+        getChannelId: () =>
+          new Promise((resolve) => {
+            channelResolveRef.current = resolve;
+            setShowChannel(true);
+          }),
+      });
+      setPushResult(r);
+      if (statusRef.current) statusRef.current.textContent = 'Stepped up via push — access granted.';
+    } catch (e) {
+      termLine('tac', '  ✗ ' + (e.message || String(e)));
+      if (statusRef.current) statusRef.current.textContent = 'Stopped: ' + (e.message || e);
+    } finally {
+      setPushBusy(false);
+      setShowChannel(false);
+    }
+  }, [busy, pushBusy, handleStep, termLine]);
+
+  const submitChannel = useCallback(() => {
+    const v = channelInput.trim();
+    if (!/^[0-9a-f]{64}$/i.test(v)) {
+      if (statusRef.current) statusRef.current.textContent = 'That doesn’t look like a channel id (64 hex).';
+      return;
+    }
+    setShowChannel(false);
+    channelResolveRef.current?.(v);
+  }, [channelInput]);
 
   return (
     <main className="flex-1 flex flex-col max-w-[34rem] w-full mx-auto px-6 py-10 animate-rise">
@@ -165,10 +232,10 @@ export default function StepUpDemo({ onBack }) {
 
       <button
         onClick={run}
-        disabled={busy}
+        disabled={busy || pushBusy}
         className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity disabled:opacity-50 self-start"
       >
-        {busy ? 'Running…' : 'Run the step-up demo (needs your wallet)'}
+        {busy ? 'Running…' : 'Run the step-up demo (deep link · Transport ①)'}
       </button>
 
       {result && result.profile && (
@@ -198,16 +265,62 @@ export default function StepUpDemo({ onBack }) {
       )}
 
       <section className="rounded-2xl border border-line p-6 mt-8">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Notifications (opt-in)</p>
-        <p className="text-[14px] text-muted">
-          If you turn on notifications for an app (per-app, in the wallet), a channel-less agent can ping you via{' '}
-          <b>Web Push</b> to approve a step-up while you're away — the push carries only an{' '}
-          <b>opaque pointer</b>, never the request. Run the full push demo with{' '}
-          <span className="font-mono text-ink">kunji-agent-demo --push</span> (see the{' '}
+        <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Notifications — push step-up (Transport ②)</p>
+        <p className="text-[14px] text-muted mb-4">
+          Instead of a deep link, a channel-less agent can ping you via <b>Web Push</b> to approve a step-up
+          while you're away — the push carries only an <b>opaque pointer</b>, never the request. Connect first
+          and turn on <b>“Notify me”</b> in the wallet (it shows a <b>channel id</b>); paste it here, then ping.
+        </p>
+
+        <button
+          onClick={runPush}
+          disabled={busy || pushBusy}
+          className="inline-flex items-center justify-center px-5 py-3 text-sm bg-ink hover:opacity-90 text-paper font-semibold rounded-full transition-opacity disabled:opacity-50"
+        >
+          {pushBusy ? 'Running…' : 'Run the push demo (needs your wallet + notifications)'}
+        </button>
+
+        {showChannel && (
+          <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft/40 p-4">
+            <label htmlFor="chan" className="block text-[12px] text-muted mb-2">
+              Paste the <b>channel id</b> the wallet showed when you turned on “Notify me”:
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="chan"
+                value={channelInput}
+                onChange={(e) => setChannelInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && submitChannel()}
+                placeholder="64-hex channel id"
+                className="flex-1 min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-mono text-ink outline-none focus:border-accent"
+              />
+              <button
+                onClick={submitChannel}
+                className="shrink-0 inline-flex items-center justify-center px-4 py-2 text-[13px] bg-accent-fill hover:bg-accent text-ink font-semibold rounded-full transition-colors"
+              >
+                Ping me via push
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pushResult && pushResult.profile && (
+          <div className="mt-4 rounded-xl bg-success/10 border border-success/30 p-4">
+            <p className="text-[15px] font-semibold text-success">Stepped up via push ✓</p>
+            <p className="text-[13px] text-muted mt-1">
+              Scope: <span className="font-mono text-ink">{(pushResult.scope || []).join(', ')}</span>
+            </p>
+            <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink mt-2">
+              {JSON.stringify(pushResult.profile, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        <p className="text-[12px] text-faint mt-4">
+          The push carries only the opaque pointer; the request itself rides the encrypted relay. Docs:{' '}
           <a href="https://kunji.cc/developers/agents" className="text-accent hover:text-ink underline underline-offset-2">
-            agents docs
+            agents →
           </a>
-          ).
         </p>
       </section>
     </main>

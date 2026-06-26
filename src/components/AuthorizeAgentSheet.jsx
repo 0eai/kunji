@@ -14,7 +14,7 @@ import {
 } from '../services/capability';
 import { scopeId, scopeSatisfies } from '../lib/capability';
 import { formatConstraints } from '../lib/scopeFormat';
-import { pushSupported, enablePushForAudience, agentNotifyAllowed } from '../services/push';
+import { pushSupported, enablePushForAudience, agentNotifyAllowed, isPushOnHere } from '../services/push';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -116,6 +116,9 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onPortfolio, o
         if (!mine.length) return;
         setPrior(mine);
         setRevokePrior(true); // default: the new capability supersedes the old one
+        // Reflect existing notifications so a step-up doesn't re-ask: ON only if this agent already has push
+        // AND this device actually receives for the audience (mirrors AgentDetailsSheet's `onHere`).
+        if (mine.some((a) => a.pushEnabled) && isPushOnHere(req.audience)) setNotify(true);
         const held = mine.flatMap((a) => a.scope || []);
         setGrantedIds((prev) => {
           const next = new Set(prev);
@@ -192,8 +195,11 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onPortfolio, o
       }
       // Opt-in Web Push (Transport ②): register a channel so this agent can ping the wallet for future
       // step-ups. Best-effort + AFTER the capability — a permission denial never blocks authorization.
-      let pushEnabled = false;
-      if (notify && pushSupported()) {
+      // Push is per-AUDIENCE, so it survives a step-up (revoking the old cap doesn't tear it down). Only
+      // (re)subscribe when turning it ON from OFF — if it's already on, keep it without re-prompting.
+      const alreadyOn = isPushOnHere(req.audience);
+      let pushEnabled = alreadyOn;
+      if (notify && !alreadyOn && pushSupported()) {
         try {
           const { channelId } = await enablePushForAudience(masterKey, req.audience, req.agentPub);
           setPushChannelId(channelId);
@@ -350,10 +356,12 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onPortfolio, o
             >
               <span className="min-w-0 flex-1">
                 <span className="block text-[13px] font-medium text-ink">
-                  Notify me for this agent's future requests
+                  {notify ? "Notifications on for this agent's requests" : "Notify me for this agent's future requests"}
                 </span>
                 <span className="block text-[12px] text-muted">
-                  Lets it ping you to approve more access later — asks your permission to send notifications.
+                  {notify
+                    ? "It can ping you on this device to approve more access later."
+                    : 'Lets it ping you to approve more access later — asks your permission to send notifications.'}
                 </span>
               </span>
               <span
