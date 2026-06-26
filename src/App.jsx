@@ -143,6 +143,33 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener('message', onMsg);
   }, []);
 
+  // Robust hand-off for a SUSPENDED PWA (esp. iOS): the SW also stashes the tapped requestId in the Cache
+  // API (the postMessage above is dropped if the page was suspended at tap time, and focusing an existing
+  // window doesn't apply `?push=`). Drain it whenever we become visible / on load, then clear it.
+  useEffect(() => {
+    if (typeof caches === 'undefined') return;
+    let cancelled = false;
+    const drain = async () => {
+      try {
+        const cache = await caches.open('kunji-push');
+        const res = await cache.match('/__kunji_pending_push');
+        if (!res) return;
+        const id = (await res.text()).trim();
+        await cache.delete('/__kunji_pending_push');
+        if (!cancelled && /^\d{6}$/.test(id)) setPushPointer(id);
+      } catch {
+        /* Cache unavailable — the message listener / ?push= paths still cover the live cases */
+      }
+    };
+    drain(); // catch a pointer stashed before this mounted (cold open from a tapped notification)
+    const onVis = () => document.visibilityState === 'visible' && drain();
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
   // Auto-lock on inactivity (default 20 hours, stored in localStorage as kunji_autolock minutes)
   useEffect(() => {
     if (!cryptoKey || !user) return;

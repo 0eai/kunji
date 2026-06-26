@@ -26,10 +26,22 @@ self.addEventListener('notificationclick', (event) => {
   const url = requestId ? `/?push=${encodeURIComponent(requestId)}` : '/';
   event.waitUntil(
     (async () => {
+      // Persist the pointer so a SUSPENDED/backgrounded wallet (esp. iOS PWAs) reads it on resume. A
+      // postMessage to a suspended client is dropped before its listener re-attaches, and focusing an existing
+      // window doesn't apply the `?push=` URL — so the Cache is the reliable hand-off. The wallet drains
+      // '/__kunji_pending_push' on visibilitychange/load. [push-relay Transport ②]
+      if (requestId) {
+        try {
+          const cache = await caches.open('kunji-push');
+          await cache.put('/__kunji_pending_push', new Response(requestId));
+        } catch {
+          /* Cache unavailable — the postMessage / ?push= paths below still cover the live cases */
+        }
+      }
       const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const win of wins) {
         if ('focus' in win) {
-          win.postMessage({ type: 'kunji-push', requestId }); // an open wallet handles it without a reload
+          win.postMessage({ type: 'kunji-push', requestId }); // fast path for a live (desktop/Android) wallet
           return win.focus();
         }
       }

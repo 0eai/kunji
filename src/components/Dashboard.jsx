@@ -198,8 +198,9 @@ const Dashboard = ({
       try {
         const raw = await lookupAgentRequest(requestId);
         setPendingAuthorize(raw);
-      } catch {
-        showToast('Could not load the pushed request.', 'error');
+      } catch (e) {
+        // Surface the specific reason (expired / not found / network) instead of a generic message.
+        showToast(e?.message || 'Could not load the pushed request.', 'error');
       }
     },
     [showToast],
