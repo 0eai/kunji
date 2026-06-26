@@ -14,7 +14,7 @@ import {
 } from '../services/capability';
 import { scopeId, scopeSatisfies } from '../lib/capability';
 import { formatConstraints } from '../lib/scopeFormat';
-import { pushSupported, enablePushForAudience, agentNotifyAllowed, isPushOnHere } from '../services/push';
+import { pushSupported, enablePushForAudience, agentNotifyAllowed, isPushOnHere, channelIdFor } from '../services/push';
 import { renderBrandedQr } from '../lib/brandedQr';
 import { useToast } from '../contexts/ToastContext';
 
@@ -173,11 +173,35 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onPortfolio, o
       });
       setResult(r);
       setPhase('issued');
-      // v2: deliver the capability to the agent over the encrypted relay (no manual copy).
-      // Best-effort — on any failure the user still has the QR + copy fallback below.
+      // Opt-in Web Push (Transport ②): resolve the push state + the channel mailbox FIRST, so we can hand the
+      // channelId to the agent in the same encrypted deposit below (no manual copy/paste). Push is
+      // per-AUDIENCE, so it survives a step-up (revoking the old cap doesn't tear it down) — only (re)subscribe
+      // when turning it ON from OFF; if it's already on, just re-derive the (deterministic) channelId.
+      const alreadyOn = isPushOnHere(req.audience);
+      let pushEnabled = alreadyOn;
+      let channelId = null;
+      if (notify && !alreadyOn && pushSupported()) {
+        try {
+          const res = await enablePushForAudience(masterKey, req.audience, req.agentPub);
+          channelId = res.channelId;
+          pushEnabled = true;
+        } catch (e) {
+          showToast('Authorized, but enabling notifications failed: ' + (e.message || e), 'error');
+        }
+      } else if (alreadyOn) {
+        try {
+          channelId = await channelIdFor(masterKey, req.audience);
+        } catch {
+          /* non-fatal — the agent can still be given the channel manually */
+        }
+      }
+      if (channelId) setPushChannelId(channelId);
+
+      // v2: deliver the capability (+ the channel mailbox, when push is on) to the agent over the encrypted
+      // relay — no manual copy. Best-effort — on any failure the user still has the QR + copy fallback below.
       if (req.sessionId && req.transportPub) {
         try {
-          await depositAgentCapability(req.sessionId, req.transportPub, r.capability, req.audience);
+          await depositAgentCapability(req.sessionId, req.transportPub, r.capability, req.audience, channelId);
           setDelivered(true);
         } catch (e) {
           showToast('Authorized, but auto-delivery failed — copy or scan it below.', 'error');
@@ -191,21 +215,6 @@ const AuthorizeAgentSheet = ({ userId, masterKey, initialRequest, onPortfolio, o
           revokeAgent(userId, masterKey, { jti: p.jti, audience: p.audience }).catch((e) =>
             console.warn('revoke prior capability failed:', e),
           );
-        }
-      }
-      // Opt-in Web Push (Transport ②): register a channel so this agent can ping the wallet for future
-      // step-ups. Best-effort + AFTER the capability — a permission denial never blocks authorization.
-      // Push is per-AUDIENCE, so it survives a step-up (revoking the old cap doesn't tear it down). Only
-      // (re)subscribe when turning it ON from OFF — if it's already on, keep it without re-prompting.
-      const alreadyOn = isPushOnHere(req.audience);
-      let pushEnabled = alreadyOn;
-      if (notify && !alreadyOn && pushSupported()) {
-        try {
-          const { channelId } = await enablePushForAudience(masterKey, req.audience, req.agentPub);
-          setPushChannelId(channelId);
-          pushEnabled = true;
-        } catch (e) {
-          showToast('Authorized, but enabling notifications failed: ' + (e.message || e), 'error');
         }
       }
       // Record the capability metadata so it shows in "Authorized agents" (revoke + a notifications

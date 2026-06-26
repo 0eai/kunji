@@ -38,6 +38,20 @@ describe('agent capability relay — wallet ↔ bridge ECDH/AES parity', () => {
     const recovered = await decryptRelayedCapability({ transportPrivB64, walletPubE, encryptedCapability });
     expect(recovered).toBe(jwt);
   });
+
+  it('the push channelId rides the SAME encrypted relay (auto-handoff, no copy/paste)', async () => {
+    const channelId = 'c'.repeat(64);
+    const agent = await generateECDHKeyPair();
+    const agentTransportPub = await exportECDHPublicKey(agent.publicKey);
+    const transportPrivB64 = await exportECDHPrivateKey(agent.privateKey);
+    const wallet = await generateECDHKeyPair();
+    const walletPubE = await exportECDHPublicKey(wallet.publicKey);
+    const shared = await deriveECDHSharedSecret(wallet.privateKey, await importECDHPublicKey(agentTransportPub));
+    // depositAgentCapability adds `encryptedChannel` with the SAME shared secret when push is on.
+    const encryptedChannel = await encryptData(channelId, shared);
+    const recovered = await decryptRelayedCapability({ transportPrivB64, walletPubE, encryptedCapability: encryptedChannel });
+    expect(recovered).toBe(channelId);
+  });
 });
 
 describe('parseAgentRequest — v1 unchanged, v2 validated', () => {

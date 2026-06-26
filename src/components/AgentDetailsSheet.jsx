@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Copy, CheckCircle2, Bell, BellRing, Trash2, Activity, ChevronRight } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { SectionLabel, Monogram, Btn } from './ui/primitives';
@@ -14,6 +14,7 @@ import {
   revokePushAllDevices,
   agentNotifyAllowed,
   isPushOnHere,
+  channelIdFor,
 } from '../services/push';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
@@ -33,6 +34,23 @@ const AgentDetailsSheet = ({ agent, userId, masterKey, onClose, onRevoked }) => 
   // intent (multi-poster: several agents can share an audience channel, but each manages its own poster key).
   const [onHere, setOnHere] = useState(() => agent.pushEnabled !== false && isPushOnHere(agent.audience));
   const [pushBusy, setPushBusy] = useState(false);
+  // The agent's opaque push mailbox (shown so it's retrievable later — normally auto-delivered to the agent
+  // at authorization, but kept here for manual hand-off / older agents). Derived only while push is on.
+  const [channelId, setChannelId] = useState('');
+  const [channelCopied, setChannelCopied] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (onHere) channelIdFor(masterKey, agent.audience).then((c) => !cancelled && setChannelId(c)).catch(() => {});
+    else setChannelId('');
+    return () => {
+      cancelled = true;
+    };
+  }, [onHere, masterKey, agent.audience]);
+  const copyChannel = () => {
+    navigator.clipboard.writeText(channelId || '');
+    setChannelCopied(true);
+    setTimeout(() => setChannelCopied(false), 2000);
+  };
 
   // Other push-enabled agents sharing this audience's channel — we keep the device subscription alive for
   // them when this agent's notifications are turned off / revoked (multi-poster, 4.3).
@@ -198,6 +216,29 @@ const AgentDetailsSheet = ({ agent, userId, masterKey, onClose, onRevoked }) => 
             />
           </span>
         </button>
+      )}
+
+      {/* Push channel — the agent's opaque mailbox (normally auto-delivered at authorization; shown here for
+          manual hand-off / older agents). Only while notifications are on for this device. */}
+      {onHere && channelId && (
+        <div className="mb-7">
+          <SectionLabel
+            className="mb-2.5"
+            info="The agent's push mailbox for this app — it addresses this to ping you. Opaque + derived from your key, so it can't be linked to you. Normally delivered to the agent automatically; copy it only for manual setup."
+          >
+            Push channel
+          </SectionLabel>
+          <div className="flex items-start gap-3 border-y border-line py-3.5">
+            <code className="flex-1 text-[12px] font-mono text-ink break-all leading-relaxed">{channelId}</code>
+            <button
+              onClick={copyChannel}
+              className="shrink-0 text-muted hover:text-ink transition-colors"
+              title="Copy push channel"
+            >
+              {channelCopied ? <CheckCircle2 size={15} className="text-success" /> : <Copy size={15} />}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Actions */}

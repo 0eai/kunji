@@ -134,6 +134,10 @@ const removeLocalPushAudience = (audience) => {
   s.delete(audience);
   writeLocalSet(s);
 };
+/** The opaque per-app push mailbox for `audience` (master-key-derived). Handed to an authorized agent (over
+ *  the encrypted relay, or shown in the wallet) so it can address the channel; not a secret to that agent. */
+export const channelIdFor = (cryptoKey, audience) => deriveChannelId(cryptoKey, audience);
+
 /** The audiences THIS device is subscribed to receive for. */
 export const localPushAudiences = () => readLocalSet();
 /** Is this device actually set up to receive for `audience` — subscribed here AND OS permission granted? */

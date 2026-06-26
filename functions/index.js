@@ -252,10 +252,12 @@ export const agentCapabilityPoll = onRequest(
     const s = snap.data();
     if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired' });
 
-    // Ciphertext only — the agent decrypts with its transport private key.
+    // Ciphertext only — the agent decrypts with its transport private key. `encryptedChannel` (optional) is
+    // the agent's push mailbox, delivered when the user enabled notifications (back-compat: absent otherwise).
     res.json({
       walletPubE: s.walletPubE,
       encryptedCapability: s.encryptedCapability,
+      encryptedChannel: s.encryptedChannel || null,
       audience: s.audience,
     });
   },

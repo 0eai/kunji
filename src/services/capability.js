@@ -187,20 +187,25 @@ export const lookupAgentRequest = async (code) => {
  * The capability is ECDH-encrypted to the agent's transport key (the relay doc holds only
  * ciphertext + our ephemeral pub + audience). Mirrors linking.js depositMasterKey.
  */
-export const depositAgentCapability = async (sessionId, agentTransportPubB64, capability, audience) => {
+export const depositAgentCapability = async (sessionId, agentTransportPubB64, capability, audience, channelId) => {
   const { publicKey, privateKey } = await generateECDHKeyPair();
   const walletPubE = await exportECDHPublicKey(publicKey);
   const agentPubE = await importECDHPublicKey(agentTransportPubB64);
   const shared = await deriveECDHSharedSecret(privateKey, agentPubE);
   const encryptedCapability = await encryptData(capability, shared);
   const expiresAt = Date.now() + RELAY_TTL_MS;
-  await setDoc(doc(db, 'agentSessions', sessionId), {
+  const payload = {
     walletPubE,
     encryptedCapability,
     audience: String(audience || ''),
     expiresAt,
     ttl: new Date(expiresAt + 5 * 60 * 1000), // add a Firestore TTL policy on `ttl` to auto-clean
-  });
+  };
+  // When notifications are on, hand the agent its opaque push mailbox over the SAME encrypted channel (ECDH
+  // to the agent's transport key) so it never has to be copied by hand. kunji only ever sees ciphertext; the
+  // channelId itself is master-key-derived (deriveChannelId), unchanged.
+  if (channelId) payload.encryptedChannel = await encryptData(channelId, shared);
+  await setDoc(doc(db, 'agentSessions', sessionId), payload);
 };
 
 /**

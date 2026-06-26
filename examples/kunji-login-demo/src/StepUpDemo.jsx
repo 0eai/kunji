@@ -78,6 +78,10 @@ export default function StepUpDemo({ onBack }) {
         case 'stepup':
           termLine('tdim', `  ↑ step-up: requesting "${d.need}" — approve the delta in your wallet`);
           break;
+        case 'channel':
+          termLine('tok', '  ✓ received the push channel automatically — no copy/paste');
+          if (statusRef.current) statusRef.current.textContent = 'Got the channel automatically — pinging…';
+          break;
         case 'need-channel':
           termLine('tdim', '  ⠿ enable “Notify me” in the wallet, then paste the channel id below');
           if (statusRef.current) statusRef.current.textContent = 'Turn on “Notify me” in the wallet, then paste its channel id.';
@@ -268,8 +272,10 @@ export default function StepUpDemo({ onBack }) {
         <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">Notifications — push step-up (Transport ②)</p>
         <p className="text-[14px] text-muted mb-4">
           Instead of a deep link, a channel-less agent can ping you via <b>Web Push</b> to approve a step-up
-          while you're away — the push carries only an <b>opaque pointer</b>, never the request. Connect first
-          and turn on <b>“Notify me”</b> in the wallet (it shows a <b>channel id</b>); paste it here, then ping.
+          while you're away — the push carries only an <b>opaque pointer</b>, never the request. Just connect
+          and turn on <b>“Notify me”</b> in the wallet — it hands the agent its push channel automatically (over
+          the encrypted relay), so there's no copy/paste. (If your wallet predates that, paste the channel id
+          when asked.)
         </p>
 
         <button

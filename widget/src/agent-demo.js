@@ -221,10 +221,25 @@ const authorizeRound = async ({ relay, aud, scope, agentSk, round, onStep, signa
   const ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(iv) }, aesKey, b64ToBytes(data));
   const capability = JSON.parse(new TextDecoder().decode(ptBuf));
   const capClaims = jwtPayload(capability);
+  // If the user enabled notifications, the wallet also delivered the opaque push channel id over this same
+  // encrypted return relay — decrypt it so a push step-up needs no manual copy/paste.
+  let channelId = null;
+  if (deposited.encryptedChannel?.iv) {
+    try {
+      const cb = await subtle.decrypt(
+        { name: 'AES-GCM', iv: b64ToBytes(deposited.encryptedChannel.iv) },
+        aesKey,
+        b64ToBytes(deposited.encryptedChannel.data),
+      );
+      channelId = JSON.parse(new TextDecoder().decode(cb));
+    } catch {
+      /* no channel delivered / undecodable — caller falls back to manual entry */
+    }
+  }
   step('capability', 'Capability received & decrypted', {
     capabilityClaims: { sub: capClaims.sub, aud: capClaims.aud, scope: capClaims.scope, exp: capClaims.exp, jti: capClaims.jti },
   });
-  return { capability, capClaims };
+  return { capability, capClaims, channelId };
 };
 
 // Log in to the RP with a capability (session → holder-of-key proof → /kunji/agent → status).
@@ -326,21 +341,28 @@ export const runPushStepUp = async ({
   const aud = audience || new URL(base).hostname;
   const aborted = () => signal && signal.aborted;
   const step = (s, label, data) => onStep({ step: s, label, data });
-  if (typeof getChannelId !== 'function') throw new Error('getChannelId callback is required');
 
   const agentSk = ed25519.keygen().secretKey; // ONE key: authorize → push proof must match the poster key
   const agentPub = bytesToB64(ed25519.getPublicKey(agentSk));
   step('keygen', 'Generated the agent key', { agentPub });
 
-  // Round 1 — connect at `login` (Transport ①). The UI tells the user to ALSO toggle "Notify me" ON.
+  // Round 1 — connect at `login` (Transport ①). The UI tells the user to ALSO toggle "Notify me" ON, which
+  // makes the wallet deliver the push channel id back over the encrypted relay (decoded by authorizeRound).
   const opts = { relay, base, aud, agentSk, onStep, signal, pollMs, maxPolls };
   const r1 = await authorizeRound({ ...opts, scope: ['login'], round: 1 });
   await loginRound({ ...opts, capability: r1.capability, capClaims: r1.capClaims, round: 1 });
 
-  // The wallet showed a channel id when notifications were enabled — the UI collects it.
-  step('need-channel', 'Turn on “Notify me” in the wallet, then paste the channel id it shows');
-  const channelId = String((await getChannelId()) || '').trim();
-  if (!/^[0-9a-f]{64}$/i.test(channelId)) throw new Error('That doesn’t look like a channel id (64 hex).');
+  // Prefer the auto-delivered channel id (no copy/paste); fall back to asking the UI for it (older wallets,
+  // or if the user didn't enable notifications during round 1).
+  let channelId = r1.channelId && /^[0-9a-f]{64}$/i.test(r1.channelId) ? r1.channelId : null;
+  if (channelId) {
+    step('channel', 'Received the push channel automatically — no copy/paste', { channelId });
+  } else {
+    if (typeof getChannelId !== 'function') throw new Error('No channel id (enable “Notify me” in the wallet).');
+    step('need-channel', 'Turn on “Notify me” in the wallet, then paste the channel id it shows');
+    channelId = String((await getChannelId()) || '').trim();
+    if (!/^[0-9a-f]{64}$/i.test(channelId)) throw new Error('That doesn’t look like a channel id (64 hex).');
+  }
 
   // Round 2 — step up via PUSH. Deposit a v2 request bound to the SAME agent key → a 6-digit relay code (the
   // opaque push pointer); ping the channel with a holder-of-key proof; await the deposited capability.
