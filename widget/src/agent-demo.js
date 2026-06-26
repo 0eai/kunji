@@ -281,20 +281,82 @@ export const createStepUpSession = ({
   const base = rpBase.replace(/\/$/, '');
   const aud = audience || new URL(base).hostname;
   const agentSk = ed25519.keygen().secretKey; // ONE key for the whole session → the wallet sees one agent
+  const agentPub = bytesToB64(ed25519.getPublicKey(agentSk));
   let round = 0;
   let scope = [];
+  let channelId = null; // captured from authorize() once notifications are on (auto-delivered over the relay)
   return {
-    agentPub: bytesToB64(ed25519.getPublicKey(agentSk)),
+    agentPub,
     scope: () => scope.slice(),
-    // Authorize the agent for the full `nextScope` set (one delta approval in the wallet); returns the new
-    // capability claims + the RP login session. Reuses the session's agent key across rounds.
+    channelId: () => channelId,
+    setChannelId: (id) => {
+      if (/^[0-9a-f]{64}$/i.test(String(id || ''))) channelId = String(id);
+    },
+    // Authorize the agent for the full `nextScope` set (one delta approval via deep link / OTP); returns the
+    // new capability claims + the RP login session. Captures the push channelId if the wallet delivered one.
     authorize: async (nextScope, { onStep = () => {}, signal } = {}) => {
       round += 1;
       scope = nextScope;
       const opts = { relay, base, aud, agentSk, onStep, signal, pollMs, maxPolls };
       const r = await authorizeRound({ ...opts, scope: nextScope, round });
+      if (r.channelId && /^[0-9a-f]{64}$/i.test(r.channelId)) channelId = r.channelId;
       const l = await loginRound({ ...opts, capability: r.capability, capClaims: r.capClaims, round });
       return { capClaims: r.capClaims, status: l.status, rpSessionId: l.rpSessionId, scope: nextScope };
+    },
+    // Step up for `nextScope` via WEB PUSH (Transport ②), reusing the session's agent key + push channel — so
+    // it can be called repeatedly ("step up again"), each press pinging the wallet with no new QR. Requires a
+    // channelId (from authorize's auto-delivery or setChannelId).
+    requestViaPush: async (nextScope, { onStep = () => {}, signal } = {}) => {
+      if (!channelId) throw new Error('No push channel — enable “Notify me” in the wallet first.');
+      round += 1;
+      scope = nextScope;
+      const step = (s, label, data) => onStep({ step: s, label, data: { round, ...data } });
+      const aborted = () => signal && signal.aborted;
+      const ecdh = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
+      const transportPub = bytesToB64(await subtle.exportKey('spki', ecdh.publicKey));
+      const sessionId = randHex(32);
+      const request = { kunjiCap: 'v2', audience: aud, scope: nextScope, agentPub, transportPub, sessionId };
+      const reg = await post(`${relay}/agent/request`, request);
+      const requestId = /^\d{6}$/.test(String(reg.code)) ? reg.code : null;
+      if (!requestId) throw new Error(reg.error === 'rate_limited' ? 'Relay rate-limited — wait a moment.' : 'Relay unavailable.');
+      const proof = signJWS(
+        { alg: 'EdDSA', typ: 'kunji-agentproof+jwt' },
+        { aud: channelId, challenge: requestId, iat: Math.floor(Date.now() / 1000), jti: randHex(16), cap: channelId },
+        agentSk,
+      );
+      const disp = await post(`${relay}/push/dispatch`, { channelId, requestId, proof });
+      if (disp.error)
+        throw new Error(
+          disp.error === 'not_found'
+            ? 'Channel not found — enable notifications for this app in the wallet first.'
+            : disp.error === 'bad_proof'
+              ? 'Push rejected — the wallet hasn’t authorized this agent to push (re-enable “Notify me”).'
+              : 'Push dispatch failed: ' + disp.error,
+        );
+      step('dispatched', 'Pushed to the wallet — approve the notification', { requestId, delivered: disp.delivered });
+      step('await', 'Waiting for you to approve the notification…');
+      let deposited = null;
+      let warned429 = false;
+      for (let i = 0; i < maxPolls; i++) {
+        if (aborted()) throw new Error('aborted');
+        const r = await fetch(`${relay}/agent/capability?sessionId=${sessionId}`);
+        if (r.status === 410) throw new Error('Authorization expired before approval.');
+        if (r.ok) { deposited = await r.json(); break; }
+        if (r.status === 429) { if (!warned429) { step('await', 'Relay busy — backing off, still waiting…'); warned429 = true; } await sleep(pollMs * 2); continue; }
+        await sleep(pollMs);
+      }
+      if (!deposited) throw new Error('Timed out waiting for approval.');
+      const walletPub = await subtle.importKey('spki', b64ToBytes(deposited.walletPubE), { name: 'ECDH', namedCurve: 'P-256' }, true, []);
+      const aesKey = await subtle.deriveKey({ name: 'ECDH', public: walletPub }, ecdh.privateKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      const { iv, data } = deposited.encryptedCapability;
+      const ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(iv) }, aesKey, b64ToBytes(data));
+      const capability = JSON.parse(new TextDecoder().decode(ptBuf));
+      const capClaims = jwtPayload(capability);
+      step('capability', 'Capability received & decrypted', {
+        capabilityClaims: { sub: capClaims.sub, aud: capClaims.aud, scope: capClaims.scope, exp: capClaims.exp, jti: capClaims.jti },
+      });
+      const l = await loginRound({ relay, base, aud, agentSk, capability, capClaims, round, onStep, pollMs, maxPolls });
+      return { capClaims, status: l.status, rpSessionId: l.rpSessionId, scope: nextScope };
     },
     // Call the RP's scope-gated demo action (read:profile) with a login session.
     callProfile: (rpSessionId) => getJson(`${base}/api/profile?sessionId=${rpSessionId}`),
@@ -372,93 +434,38 @@ export const runPushStepUp = async ({
   pollMs = 3000,
   maxPolls = 100,
 } = {}) => {
-  const relay = relayUrl.replace(/\/$/, '');
-  const base = rpBase.replace(/\/$/, '');
-  const aud = audience || new URL(base).hostname;
-  const aborted = () => signal && signal.aborted;
-  const step = (s, label, data) => onStep({ step: s, label, data });
-
-  const agentSk = ed25519.keygen().secretKey; // ONE key: authorize → push proof must match the poster key
-  const agentPub = bytesToB64(ed25519.getPublicKey(agentSk));
-  step('keygen', 'Generated the agent key', { agentPub });
+  const session = createStepUpSession({ relayUrl, rpBase, audience, pollMs, maxPolls });
+  onStep({ step: 'keygen', label: 'Generated the agent key', data: { agentPub: session.agentPub } });
 
   // Round 1 — connect at `login` (Transport ①). The UI tells the user to ALSO toggle "Notify me" ON, which
-  // makes the wallet deliver the push channel id back over the encrypted relay (decoded by authorizeRound).
-  const opts = { relay, base, aud, agentSk, onStep, signal, pollMs, maxPolls };
-  const r1 = await authorizeRound({ ...opts, scope: ['login'], round: 1 });
-  await loginRound({ ...opts, capability: r1.capability, capClaims: r1.capClaims, round: 1 });
+  // makes the wallet deliver the push channel id back over the encrypted relay (captured by the session).
+  await session.authorize(['login'], { onStep, signal });
 
   // Prefer the auto-delivered channel id (no copy/paste); fall back to asking the UI for it (older wallets,
   // or if the user didn't enable notifications during round 1).
-  let channelId = r1.channelId && /^[0-9a-f]{64}$/i.test(r1.channelId) ? r1.channelId : null;
+  let channelId = session.channelId();
   if (channelId) {
-    step('channel', 'Received the push channel automatically — no copy/paste', { channelId });
+    onStep({ step: 'channel', label: 'Received the push channel automatically — no copy/paste', data: { channelId } });
   } else {
     if (typeof getChannelId !== 'function') throw new Error('No channel id (enable “Notify me” in the wallet).');
-    step('need-channel', 'Turn on “Notify me” in the wallet, then paste the channel id it shows');
-    channelId = String((await getChannelId()) || '').trim();
-    if (!/^[0-9a-f]{64}$/i.test(channelId)) throw new Error('That doesn’t look like a channel id (64 hex).');
+    onStep({ step: 'need-channel', label: 'Turn on “Notify me” in the wallet, then paste the channel id it shows' });
+    const pasted = String((await getChannelId()) || '').trim();
+    if (!/^[0-9a-f]{64}$/i.test(pasted)) throw new Error('That doesn’t look like a channel id (64 hex).');
+    session.setChannelId(pasted);
+    channelId = pasted;
   }
 
-  // Round 2 — step up via PUSH. Deposit a v2 request bound to the SAME agent key → a 6-digit relay code (the
-  // opaque push pointer); ping the channel with a holder-of-key proof; await the deposited capability.
-  const ecdh = await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
-  const transportPub = bytesToB64(await subtle.exportKey('spki', ecdh.publicKey));
-  const sessionId = randHex(32);
-  const request = { kunjiCap: 'v2', audience: aud, scope: ['login', 'read:profile'], agentPub, transportPub, sessionId };
-  const reg = await post(`${relay}/agent/request`, request);
-  const requestId = /^\d{6}$/.test(String(reg.code)) ? reg.code : null;
-  if (!requestId) throw new Error(reg.error === 'rate_limited' ? 'Relay rate-limited — wait a moment.' : 'Relay unavailable.');
-
-  const proof = signJWS(
-    { alg: 'EdDSA', typ: 'kunji-agentproof+jwt' },
-    { aud: channelId, challenge: requestId, iat: Math.floor(Date.now() / 1000), jti: randHex(16), cap: channelId },
-    agentSk,
-  );
-  const disp = await post(`${relay}/push/dispatch`, { channelId, requestId, proof });
-  if (disp.error)
-    throw new Error(
-      disp.error === 'not_found'
-        ? 'Channel not found — enable notifications for this app in the wallet first.'
-        : disp.error === 'bad_proof'
-          ? 'Push rejected — the wallet hasn’t authorized this agent to push (re-enable “Notify me”).'
-          : 'Push dispatch failed: ' + disp.error,
-    );
-  step('dispatched', 'Pushed to the wallet — approve the notification', { requestId, delivered: disp.delivered });
-
-  step('await', 'Waiting for you to approve the notification…');
-  let deposited = null;
-  let warned429 = false;
-  for (let i = 0; i < maxPolls; i++) {
-    if (aborted()) throw new Error('aborted');
-    const r = await fetch(`${relay}/agent/capability?sessionId=${sessionId}`);
-    if (r.status === 410) throw new Error('Authorization expired before approval.');
-    if (r.ok) { deposited = await r.json(); break; }
-    if (r.status === 429) { if (!warned429) { step('await', 'Relay busy — backing off, still waiting…'); warned429 = true; } await sleep(pollMs * 2); continue; }
-    await sleep(pollMs);
-  }
-  if (!deposited) throw new Error('Timed out waiting for approval.');
-
-  const walletPub = await subtle.importKey('spki', b64ToBytes(deposited.walletPubE), { name: 'ECDH', namedCurve: 'P-256' }, true, []);
-  const aesKey = await subtle.deriveKey({ name: 'ECDH', public: walletPub }, ecdh.privateKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-  const { iv, data } = deposited.encryptedCapability;
-  const ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(iv) }, aesKey, b64ToBytes(data));
-  const capability = JSON.parse(new TextDecoder().decode(ptBuf));
-  const capClaims = jwtPayload(capability);
-  step('capability', 'Capability received & decrypted', {
-    capabilityClaims: { sub: capClaims.sub, aud: capClaims.aud, scope: capClaims.scope, exp: capClaims.exp, jti: capClaims.jti },
-  });
-
-  const l2 = await loginRound({ ...opts, capability, capClaims, round: 2 });
-  const gated = await getJson(`${base}/api/profile?sessionId=${l2.rpSessionId}`);
-  step('gated-ok', `GET /api/profile → ${gated.status} — released`, { status: gated.status, profile: gated.body.profile });
+  // Round 2 — step up via PUSH (reuses the session's agent key + channel).
+  const r = await session.requestViaPush(['login', 'read:profile'], { onStep, signal });
+  const gated = await session.callProfile(r.rpSessionId);
+  onStep({ step: 'gated-ok', label: `GET /api/profile → ${gated.status} — released`, data: { status: gated.status, profile: gated.body.profile } });
   return {
-    status: l2.status.status || 'approved',
-    scope: l2.status.scope || capClaims.scope || null,
+    status: r.status.status || 'approved',
+    scope: r.status.scope || r.capClaims.scope || null,
     profile: gated.body.profile || null,
     via: 'push',
     steppedUp: true,
-    io: { channelId, requestId, round2: capClaims, profile: gated.body },
+    io: { channelId, round2: r.capClaims, profile: gated.body },
   };
 };
 

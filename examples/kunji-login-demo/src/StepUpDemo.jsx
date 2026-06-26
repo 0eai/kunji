@@ -19,9 +19,11 @@ export default function StepUpDemo({ onBack }) {
   const [pushResult, setPushResult] = useState(null);
   const [showChannel, setShowChannel] = useState(false); // reveal the channel-id paste field mid-flow
   const [channelInput, setChannelInput] = useState('');
-  const [extraIdx, setExtraIdx] = useState(0); // how many "step up again" extras have been granted
+  const [extraIdx, setExtraIdx] = useState(0); // how many deep-link "step up again" extras have been granted
+  const [pushExtraIdx, setPushExtraIdx] = useState(0); // …and via push
   const [againBusy, setAgainBusy] = useState(false);
-  const sessionRef = useRef(null); // the retained step-up session (one agent key across rounds)
+  const sessionRef = useRef(null); // the retained deep-link step-up session (one agent key across rounds)
+  const pushSessionRef = useRef(null); // the retained push step-up session (one agent key + channel)
   const termRef = useRef(null);
   const codeRef = useRef(null);
   const qrRef = useRef(null);
@@ -191,8 +193,8 @@ export default function StepUpDemo({ onBack }) {
   // shows a NOTIFICATION; tapping it opens the re-consent sheet. Needs the channel id the wallet reveals when
   // you turn on "Notify me" — collected mid-flow via the getChannelId callback.
   const runPush = useCallback(async () => {
-    if (busy || pushBusy || !window.kunjiAgentDemo?.runPushStepUp) {
-      if (!window.kunjiAgentDemo?.runPushStepUp) termLine('tac', '  ✗ demo module failed to load');
+    if (busy || pushBusy || !window.kunjiAgentDemo?.createStepUpSession) {
+      if (!window.kunjiAgentDemo?.createStepUpSession) termLine('tac', '  ✗ demo module failed to load');
       return;
     }
     if (termRef.current) termRef.current.replaceChildren();
@@ -203,25 +205,44 @@ export default function StepUpDemo({ onBack }) {
     setPushResult(null);
     setShowChannel(false);
     setChannelInput('');
+    setPushExtraIdx(0);
+    pushSessionRef.current = null;
     setPushBusy(true);
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
     termLine('tdim', '# push demo — approve to connect + turn on “Notify me”, then ping via push');
     try {
-      const r = await window.kunjiAgentDemo.runPushStepUp({
+      // Retained session (one agent key + channel) so later "step up again" presses ping via push, no QR.
+      const session = window.kunjiAgentDemo.createStepUpSession({
         relayUrl: 'https://app.kunji.cc',
         rpBase: 'https://kunji-demo.web.app',
         audience: 'kunji-demo.web.app',
-        onStep: handleStep,
-        signal: abortRef.current.signal,
-        getChannelId: () =>
-          new Promise((resolve) => {
-            channelResolveRef.current = resolve;
-            setShowChannel(true);
-          }),
       });
-      setPushResult(r);
-      if (statusRef.current) statusRef.current.textContent = 'Stepped up via push — access granted.';
+      pushSessionRef.current = session;
+      handleStep({ step: 'keygen', data: { agentPub: session.agentPub } });
+
+      // Round 1 — connect at login; the wallet auto-delivers the channel id if "Notify me" is on.
+      await session.authorize(['login'], { onStep: handleStep, signal });
+      if (session.channelId()) {
+        handleStep({ step: 'channel', data: { channelId: session.channelId() } });
+      } else {
+        handleStep({ step: 'need-channel' });
+        const pasted = await new Promise((resolve) => {
+          channelResolveRef.current = resolve;
+          setShowChannel(true);
+        });
+        session.setChannelId(String(pasted || '').trim());
+        setShowChannel(false);
+      }
+
+      // Round 2 — step up via push.
+      const r = await session.requestViaPush(['login', 'read:profile'], { onStep: handleStep, signal });
+      const gated = await session.callProfile(r.rpSessionId);
+      handleStep({ step: 'gated-ok', data: { status: gated.status, profile: gated.body.profile } });
+      setPushResult({ scope: r.scope, profile: gated.body.profile, via: 'push' });
+      setPushExtraIdx(0);
+      if (statusRef.current) statusRef.current.textContent = 'Stepped up via push — try “Step up again”.';
     } catch (e) {
       termLine('tac', '  ✗ ' + (e.message || String(e)));
       if (statusRef.current) statusRef.current.textContent = 'Stopped: ' + (e.message || e);
@@ -230,6 +251,30 @@ export default function StepUpDemo({ onBack }) {
       setShowChannel(false);
     }
   }, [busy, pushBusy, handleStep, termLine]);
+
+  // "Step up again" via PUSH — reuses the push session's agent key + channel, so each press just pings the
+  // wallet again (a fresh notification + delta approval), no new QR.
+  const pushStepUpAgain = useCallback(async () => {
+    const session = pushSessionRef.current;
+    if (!session || againBusy || pushBusy || pushExtraIdx >= EXTRA_SCOPES.length) return;
+    const next = EXTRA_SCOPES[pushExtraIdx];
+    setAgainBusy(true);
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    termLine('tdim', `  ↑ push step-up: requesting "${next}" — approve the notification`);
+    if (statusRef.current) statusRef.current.textContent = `Pinging for +${next} — approve the notification…`;
+    try {
+      const a = await session.requestViaPush([...session.scope(), next], { onStep: handleStep, signal: abortRef.current.signal });
+      setPushExtraIdx((i) => i + 1);
+      setPushResult((r) => ({ ...(r || {}), scope: a.scope }));
+      if (statusRef.current) statusRef.current.textContent = `Granted +${next}. Scope is now ${a.scope.join(', ')}.`;
+    } catch (e) {
+      termLine('tac', '  ✗ ' + (e.message || String(e)));
+      if (statusRef.current) statusRef.current.textContent = 'Stopped: ' + (e.message || e);
+    } finally {
+      setAgainBusy(false);
+    }
+  }, [againBusy, pushBusy, pushExtraIdx, handleStep, termLine]);
 
   const submitChannel = useCallback(() => {
     const v = channelInput.trim();
@@ -390,6 +435,20 @@ export default function StepUpDemo({ onBack }) {
             <pre className="rounded-lg border border-line bg-surface p-3 overflow-auto text-[12px] font-mono text-ink mt-2">
               {JSON.stringify(pushResult.profile, null, 2)}
             </pre>
+            {/* Repeat via push — each press pings the wallet again (fresh notification + delta), no QR. */}
+            {pushExtraIdx < EXTRA_SCOPES.length ? (
+              <button
+                onClick={pushStepUpAgain}
+                disabled={busy || pushBusy || againBusy}
+                className="inline-flex items-center justify-center px-4 py-2 text-[13px] mt-3 border border-line hover:border-ink/40 text-ink font-semibold rounded-full transition-colors disabled:opacity-50"
+              >
+                {againBusy ? 'Pinging…' : `Step up again via push (+${EXTRA_SCOPES[pushExtraIdx]})`}
+              </button>
+            ) : (
+              <p className="text-[13px] text-success mt-3">
+                All demo scopes granted — each was a fresh push notification, under one agent.
+              </p>
+            )}
           </div>
         )}
 
