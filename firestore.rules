@@ -12,9 +12,24 @@ service cloud.firestore {
     // WRITES go through the signed-writes Cloud Function (Admin SDK, which bypasses
     // these rules) — direct client writes are denied, so a leaked vaultId alone cannot
     // tamper with the vault.
-    match /vaults/{vaultId}/{document=**} {
-      allow read: if request.auth != null;
+    //
+    // Split `get` from `list` (S42): the collection root allows `get` (address a vault by
+    // its known 256-bit vaultId) but NOT `list`, so an authed client cannot ENUMERATE the
+    // `vaults` collection (rules_version 2's recursive `{document=**}` otherwise made a
+    // top-level list readable, leaking every vault's existence + writePublicKey + metadata).
+    // The inner match starts with a required `{subcollection}` segment BEFORE the recursive
+    // `{document=**}` — because `{document=**}` matches zero-or-more in v2, a bare
+    // `match /{document=**}` would ALSO match the vault root doc and re-grant `list` at the
+    // collection level (the exact bug). Requiring `{subcollection}` scopes the read rule to
+    // paths strictly BELOW a known vault, so reads within a vault work but top-level list is
+    // denied. The app only ever lists subcollections of a vaultId it already holds.
+    match /vaults/{vaultId} {
+      allow get: if request.auth != null;   // by known vaultId; NO list → no enumeration
       allow write: if false;
+      match /{subcollection}/{document=**} {
+        allow get, list: if request.auth != null;   // reads within a known vault are fine
+        allow write: if false;
+      }
     }
 
     // Device-linking relay (issuer → consumer). Two-round, write-once:

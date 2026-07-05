@@ -16,7 +16,7 @@ import {
   signWithEd25519,
   signMessageEd25519,
 } from '../lib/crypto';
-import { mintCapability, isValidScopeItem } from '../lib/capability';
+import { mintCapability, isValidScopeList } from '../lib/capability';
 import { logActivity } from './activityLog';
 
 const VAULT_WRITE_URL = import.meta.env.VITE_VAULT_WRITE_URL || '/vault/write';
@@ -65,10 +65,7 @@ export const parseAgentRequest = (raw) => {
     !req.audience ||
     typeof req.agentPub !== 'string' ||
     !ED25519_PUB_B64.test(req.agentPub) ||
-    !Array.isArray(req.scope) ||
-    req.scope.length === 0 ||
-    req.scope.length > 16 ||
-    !req.scope.every(isValidScopeItem)
+    !isValidScopeList(req.scope)
   ) {
     throw new Error('invalid_request');
   }
@@ -130,10 +127,7 @@ export const parsePortfolioRequest = (raw) => {
       typeof it.audience !== 'string' ||
       !it.audience ||
       !HEX64.test(it.sessionId || '') ||
-      !Array.isArray(it.scope) ||
-      it.scope.length === 0 ||
-      it.scope.length > 16 ||
-      !it.scope.every(isValidScopeItem)
+      !isValidScopeList(it.scope)
     ) {
       throw new Error('invalid_request');
     }

@@ -99,7 +99,13 @@ export const isValidScopeItem = (item) => {
   return RESERVED_SCOPES.has(id) || id.includes(':'); // reserved bare, otherwise namespaced
 };
 export const isValidScopeList = (scope) =>
-  Array.isArray(scope) && scope.length > 0 && scope.length <= 16 && scope.every(isValidScopeItem);
+  Array.isArray(scope) &&
+  scope.length > 0 &&
+  scope.length <= 16 &&
+  scope.every(isValidScopeItem) &&
+  // Reject duplicate ids (S43): the consent UI toggles/renders per id, so two items with the same id but
+  // different constraints would be granted by a single tap and the RP's scopeSatisfies honors the broadest.
+  new Set(scope.map(scopeId)).size === scope.length;
 
 const parseAmount = (v) => {
   const m = /^\s*(\d+(?:\.\d+)?)\s*([A-Za-z]{0,8})\s*$/.exec(String(v));

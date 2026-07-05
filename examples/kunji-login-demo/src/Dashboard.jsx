@@ -4,13 +4,18 @@ import React from 'react';
 // this small module. The algorithm is specified in docs/discoverable-login.md.
 import { deriveHandle } from '../../../src/lib/kunjiHandle.js';
 
+// `claims` are self-asserted + unverified, so scheme-gate an attacker-suppliable picture before binding it
+// to <img src> — only https: or a data:image/ URI (drop http:/javascript:/data:text tracking-pixel vectors).
+// Mirrors the safePic every other RP (RpjsDemo.jsx + each app.js) applies (S45).
+const safePic = (p) => (typeof p === 'string' && /^(https:|data:image\/)/i.test(p) ? p : null);
+
 export default function Dashboard({ sub, claims, onLogout }) {
   // Prefer the user's consented custom profile; otherwise fall back to the default
   // identity derived from `sub`. `claims` are self-asserted + unverified — React
-  // escapes the name on render, and the avatar is shown as an <img> (no server fetch).
+  // escapes the name on render, and the avatar is scheme-gated via safePic before <img src>.
   const fallback = deriveHandle(sub);
   const name = claims?.name || fallback.name;
-  const avatar = claims?.picture || fallback.avatarDataUri;
+  const avatar = safePic(claims?.picture) || fallback.avatarDataUri;
   const isCustom = !!(claims && (claims.name || claims.picture));
 
   return (

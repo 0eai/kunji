@@ -14,7 +14,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      # Java is required by the Firestore emulator that backs `npm run test:rules`.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: npm run test:rules
       - run: npm run build

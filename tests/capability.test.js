@@ -4,7 +4,9 @@ import {
   mintDelegatedCapability,
   buildAgentProof,
   verifyCapabilityAssertion,
+  isValidScopeList,
 } from '../src/lib/capability.js';
+import { parseAgentRequest } from '../src/services/capability.js';
 import {
   generateMasterKey,
   generateEd25519KeyPair,
@@ -230,5 +232,36 @@ describe('capability — delegation chains (attenuation)', () => {
       challenge: CHALLENGE,
     });
     expect(r).toMatchObject({ ok: false, error: 'chain_too_deep' });
+  });
+});
+
+describe('capability — scope validation (S43: no duplicate ids)', () => {
+  it('accepts a scope with distinct ids', () => {
+    expect(isValidScopeList(['login', 'payments:charge'])).toBe(true);
+    expect(isValidScopeList([{ id: 'payments:charge', max: '50USD' }])).toBe(true);
+  });
+
+  it('rejects a scope with duplicate ids (differing constraints would smuggle the broadest past consent)', () => {
+    expect(
+      isValidScopeList([
+        { id: 'payments:charge', max: '50USD' },
+        { id: 'payments:charge', max: '999999USD' },
+      ]),
+    ).toBe(false);
+    expect(isValidScopeList(['login', 'login'])).toBe(false);
+  });
+
+  it('parseAgentRequest rejects a duplicate-id request as invalid_request', () => {
+    const agentPub = exportEd25519PublicKey(generateEd25519KeyPair().publicKey);
+    const req = {
+      kunjiCap: 'v1',
+      audience: AUD,
+      agentPub,
+      scope: [
+        { id: 'payments:charge', max: '50USD' },
+        { id: 'payments:charge', max: '999999USD' },
+      ],
+    };
+    expect(() => parseAgentRequest(JSON.stringify(req))).toThrow('invalid_request');
   });
 });
