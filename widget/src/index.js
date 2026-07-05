@@ -17,6 +17,7 @@
  */
 import { renderBrandedQr } from '../../src/lib/brandedQr.js';
 import { deriveHandle } from '../../src/lib/kunjiHandle.js';
+import { encodeCompactQr } from '../../src/lib/qrCodec.js';
 
 const APP_URL_DEFAULT = 'https://app.kunji.cc';
 const POLL_MS = 2000;
@@ -73,35 +74,41 @@ const CSS = `
 .lead { font-size:13px; color:#6b6b66; margin:-8px 0 16px; }
 .lead b { color:#1a1a18; font-weight:600; }
 
-.tabs { display:flex; gap:24px; border-bottom:1px solid #e7e5e0; margin-bottom:18px; }
-.tab { background:none; border:0; border-bottom:2px solid transparent; margin-bottom:-1px;
-  padding:0 0 8px; cursor:pointer; font-size:14px; font-weight:500; color:#a8a59c; }
-.tab:hover{ color:#6b6b66; }
-.tab.on { color:#1a1a18; border-color:#d97706; }
+/* Section label — organizes the sheet by DEVICE ("another device" / "this device") instead of by method. */
+.sect { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.14em; color:#a8a59c; margin:20px 0 12px; }
+.sect:first-of-type { margin-top:4px; }
 
-.panel { min-height: 248px; }
+.panel { }
 .qrbox { position:relative; display:inline-block; border:1px solid #e7e5e0; border-radius:16px; padding:12px; background:#fff; line-height:0; }
 .qrbox svg { display:block; width:224px; height:224px; }
 .cap { font-size:13px; color:#6b6b66; margin-top:12px; }
-.otp { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
-  font-size:38px; letter-spacing:.16em; color:#1a1a18; margin-top:6px; }
-.otplabel { font-size:11px; text-transform:uppercase; letter-spacing:.16em; color:#a8a59c; }
-
-.divider { display:flex; align-items:center; gap:12px; color:#a8a59c; font-size:11px;
-  text-transform:uppercase; letter-spacing:.14em; margin:18px 0 14px; }
-.divider::before,.divider::after{ content:''; flex:1; height:1px; background:#e7e5e0; }
+/* Inline code fallback (replaces the old OTP tab) — shown under the QR / open-app button. */
+.codehint { font-size:13px; color:#6b6b66; margin-top:12px; }
+.codehint.center { text-align:center; }
+.codehint b { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
+  font-size:15px; letter-spacing:.1em; color:#1a1a18; font-weight:600; }
 
 .open { width:100%; display:inline-flex; align-items:center; justify-content:center; gap:9px;
   border:0; border-radius:999px; padding:12px; cursor:pointer; text-decoration:none;
   background:#f59e0b; color:#1a1a18; font-size:14px; font-weight:600; }
 .open:hover{ background:#d97706; }
 .open .mark{ width:17px; height:17px; }
+/* Secondary (outline) variant — the "this device" action on desktop, where the QR is the hero. */
+.open.secondary { background:transparent; color:#1a1a18; border:1px solid #e7e5e0; }
+.open.secondary:hover{ background:#faf9f6; }
 
-.expiry { font-size:12px; color:#a8a59c; margin-top:16px; text-align:center; }
+/* Mobile: a phone can't scan its own screen, so the QR is a demoted native disclosure. */
+.qrdisc { margin-top:16px; }
+.qrdisc summary { list-style:none; cursor:pointer; font-size:13px; color:#6b6b66; padding:2px 0; }
+.qrdisc summary::-webkit-details-marker { display:none; }
+.qrdisc summary:hover { color:#1a1a18; }
+.qrdisc[open] summary { margin-bottom:12px; }
+
+.expiry { font-size:12px; color:#a8a59c; margin-top:18px; text-align:center; }
 .expiry b{ font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums; color:#6b6b66; font-weight:500; }
 .center { text-align:center; }
 .note { font-size:14px; color:#6b6b66; padding:28px 0; text-align:center; }
-.panel.expired { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; }
+.panel.expired { min-height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; }
 .panel.expired p { font-size:14px; color:#6b6b66; line-height:1.6; }
 .again { margin-top:12px; background:#f59e0b; color:#1a1a18; border:0; border-radius:999px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
 .ok { display:flex; flex-direction:column; align-items:center; gap:10px; padding:34px 0; }
@@ -176,7 +183,10 @@ function openModal(opts, sourceEl) {
     if (e.target === overlay) close();
   });
 
-  let tab = window.matchMedia('(min-width:640px)').matches ? 'qr' : 'otp';
+  // Organize by DEVICE, not method: on desktop the wallet is usually on a *phone*, so the QR is the
+  // hero; on mobile you can't scan your own screen, so the on-device "Open the kunji app" is the hero
+  // and the QR is a demoted disclosure (for a rare second device).
+  const isDesktop = window.matchMedia('(min-width:640px)').matches;
   let currentSessionId = null;
 
   // `result` is the RP's poll payload, e.g. { status, sub, customToken? }.
@@ -245,7 +255,10 @@ function openModal(opts, sourceEl) {
     if (opts.callbackUrl !== `https://${opts.audience}/kunji/callback`) {
       qrPayload.callbackUrl = opts.callbackUrl;
     }
-    const qrData = JSON.stringify(qrPayload);
+    // Compact "K1" encoding → an all-uppercase-alphanumeric string, so the QR renders in the denser
+    // alphanumeric mode (see src/lib/qrCodec.js). The wallet accepts both K1 and JSON. The same-device
+    // deep link below keeps the full JSON payload (length is free there).
+    const qrData = encodeCompactQr(qrPayload);
 
     // Only ever build the deep link against an https wallet URL — reject
     // javascript:/data:/http: so a hostile data-app-url can't inject a scheme.
@@ -272,44 +285,40 @@ function openModal(opts, sourceEl) {
 
     render();
     function render() {
+      const fmtCode = code ? `${code.slice(0, 3)} ${code.slice(3)}` : '';
+      // The branded QR + its scan caption (shared by both layouts).
+      const qrBlock = `
+        <div class="qrbox"></div>
+        <p class="cap">Scan with the kunji app${isDesktop ? ' on your phone' : ' from another device'}.</p>`;
+      // Desktop: the wallet is usually on a phone → the QR is the hero; "this device" is the secondary path.
+      const desktop = `
+        <div class="sect">On another device</div>
+        <div class="panel">
+          ${qrBlock}
+          ${code ? `<p class="codehint">Can't scan? Enter code <b>${fmtCode}</b> in the app.</p>` : ''}
+        </div>
+        <div class="sect">On this device</div>
+        <a class="open secondary" href="${deepLink}"><span class="mark">${KEY_SVG}</span> Open the kunji app</a>`;
+      // Mobile: you can't scan your own screen → the on-device action is the hero; the QR is a disclosure.
+      const mobile = `
+        <a class="open" href="${deepLink}"><span class="mark">${KEY_SVG}</span> Open the kunji app</a>
+        ${code ? `<p class="codehint center">Or enter code <b>${fmtCode}</b> in the app.</p>` : ''}
+        <details class="qrdisc">
+          <summary>Show QR for another device</summary>
+          <div class="panel">${qrBlock}</div>
+        </details>`;
       sheet.innerHTML = `
         <div class="top">
           <div class="title"><span class="mark">${KEY_SVG}</span> Sign in with kunji</div>
           <button class="x" aria-label="Close">×</button>
         </div>
         <p class="lead">Sign in to <b>${esc(opts.appName)}</b> — no password, no account.</p>
-        <div class="tabs">
-          <button class="tab ${tab === 'qr' ? 'on' : ''}" data-t="qr">QR</button>
-          ${code ? `<button class="tab ${tab === 'otp' ? 'on' : ''}" data-t="otp">OTP</button>` : ''}
-        </div>
-        <div class="panel">
-          ${
-            tab === 'qr' || !code
-              ? `
-            <div class="qrbox"></div>
-            <p class="cap">Scan with the kunji app on your phone.</p>
-          `
-              : `
-            <p class="otplabel">Type this code into kunji</p>
-            <div class="otp">${code.slice(0, 3)} ${code.slice(3)}</div>
-            <p class="cap">Open kunji → enter this code.</p>
-          `
-          }
-        </div>
-        <div class="divider">on this device</div>
-        <a class="open" href="${deepLink}"><span class="mark">${KEY_SVG}</span> Sign in with kunji</a>
+        ${isDesktop ? desktop : mobile}
         <p class="expiry"></p>`;
 
       sheet.querySelector('.x').onclick = close;
       const box = sheet.querySelector('.qrbox');
-      if (box) renderBrandedQr(box, { data: qrData }); // shared styled QR + amber logo plate
-      sheet.querySelectorAll('.tab').forEach(
-        (b) =>
-          (b.onclick = () => {
-            tab = b.dataset.t;
-            render();
-          }),
-      );
+      if (box) renderBrandedQr(box, { data: qrData }); // shared styled QR + amber logo plate (renders even inside the collapsed <details>)
 
       // countdown (pauses while tab hidden); on expiry offer a fresh code
       const exp = sheet.querySelector('.expiry');

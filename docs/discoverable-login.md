@@ -134,7 +134,8 @@ Rules:
     not the QR (it's the longest, most variable field). Older/full QRs that still carry these fields
     parse unchanged — this is a backward-compatible relaxation of v2, no version bump.
 - `sessionId`/`challenge` are opaque tokens the wallet only echoes back; the RP picks the encoding.
-  **base64url** is ~30% shorter than hex for the same entropy (a leaner QR) — recommended.
+  **base64url** is ~30% shorter than hex for the same entropy — or use the **`K1` compact encoding**
+  below for the smallest QR.
 - `audience` is the domain the user is logging into. Kunji **displays it** and **signs it** (anti-relay).
 - The provided-or-derived `callbackUrl` MUST be same-site as `audience` (kunji rejects otherwise); a
   derived callback is same-site by construction, so it can't be relayed cross-site.
@@ -144,6 +145,33 @@ Rules:
   a consent toggle (default OFF); the user may decline, so the RP must not depend on receiving it.
   Omit `scope` and the RP simply renders the default identity (§8.1).
 - `v1` (the existing pre-registered flow) remains valid; see §11.
+
+#### 5.1.1 Compact encoding (`K1`)
+
+The JSON above is human-readable but forces the QR into **byte mode** (8 bits/char) because of its
+lowercase letters and `{}":,` punctuation. The **`K1` encoding** carries the *same* request as an
+all-uppercase-alphanumeric string, so QR encoders auto-select the denser **alphanumeric mode**
+(5.5 bits/char) — dropping a representative login QR from ~v15 to ~v11 (77×77 → 61×61 modules) at the
+same error-correction level, i.e. visibly coarser, easier-to-scan modules.
+
+```
+K1:<base32-nopad( struct )>
+```
+
+- **`struct`** is a small binary record: `version(1) · flags(1) · [uint16-len + bytes]×` for
+  `sessionId, challenge, audience, expiresAt` (always, in that order), then the present optionals
+  `appName, callbackUrl, scope` (a `flags` bit marks each). `expiresAt` is its decimal string; `scope`
+  is its JSON. `sessionId`/`challenge` are stored as **raw bytes** when they are base64url (verified by
+  a round-trip check, so it never assumes a format it can't reproduce — otherwise UTF-8); a `flags` bit
+  records which. `mode`/`returnUrl` are omitted (same as the lean QR).
+- **base32** is RFC 4648 (`A–Z2–7`, no padding). With the `K1:` prefix the whole string is `[0-9A-Z:]`
+  ⊂ the QR alphanumeric charset.
+- **Dual-accept (no version bump).** The wallet dispatches by the `K1:` prefix and decodes either format;
+  both then pass the **same** validation (§5.1 rules + §5.2 same-site callback). The `?approve=`
+  same-device **deep link stays JSON** (length is free there). So an RP may emit JSON *or* `K1`; the
+  drop-in `rp.js` widget emits `K1` for the QR automatically — **RP developers using it need no changes**.
+- Reference codec: `src/lib/qrCodec.js` (`encodeCompactQr` / `decodeCompactQr`), byte-equal across the
+  wallet, the widget, and the demos.
 
 ### 5.2 Signed assertion (wallet → RP callback)
 

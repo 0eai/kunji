@@ -14,6 +14,7 @@ import {
   requestsProfile,
   mergeCredentials,
 } from '../src/services/identity.js';
+import { encodeCompactQr } from '../src/lib/qrCodec.js';
 
 const validQR = (over = {}) =>
   JSON.stringify({
@@ -119,6 +120,47 @@ describe('parseQRPayload', () => {
     expect(() =>
       parseQRPayload(validQR({ audience: 'victim.com', callbackUrl: 'http://localhost:9999/cb' })),
     ).toThrow('untrusted_callback');
+  });
+});
+
+describe('parseQRPayload — compact K1 format (dispatch + shared gate)', () => {
+  const data = {
+    sessionId: 's',
+    challenge: 'c',
+    audience: 'app.com',
+    callbackUrl: 'https://app.com/kunji/callback',
+    expiresAt: Date.now() + 60_000,
+  };
+
+  it('accepts a K1 string and yields the same normalized object as the equivalent JSON', () => {
+    const fromK1 = parseQRPayload(encodeCompactQr(data));
+    const fromJson = parseQRPayload(JSON.stringify({ kunjiAuth: 'v2', ...data }));
+    expect(fromK1).toEqual(fromJson);
+  });
+
+  it('derives the same-site callback when a K1 payload omits it', () => {
+    const { callbackUrl } = parseQRPayload(
+      encodeCompactQr({ sessionId: 's', challenge: 'c', audience: 'app.com', expiresAt: Date.now() + 60_000 }),
+    );
+    expect(callbackUrl).toBe('https://app.com/kunji/callback');
+  });
+
+  it('runs the SAME expiry gate on a K1 payload', () => {
+    expect(() => parseQRPayload(encodeCompactQr({ ...data, expiresAt: Date.now() - 1000 }))).toThrow(
+      'expired_qr',
+    );
+  });
+
+  it('runs the SAME callback gate on a K1 payload (bare-TLD audience → rejected)', () => {
+    expect(() =>
+      parseQRPayload(
+        encodeCompactQr({ sessionId: 's', challenge: 'c', audience: 'com', callbackUrl: 'https://evil.com/cb', expiresAt: Date.now() + 60_000 }),
+      ),
+    ).toThrow('untrusted_callback');
+  });
+
+  it('maps a malformed K1 string to invalid_qr', () => {
+    expect(() => parseQRPayload('K1:@@@')).toThrow('invalid_qr');
   });
 });
 

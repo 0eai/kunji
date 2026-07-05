@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { renderBrandedQr, b64url } from './qr.js';
+// Shared login-QR codec (the wallet accepts K1 + JSON). Imported from the wallet's single source of
+// truth — same cross-package import the demo already uses for kunjiHandle. The QR gets the compact
+// alphanumeric-mode encoding; the same-device deep link stays full JSON.
+import { encodeCompactQr } from '../../../src/lib/qrCodec.js';
 
 // The RP's identity. In production this is your real domain, hardcoded server-side.
 // Here it's the current origin (audience = hostname; callback is same-site via Hosting rewrite).
@@ -157,7 +161,7 @@ export default function LoginPage({ onSuccess }) {
         scope: ['profile'],
       };
       if (CALLBACK_URL !== `https://${AUDIENCE}/kunji/callback`) qrPayload.callbackUrl = CALLBACK_URL;
-      setQrData(JSON.stringify(qrPayload));
+      setQrData(encodeCompactQr(qrPayload));
       setDeepLink(`${KUNJI_APP_URL}/?approve=${b64url(JSON.stringify(payload))}`); // same-device: open kunji directly
       setStatus('scanning');
 

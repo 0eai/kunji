@@ -169,6 +169,11 @@ app.post('/kunji/session', async (req, res) => {
               same-device deep link and the typed 6-digit code. Then poll your own session for
               <code class="k">status === 'approved'</code>.
             </p>
+            <p>
+              <b>Using <code class="k">rp.js</code>? You need none of this</b> — the widget builds and
+              renders the QR for you (it emits the compact <code class="k">K1</code> encoding below, which
+              scans more easily). This snippet is only for hand-rolling your own QR.
+            </p>
             <pre><code>import QRCode from 'qrcode';
 
 const { sessionId, challenge, expiresAt } =
@@ -282,6 +287,13 @@ const token = await admin.auth().createCustomToken(session.sub, {
             <code class="k">scope</code> is optional. Add <code class="k">["profile"]</code> (widget:
             <code class="k">data-scope="profile"</code>) to ask the wallet to <em>offer</em> sharing a
             custom name/photo. The user may decline, so always fall back to the default identity.
+          </p>
+          <p class="note">
+            <b>Compact <code class="k">K1</code> encoding.</b> The wallet also accepts a compact QR string
+            <code class="k">K1:&lt;base32…&gt;</code> — the same request packed to an all-uppercase-alphanumeric
+            string so the QR encodes in the denser alphanumeric mode (a much less dense, easier-to-scan
+            code). <code class="k">rp.js</code> emits it for you; hand-rolled RPs may send JSON <em>or</em>
+            <code class="k">K1</code>. The same-device deep link stays JSON. (Spec: discoverable-login §5.1.1.)
           </p>
           <h2 style="font-size: 16px; margin: 24px 0 6px">
             Signed assertion — wallet → your callback

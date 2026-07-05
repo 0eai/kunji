@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import QRCode from 'qrcode';
 import { Btn, Spinner, SectionLabel } from './ui.jsx';
 import * as api from './api.js';
+// Compact login-QR encoding (byte-equal copy of the wallet's src/lib/qrCodec.js — issuer-web stays
+// isolated from wallet imports; parity-guarded by tests/qrCodec.parity.test.js). The wallet accepts K1 + JSON.
+import { encodeCompactQr } from './qrCodec.js';
 
 const WALLET = 'https://app.kunji.cc';
 
@@ -299,8 +302,7 @@ export default function App() {
       setErr('');
       try {
         const s = await api.loginSession();
-        const payload = JSON.stringify({
-          kunjiAuth: 'v2',
+        const payload = encodeCompactQr({
           sessionId: s.sessionId,
           challenge: s.challenge,
           audience: s.audience,
