@@ -85,6 +85,12 @@ const CSS = `
 /* Inline code fallback (replaces the old OTP tab) — shown under the QR / open-app button. */
 .codehint { font-size:13px; color:#6b6b66; margin-top:12px; }
 .codehint.center { text-align:center; }
+/* Lazy OTP: a subtle "Use a code" text button; the 6-digit code is minted/revealed only on click. */
+.codeslot { margin-top:12px; }
+.codeslot.center { text-align:center; }
+.usecode { background:none; border:0; padding:0; cursor:pointer; font-family:inherit;
+  font-size:13px; color:#6b6b66; text-decoration:underline; text-underline-offset:2px; }
+.usecode:hover { color:#1a1a18; }
 .codehint b { font-family:'Geist Mono Variable',ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums;
   font-size:15px; letter-spacing:.1em; color:#1a1a18; font-weight:600; }
 
@@ -130,6 +136,9 @@ function readOpts(node, override = {}) {
     sessionUrl: override.sessionUrl || d.sessionUrl,
     callbackUrl: override.callbackUrl || d.callbackUrl,
     pollUrl: override.pollUrl || d.pollUrl,
+    // Optional: an endpoint that lazily mints the 6-digit code for an existing session (POST {sessionId}
+    // -> {code}). When set, the OTP is only minted on the "Use a code" click (fewer live codes, S5).
+    codeUrl: override.codeUrl || d.codeUrl || '',
     redirect: override.redirect || d.redirect || '',
     appUrl: override.appUrl || d.appUrl || APP_URL_DEFAULT,
     theme: override.theme || d.theme || 'light',
@@ -264,8 +273,6 @@ function openModal(opts, sourceEl) {
     // javascript:/data:/http: so a hostile data-app-url can't inject a scheme.
     const safeAppUrl = /^https:\/\//i.test(opts.appUrl) ? opts.appUrl : APP_URL_DEFAULT;
     const deepLink = `${safeAppUrl}/?approve=${b64url(JSON.stringify(payload))}`;
-    // Accept the OTP only if it's strictly digits, so it can never carry markup.
-    const code = /^\d{4,10}$/.test(session.code) ? session.code : '';
 
     // Everything expired together — replace the panel with one clear action so a
     // stale QR / code / deep link is never left looking usable.
@@ -283,26 +290,60 @@ function openModal(opts, sourceEl) {
       sheet.querySelector('.again').onclick = start;
     }
 
+    // The typed-code fallback is LAZY: shown as a "Use a code" button, and the 6-digit code is only
+    // revealed (or minted via opts.codeUrl) when the user clicks it — so the QR-majority never mints one.
+    // `hasCode` = an eager RP already returned it (reveal instantly, no network); else opts.codeUrl mints
+    // it on demand. If neither, no button (QR / deep link only).
+    const hasCode = /^\d{4,10}$/.test(session.code || '');
+    const canCode = hasCode || !!opts.codeUrl;
+    const fmt = (c) => `${c.slice(0, 3)} ${c.slice(3)}`;
+
+    // Reveal (eager RP) or lazily mint (opts.codeUrl) the code in place, without re-rendering the sheet.
+    function wireCodeSlot() {
+      const slot = sheet.querySelector('.codeslot');
+      const btn = slot && slot.querySelector('.usecode');
+      if (!btn) return;
+      const line = (html) => (slot.innerHTML = `<p class="codehint${isDesktop ? '' : ' center'}">${html}</p>`);
+      btn.onclick = async () => {
+        if (hasCode) return line(`Enter code <b>${fmt(session.code)}</b> in the app.`);
+        line('Getting a code…');
+        try {
+          const r = await fetch(opts.codeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+          });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || !/^\d{4,10}$/.test(j.code || '')) throw new Error('nocode');
+          line(`Enter code <b>${fmt(j.code)}</b> in the app.`);
+        } catch {
+          line('Couldn’t get a code — use the QR or the button above.');
+        }
+      };
+    }
+
     render();
     function render() {
-      const fmtCode = code ? `${code.slice(0, 3)} ${code.slice(3)}` : '';
       // The branded QR + its scan caption (shared by both layouts).
       const qrBlock = `
         <div class="qrbox"></div>
         <p class="cap">Scan with the kunji app${isDesktop ? ' on your phone' : ' from another device'}.</p>`;
+      const codeSlot = canCode
+        ? `<div class="codeslot${isDesktop ? '' : ' center'}"><button class="usecode" type="button">Can't scan? Use a code</button></div>`
+        : '';
       // Desktop: the wallet is usually on a phone → the QR is the hero; "this device" is the secondary path.
       const desktop = `
         <div class="sect">On another device</div>
         <div class="panel">
           ${qrBlock}
-          ${code ? `<p class="codehint">Can't scan? Enter code <b>${fmtCode}</b> in the app.</p>` : ''}
+          ${codeSlot}
         </div>
         <div class="sect">On this device</div>
         <a class="open secondary" href="${deepLink}"><span class="mark">${KEY_SVG}</span> Open the kunji app</a>`;
       // Mobile: you can't scan your own screen → the on-device action is the hero; the QR is a disclosure.
       const mobile = `
         <a class="open" href="${deepLink}"><span class="mark">${KEY_SVG}</span> Open the kunji app</a>
-        ${code ? `<p class="codehint center">Or enter code <b>${fmtCode}</b> in the app.</p>` : ''}
+        ${codeSlot}
         <details class="qrdisc">
           <summary>Show QR for another device</summary>
           <div class="panel">${qrBlock}</div>
@@ -319,6 +360,7 @@ function openModal(opts, sourceEl) {
       sheet.querySelector('.x').onclick = close;
       const box = sheet.querySelector('.qrbox');
       if (box) renderBrandedQr(box, { data: qrData }); // shared styled QR + amber logo plate (renders even inside the collapsed <details>)
+      wireCodeSlot();
 
       // countdown (pauses while tab hidden); on expiry offer a fresh code
       const exp = sheet.querySelector('.expiry');

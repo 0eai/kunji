@@ -217,6 +217,20 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   // login
   const [login, setLogin] = useState(null); // { sessionId, code, qr }
+  const [codeBusy, setCodeBusy] = useState(false);
+  // Lazy OTP: mint the typed-code fallback only when the user asks (the QR path never mints one).
+  const useCode = useCallback(async () => {
+    if (!login || login.code || codeBusy) return;
+    setCodeBusy(true);
+    try {
+      const r = await api.mintLoginCode(login.sessionId);
+      if (/^\d{4,10}$/.test(r.code || '')) setLogin((l) => ({ ...l, code: r.code }));
+    } catch {
+      /* non-fatal — the QR still works */
+    } finally {
+      setCodeBusy(false);
+    }
+  }, [login, codeBusy]);
   const loginPoll = useRef(null);
   const poll = useRef(null);
   const fileRef = useRef(null);
@@ -484,8 +498,20 @@ export default function App() {
         {login ? (
           <div className="mt-6 flex flex-col items-center">
             <img src={login.qr} alt="Sign-in QR" className="w-[232px] h-[232px] rounded-2xl border border-line bg-white p-2" />
-            <p className="text-[13px] text-muted mt-4">or enter this code in the kunji app:</p>
-            <p className="text-2xl font-mono tabular tracking-[0.3em] text-ink mt-1">{login.code}</p>
+            {login.code ? (
+              <>
+                <p className="text-[13px] text-muted mt-4">or enter this code in the kunji app:</p>
+                <p className="text-2xl font-mono tabular tracking-[0.3em] text-ink mt-1">{login.code}</p>
+              </>
+            ) : (
+              <button
+                onClick={useCode}
+                disabled={codeBusy}
+                className="text-[13px] text-muted mt-4 underline underline-offset-2 hover:text-ink disabled:opacity-60"
+              >
+                {codeBusy ? 'Getting a code…' : "Can't scan? Use a code"}
+              </button>
+            )}
             <p className="text-[12px] text-faint mt-3 flex items-center gap-1.5">
               <Spinner size={13} /> Waiting for approval…
             </p>

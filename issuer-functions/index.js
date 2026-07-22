@@ -154,12 +154,30 @@ export const kunjiLoginSession = onRequest(vcOpts([]), async (req, res) => {
     return res.json({ sessionId: doc.id, challenge: s.challenge, audience: s.audience, callbackUrl: `${ISSUER_ORIGIN}/kunji/callback`, expiresAt: s.expiresAt });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  // POST { sessionId } → lazily mint the 6-digit code for an EXISTING session (the "Can't scan? Use a
+  // code" fallback). Idempotent, gated by the unguessable sessionId. The QR-majority never calls this,
+  // so it skips freshCode() and never adds a live guessable code to the small 6-digit space (S5). The
+  // GET resolver above is unchanged — the code is present by the time the wallet looks it up.
+  if (req.body && req.body.sessionId) {
+    const { sessionId } = req.body;
+    if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(sessionId))
+      return res.status(400).json({ error: 'bad_session' });
+    const ref = loginRef(sessionId);
+    const snap = await ref.get();
+    const s = snap.exists ? snap.data() : null;
+    if (!s || s.status !== 'pending') return res.status(404).json({ error: 'invalid_session' });
+    if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_session' });
+    if (s.code) return res.json({ code: s.code });
+    const c = await freshCode();
+    await ref.set({ code: c }, { merge: true });
+    return res.json({ code: c });
+  }
+  // POST (no sessionId) → create a session. Code-less: minted lazily via the { sessionId } branch above.
   const sessionId = token(16);
   const challenge = token(32);
-  const code = await freshCode();
   const expiresAt = Date.now() + LOGIN_TTL_MS;
-  await loginRef(sessionId).set({ challenge, audience: ISSUER_HOST, code, status: 'pending', expiresAt, ttl: ttlAfter(LOGIN_TTL_MS) });
-  res.json({ sessionId, challenge, audience: ISSUER_HOST, code, expiresAt, callbackUrl: `${ISSUER_ORIGIN}/kunji/callback` });
+  await loginRef(sessionId).set({ challenge, audience: ISSUER_HOST, status: 'pending', expiresAt, ttl: ttlAfter(LOGIN_TTL_MS) });
+  res.json({ sessionId, challenge, audience: ISSUER_HOST, expiresAt, callbackUrl: `${ISSUER_ORIGIN}/kunji/callback` });
 });
 
 // POST /kunji/callback ← the wallet's signed assertion. §6 verify (audience hardcoded) + consume, then mint

@@ -72,7 +72,17 @@
      data-session-url="https://yourapp.com/kunji/session"
      data-callback-url="https://yourapp.com/kunji/callback"
      data-poll-url="https://yourapp.com/kunji/status"
+     data-code-url="https://yourapp.com/kunji/session/code"
      data-redirect="/dashboard"&gt;&lt;/div&gt;</code></pre>
+          <p class="note">
+            <b>Optional <code class="k">data-code-url</code> (lazy typed-code).</b> The 6-digit "Use a code"
+            fallback is minted <em>on demand</em>: when set, clicking "Use a code" POSTs
+            <code class="k">{ sessionId }</code> to this endpoint, which mints + returns the code for that
+            session — so the QR / deep-link majority never mints one (fewer live codes). Omit it (and don't
+            return a <code class="k">code</code> from <code class="k">/session</code>) for a QR + deep-link
+            only button; return a <code class="k">code</code> from <code class="k">/session</code> the old
+            way and it still works (the widget just reveals it).
+          </p>
           <p class="note">
             Pin <code class="k">rp.v1.js</code> in production. For SPAs, drop
             <code class="k">data-redirect</code> and listen for

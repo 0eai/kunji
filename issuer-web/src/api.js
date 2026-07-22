@@ -23,6 +23,8 @@ const get = (path, auth = false) => fetch(path, { headers: auth ? authHeaders() 
 // Catalog + login (no auth)
 export const fetchCatalog = () => get('/catalog');
 export const loginSession = () => post('/kunji/session', {});
+// Lazily mint the typed-code fallback for an existing session (the QR path never calls this).
+export const mintLoginCode = (sessionId) => post('/kunji/session', { sessionId });
 export const loginStatus = (sessionId) => get(`/kunji/status?sessionId=${encodeURIComponent(sessionId)}`);
 
 // Verification (authed by the session token)

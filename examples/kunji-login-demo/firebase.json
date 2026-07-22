@@ -17,6 +17,10 @@
         "function": { "functionId": "apiAgeGated", "region": "us-central1" }
       },
       {
+        "source": "/kunji/session/code",
+        "function": { "functionId": "mintSessionCode", "region": "us-central1" }
+      },
+      {
         "source": "/kunji/session",
         "function": { "functionId": "lookupSession", "region": "us-central1" }
       },

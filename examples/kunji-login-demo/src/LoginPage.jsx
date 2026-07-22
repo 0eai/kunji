@@ -53,12 +53,13 @@ export default function LoginPage({ onSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [deepLink, setDeepLink] = useState('');
   const [code, setCode] = useState('');
+  const [codeBusy, setCodeBusy] = useState(false);
   const [qrData, setQrData] = useState('');
   const qrRef = useRef(null);
-  // Show one method at a time; default to the one that fits the device.
-  const [tab, setTab] = useState(() =>
-    window.matchMedia('(min-width: 640px)').matches ? 'qr' : 'otp',
-  );
+  // Default to QR (the on-device deep-link button below is always visible for phones). The 6-digit
+  // code is minted LAZILY only when the user actually selects the OTP tab — so the QR / deep-link
+  // majority never mints one (fewer live codes, S5).
+  const [tab, setTab] = useState('qr');
   const unsubRef = useRef(null);
 
   // Render the styled QR when we have a payload and the QR tab is visible (so switching
@@ -69,6 +70,24 @@ export default function LoginPage({ onSuccess }) {
   const timerRef = useRef(null);
   const fallbackRef = useRef(null);
   const sessionIdRef = useRef(null);
+
+  // Lazy OTP: mint the 6-digit code the first time the user opens the OTP tab (never for the QR /
+  // deep-link path). POST { sessionId } to the code endpoint; the wallet's resolver is unchanged.
+  useEffect(() => {
+    if (tab !== 'otp' || code || codeBusy || !sessionIdRef.current) return;
+    setCodeBusy(true);
+    fetch('/kunji/session/code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: sessionIdRef.current }),
+    })
+      .then((r) => r.json())
+      .then((j) => {
+        if (/^\d{4,10}$/.test(j.code || '')) setCode(j.code);
+      })
+      .catch(() => {}) // non-fatal — the QR + deep link still work
+      .finally(() => setCodeBusy(false));
+  }, [tab, code, codeBusy]);
 
   const stop = useCallback(() => {
     if (unsubRef.current) {
@@ -290,20 +309,26 @@ export default function LoginPage({ onSuccess }) {
               {/* Method toggle — text tabs with amber underline */}
               <div className="flex gap-6 border-b border-line mb-7">
                 {tabBtn('qr', 'QR')}
-                {code && tabBtn('otp', 'OTP')}
+                {tabBtn('otp', 'OTP')}
               </div>
 
               {/* fixed-height panel so switching QR↔OTP never resizes the page */}
               <div className="min-h-[17rem]">
-                {tab === 'otp' && code ? (
+                {tab === 'otp' ? (
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-faint mb-2">
                       Type this code into kunji
                     </p>
-                    <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
-                      {code.slice(0, 3)} {code.slice(3)}
-                    </div>
-                    <p className="text-[13px] text-muted mt-3">Open kunji → enter this code.</p>
+                    {code ? (
+                      <>
+                        <div className="font-mono tabular text-4xl tracking-[0.2em] text-ink">
+                          {code.slice(0, 3)} {code.slice(3)}
+                        </div>
+                        <p className="text-[13px] text-muted mt-3">Open kunji → enter this code.</p>
+                      </>
+                    ) : (
+                      <p className="text-[13px] text-muted">Getting a code…</p>
+                    )}
                   </div>
                 ) : (
                   <div>

@@ -173,6 +173,27 @@ K1:<base32-nopad( struct )>
 - Reference codec: `src/lib/qrCodec.js` (`encodeCompactQr` / `decodeCompactQr`), byte-equal across the
   wallet, the widget, and the demos.
 
+#### 5.1.2 Typed 6-digit code — optional and minted lazily
+
+The typed-code ("OTP") fallback is a convenience for a returning user who can't scan and can't tap the
+deep link. It is **optional**, and an RP SHOULD mint it **lazily** — only when the user picks the "Use a
+code" fallback — rather than on every session. The QR and the same-device deep link never carry or need
+the code, so eager minting would (a) run a `freshCode()` uniqueness query on every session and (b) hold a
+live, guessable value in the small 1,000,000-code space until its TTL, needlessly enlarging the
+brute-force surface (see §12). Lazy minting keeps far fewer codes live.
+
+- **Create code-less:** `/session` returns `{ sessionId, challenge, expiresAt }` with **no** `code`.
+- **Mint on demand:** on "Use a code," the RP frontend POSTs `{ sessionId }` to a code endpoint
+  (e.g. `POST /kunji/session/code`); the RP validates the session is `pending` + fresh, **idempotently**
+  mints + stores a unique code (return the existing one on a repeat — never a second code per session),
+  rate-limits it, and returns `{ code }`. Minting is gated by knowing the unguessable `sessionId`.
+- **The resolver is unchanged.** The wallet's device-authorization lookup (`GET /kunji/session?code=`,
+  `lookupSessionByCode` in `src/services/identity.js`) is read-only and untouched — the code exists by the
+  time the user types it. So lazy minting needs **no wallet change** and is fully backward-compatible: an RP
+  that still returns a `code` from `/session` keeps working (the widget just reveals it).
+- The `rp.js` widget mints lazily when given a `data-code-url` (see §11); with neither an eager `code` nor a
+  `data-code-url`, it shows QR + deep link only.
+
 ### 5.2 Signed assertion (wallet → RP callback)
 
 ```json
@@ -412,7 +433,7 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 
 **Relying-party reference — `examples/kunji-login-demo/`:**
 
-- `functions/index.js` — `createSession` (challenge + TTL + 6-digit code), `lookupSession` (resolve a typed code, rate-limited), `getSessionStatus` (read-only poll → `{ status, sub }`), `kunjiCallback` (the wallet POSTs the signed assertion here).
+- `functions/index.js` — `createSession` (challenge + TTL, **code-less**), `mintSessionCode` (lazily mint the typed code for an existing session, idempotent + rate-limited — §5.1.2), `lookupSession` (resolve a typed code, rate-limited), `getSessionStatus` (read-only poll → `{ status, sub }`), `kunjiCallback` (the wallet POSTs the signed assertion here).
 - `functions/verify.js` — `canonicalJson`, `subFromPublicKey`, and `verifyAssertion` enforcing all of §6.
 - `firebase.json` — Hosting rewrites mapping `/kunji/session`, `/kunji/status`, `/kunji/callback` to those functions (so the callback is same-site as the audience).
 - Firestore rule for `loginSessions` (get-only; writes are server-only via Admin) → root `firestore.rules`.

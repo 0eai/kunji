@@ -148,22 +148,46 @@ export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '2
 
   const sessionId = token(16);
   const challenge = token(32);
-  const code = await freshCode();
   const expiresAt = Date.now() + SESSION_TTL_MS;
   // `ttl` lets Firestore's TTL policy auto-delete the doc ~5 min after expiry,
   // so loginSessions never grows unbounded.
   const ttl = Timestamp.fromMillis(expiresAt + 5 * 60 * 1000);
+  // No 6-digit `code` here: it's minted LAZILY (mintSessionCode) only when the user asks for the
+  // typed-code fallback. The QR + same-device deep link never need it, so the QR-majority skips the
+  // freshCode() query and never adds a live, guessable code to the small 6-digit space (S5).
   await sessionRef(sessionId).set({
     challenge,
     audience,
     callbackUrl,
-    code,
     status: 'pending',
     sub: null,
     expiresAt,
     ttl,
   });
-  res.json({ sessionId, challenge, code, expiresAt });
+  res.json({ sessionId, challenge, expiresAt });
+});
+
+// Lazily mint the 6-digit code for an EXISTING session — called by the widget / login page only when
+// the user picks the "Can't scan? Use a code" fallback. Idempotent (returns the existing code on a
+// repeat), gated by knowing the unguessable sessionId, and rate-limited so it can't fill the code space.
+// The wallet's resolver (lookupSession) is unchanged: by the time the user types the code it's present.
+export const mintSessionCode = onRequest({ cors: true, maxInstances: 5, memory: '256MiB', timeoutSeconds: 30 }, async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
+  if (await rateLimited(req.ip, 15, 60 * 1000, 'code')) return res.status(429).json({ error: 'rate_limited' });
+  const { sessionId } = req.body || {};
+  if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(sessionId))
+    return res.status(400).json({ error: 'bad_session' });
+
+  const ref = sessionRef(sessionId);
+  const snap = await ref.get();
+  const s = snap.exists ? snap.data() : null;
+  if (!s || s.status !== 'pending') return res.status(404).json({ error: 'invalid_session' });
+  if (Date.now() > s.expiresAt) return res.status(410).json({ error: 'expired_session' });
+  if (s.code) return res.json({ code: s.code }); // idempotent — never mint a second code for one session
+
+  const code = await freshCode();
+  await ref.set({ code }, { merge: true });
+  res.json({ code });
 });
 
 // Device-authorization: kunji resolves a 6-digit code to the pending session so it

@@ -35,6 +35,8 @@ export default function RpjsDemo({ onBack }) {
     div.setAttribute('data-session-url', 'https://kunji-demo.web.app/api/session');
     div.setAttribute('data-callback-url', 'https://kunji-demo.web.app/kunji/callback');
     div.setAttribute('data-poll-url', 'https://kunji-demo.web.app/kunji/status');
+    // Lazy OTP: the code is minted only when the user clicks "Use a code" (POST {sessionId} here).
+    div.setAttribute('data-code-url', 'https://kunji-demo.web.app/kunji/session/code');
     if (scopes.length) div.setAttribute('data-scope', scopeStr);
     mount.appendChild(div);
     window.kunji.render(div);
