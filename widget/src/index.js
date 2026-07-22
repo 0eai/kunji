@@ -214,15 +214,19 @@ function openModal(opts, sourceEl) {
   async function start() {
     clearTimers();
     sheet.innerHTML = `<div class="note">Preparing sign-in…</div>`;
+    const scope = parseScope(opts.scope);
     let session;
     try {
       const r = await fetch(opts.sessionUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // Send `scope` too: the QR carries it in-band, but the typed-code path resolves the session
+        // server-side, so the RP must persist it to offer the same consent (e.g. profile-share).
         body: JSON.stringify({
           audience: opts.audience,
           callbackUrl: opts.callbackUrl,
           appName: opts.appName,
+          ...(scope.length ? { scope } : {}),
         }),
       });
       if (!r.ok) throw new Error('session');
@@ -234,7 +238,6 @@ function openModal(opts, sourceEl) {
       return;
     }
 
-    const scope = parseScope(opts.scope);
     // Full payload — rides the same-device deep link, where length is free.
     const payload = {
       kunjiAuth: 'v2',

@@ -146,7 +146,7 @@ export default function LoginPage({ onSuccess }) {
       const resp = await fetch('/api/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME }),
+        body: JSON.stringify({ audience: AUDIENCE, callbackUrl: CALLBACK_URL, appName: APP_NAME, scope: ['profile'] }),
       });
       if (!resp.ok) throw new Error('createSession failed');
       const { sessionId, challenge, code, expiresAt } = await resp.json();

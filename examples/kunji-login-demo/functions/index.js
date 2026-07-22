@@ -142,9 +142,14 @@ export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '2
   // Bound the mint side (the lookup side is already limited): a loop here would burn the 6-digit code
   // space + Firestore writes. Generous per-IP cap so legit demo traffic is unaffected.
   if (await rateLimited(req.ip, 30, 60 * 1000, 'session')) return res.status(429).json({ error: 'rate_limited' });
-  const { audience, callbackUrl } = req.body || {};
+  const { audience, callbackUrl, scope } = req.body || {};
   if (!audience || !callbackUrl)
     return res.status(400).json({ error: 'audience and callbackUrl required' });
+  // Persist the widget's `scope` (bounded string array) so the typed-code path can offer the same
+  // consent as the QR path — the resolver returns it and the wallet honors it. QR carries it in-band.
+  const validScope =
+    Array.isArray(scope) && scope.length > 0 && scope.length <= 16 &&
+    scope.every((s) => typeof s === 'string' && s.length > 0 && s.length <= 64);
 
   const sessionId = token(16);
   const challenge = token(32);
@@ -163,6 +168,7 @@ export const createSession = onRequest({ cors: true, maxInstances: 5, memory: '2
     sub: null,
     expiresAt,
     ttl,
+    ...(validScope ? { scope } : {}),
   });
   res.json({ sessionId, challenge, expiresAt });
 });
@@ -214,6 +220,8 @@ export const lookupSession = onRequest({ cors: true, maxInstances: 5, memory: '2
     audience: s.audience,
     callbackUrl: s.callbackUrl,
     expiresAt: s.expiresAt,
+    // Carry scope so the typed-code path offers the same consent (profile-share / credential) as the QR.
+    ...(s.scope ? { scope: s.scope } : {}),
   });
 });
 

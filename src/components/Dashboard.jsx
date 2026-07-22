@@ -52,6 +52,34 @@ import { useToast } from '../contexts/ToastContext';
 // Lazy: the camera scanner (jsqr) loads only when opened.
 const QRScannerOverlay = lazy(() => import('./QRScannerOverlay'));
 
+// Derive the scope-driven consent flags for the approval screen from a parsed login request — a scanned
+// QR *or* a code-resolved session. Shared so the typed-code (device-authorization) path honors `scope`
+// exactly like the QR path (profile-share toggle + credential presentation).
+const deriveScopeConsent = async (req, cryptoKey) => {
+  let credentialMatches = [];
+  if (requestsCredentials(req)) {
+    try {
+      // One copy per logical credential (a v2 pool presents — and spends — a single copy).
+      const all = selectForPresentation(await listCredentials(cryptoKey), req.scope);
+      // Login has no format negotiation: prefer SD-JWT when both formats satisfy the same request
+      // (max RP compatibility); present a BBS credential only when it's the sole match for its vct.
+      const sdjwtKeys = new Set(
+        all.filter((m) => m.cred.format !== 'bbs').map((m) => `${m.cred.vct}@${m.cred.iss}`),
+      );
+      credentialMatches = all.filter(
+        (m) => m.cred.format !== 'bbs' || !sdjwtKeys.has(`${m.cred.vct}@${m.cred.iss}`),
+      );
+    } catch {
+      credentialMatches = [];
+    }
+  }
+  return {
+    requestProfile: requestsProfile(req),
+    requestCredentials: requestsCredentials(req),
+    credentialMatches,
+  };
+};
+
 const Dashboard = ({
   user,
   cryptoKey,
@@ -299,25 +327,8 @@ const Dashboard = ({
         );
 
         const sub = await deriveSubFromPublicKey(publicKey);
-        // If the app requested a verified credential (a `vc:` scope), find held credentials that can
-        // satisfy it so the approval screen can offer to present one.
-        let credentialMatches = [];
-        if (requestsCredentials(qr)) {
-          try {
-            // One copy per logical credential (a v2 pool presents — and spends — a single copy).
-            const all = selectForPresentation(await listCredentials(cryptoKey), qr.scope);
-            // Login has no format negotiation: prefer SD-JWT when both formats satisfy the same request
-            // (max RP compatibility); present a BBS credential only when it's the sole match for its vct.
-            const sdjwtKeys = new Set(
-              all.filter((m) => m.cred.format !== 'bbs').map((m) => `${m.cred.vct}@${m.cred.iss}`),
-            );
-            credentialMatches = all.filter(
-              (m) => m.cred.format !== 'bbs' || !sdjwtKeys.has(`${m.cred.vct}@${m.cred.iss}`),
-            );
-          } catch {
-            credentialMatches = [];
-          }
-        }
+        // Scope-driven consent (profile-share + credential presentation) — shared with the typed-code path.
+        const consent = await deriveScopeConsent(qr, cryptoKey);
         setPendingSession({
           ...qr,
           registeredAppId,
@@ -326,9 +337,7 @@ const Dashboard = ({
           domain: qr.audience,
           sub,
           isNew,
-          requestProfile: requestsProfile(qr),
-          requestCredentials: requestsCredentials(qr),
-          credentialMatches,
+          ...consent,
           // Only the same-device deep link returns to a tab on THIS device; a scanned
           // QR is cross-device, so its post-approval "Return to…" sheet is suppressed.
           sameDevice: origin === 'deeplink',
@@ -440,6 +449,9 @@ const Dashboard = ({
   const handleCodeSubmit = async (app, code) => {
     const session = await lookupSessionByCode(app.domain, code);
     const sub = await deriveSubFromPublicKey(app.publicKey);
+    // Same scope-driven consent as the QR path — so a code-resolved session that carries `scope`
+    // (e.g. `profile`) still shows the profile-share toggle / credential offer.
+    const consent = await deriveScopeConsent(session, cryptoKey);
     setCodeApp(null);
     setPendingSession({
       ...session,
@@ -449,6 +461,7 @@ const Dashboard = ({
       domain: session.audience,
       sub,
       isNew: false,
+      ...consent,
     });
   };
 
