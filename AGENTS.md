@@ -69,7 +69,11 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 - **kunji shares no database with cloq or any other app.** Don't introduce cross-app data coupling.
 - **Accepted, deliberate "won't-fix" risks** — do NOT "fix" these without asking; they're decisions,
   not oversights: CSP breadth (S11), `style-src 'unsafe-inline'`, the in-memory extractable master
-  key, client-side freshness timestamp, recovery-key clipboard copy.
+  key, client-side freshness timestamp, recovery-key clipboard copy, and **"stay unlocked on this
+  device"** (`src/services/deviceSession.js`) — an OFF-by-default, per-device opt-in that parks the
+  wrapped master key in IndexedDB, trading "only the passphrase decrypts the vault" for convenience:
+  OS-profile access becomes vault access, and an XSS on `app.kunji.cc` becomes persistent. It is a
+  user's explicit choice; keep it opt-in, cleared by every lock, and never sync it across devices.
 
 ## Repo map
 
@@ -80,6 +84,20 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   (Layer 2): encrypted vault storage + the editor in `SecurityPanel`.
 - `src/services/identity.js` — QR parsing, callback safety (`isSafeReturnUrl`), assertion submit,
   app register/delete, legacy migration.
+- `src/services/deviceSession.js` + `src/lib/sessionPrefs.js` — **"stay unlocked on this device"**
+  (opt-in, off by default) and the per-device lock prefs behind it. `deviceSession` re-wraps the
+  unlocked master key in the SAME `encryptData` envelope the vault doc uses, but under a fresh
+  **non-extractable** AES-GCM key, and parks `{v, uid, expiresAt, wrapKey, blob}` in IndexedDB
+  (`kunji-session`) — IndexedDB because a `CryptoKey` is structured-cloneable but not stringifiable,
+  which is what keeps the device key unreadable. `sealSession`/`openSession` are the pure, testable
+  policy; the uid + expiry **inside** the ciphertext are authoritative (IndexedDB rows are rewritable
+  by anything on the origin). Restore is byte-for-byte the passkey path's `decryptData →
+  importMasterKey`, so the restored key stays extractable — `deriveVaultId` and every Ed25519/HKDF
+  derivation `exportKey('raw')` it. **`VaultContext.lockVault` clears it** — that funnel is
+  load-bearing: a saved session survives closing the app, never a lock, idle-lock, or sign-out.
+  `sessionPrefs` also gives `kunji_autolock` / `kunji_lock_on_hidden` a UI (they were read by
+  `App.jsx` but never written, so auto-lock was a fixed 20h and lock-on-hidden was unreachable).
+  Settings live in `SecurityPanel`'s "This device" section. See the accepted-risk note above.
 - `functions/` — `vaultWrite` Cloud Function (codebase `app`, Node 20).
 - `issuer-functions/` — the **real credential issuer** (`issuer.kunji.cc`), Functions **codebase `issuer`**
   (Node 20). A **pluggable framework**: a credential-TYPE registry (`credentials.js` — `age` now) × a

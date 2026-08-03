@@ -17,6 +17,7 @@ import {
   argon2DocFields,
 } from '../lib/crypto';
 import { resetUserVault, extractRecoveryKey } from '../services/vault';
+import { clearDeviceSession } from '../services/deviceSession';
 import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
@@ -159,6 +160,7 @@ const LockScreen = ({ user, onUnlock, initialMessage }) => {
     setIsDeriving(true);
     try {
       await resetUserVault(user.uid);
+      await clearDeviceSession(); // awaited: the reload below would cut a fire-and-forget delete short
       logActivity(user.uid, 'Vault Reset', 'danger', 'AlertTriangle');
       showToast('Vault reset. All data erased.');
       window.location.reload();

@@ -3,17 +3,29 @@ import {
   KeyRound,
   Smartphone,
   Lock,
+  LockOpen,
   LogOut,
   Activity,
   ChevronRight,
+  Timer,
   UserCircle,
   Bot,
   BadgeCheck,
   ShieldCheck,
 } from 'lucide-react';
 import { resetUserVault } from '../services/vault';
+import { armDeviceSession, clearDeviceSession } from '../services/deviceSession';
 import { signOutDevice, hasAccountRecovery } from '../lib/firebase';
 import { getThemePref, setThemePref } from '../lib/theme';
+import {
+  AUTO_LOCK_OPTIONS,
+  getAutoLockMinutes,
+  getLockOnHidden,
+  getStayUnlocked,
+  setAutoLockMinutes,
+  setLockOnHidden,
+  setStayUnlocked,
+} from '../lib/sessionPrefs';
 import InstallButton from './InstallButton';
 import LinkedDevicesSheet from './LinkedDevicesSheet';
 import CredentialsSheet from './CredentialsSheet';
@@ -23,7 +35,7 @@ import RecoveryKeySheet from './RecoveryKeySheet';
 import AccountRecoverySheet from './AccountRecoverySheet';
 import ActivitySheet from './ActivitySheet';
 import Sheet from './ui/Sheet';
-import { SectionLabel, Field, Btn } from './ui/primitives';
+import { SectionLabel, Field, Btn, ToggleRow } from './ui/primitives';
 import { listAgents } from '../services/capability';
 import { listCredentials } from '../services/credentials';
 import { useToast } from '../contexts/ToastContext';
@@ -66,11 +78,45 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
     recovery: false,
     accountRecovery: false,
     activity: false,
+    autolock: false,
   });
   // Single-open accordion: expanding one row collapses the rest; re-clicking closes it.
   const toggle = (k) => setOpen((o) => ({ [k]: !o[k] }));
 
   const [theme, setTheme] = useState(getThemePref());
+
+  // Per-device session settings (lib/sessionPrefs). Local state mirrors localStorage so the
+  // controls stay responsive; App.jsx re-reads the prefs on each idle-timer reset / visibility
+  // change, so a change here takes effect without a reload.
+  const [stayUnlocked, setStayUnlockedUI] = useState(getStayUnlocked);
+  const [stayBusy, setStayBusy] = useState(false);
+  const [autoLockMin, setAutoLockMinUI] = useState(getAutoLockMinutes);
+  const [lockOnHidden, setLockOnHiddenUI] = useState(getLockOnHidden);
+
+  const autoLockLabel =
+    AUTO_LOCK_OPTIONS.find((o) => o.minutes === autoLockMin)?.label || `${autoLockMin} min`;
+
+  // Arming writes the saved session immediately (the vault is unlocked right now), so the setting
+  // only sticks if this device can actually store it — private mode / blocked storage reverts it.
+  const handleStayUnlocked = async (on) => {
+    setStayBusy(true);
+    try {
+      if (!on) {
+        setStayUnlocked(false);
+        setStayUnlockedUI(false);
+        await clearDeviceSession();
+        return;
+      }
+      if (!(await armDeviceSession(cryptoKey, userId))) {
+        showToast("This device can't save a session — storage is blocked.", 'error');
+        return;
+      }
+      setStayUnlocked(true);
+      setStayUnlockedUI(true);
+    } finally {
+      setStayBusy(false);
+    }
+  };
 
   const [showSignOut, setShowSignOut] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -81,6 +127,7 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
     setSigningOut(true);
     try {
       await resetUserVault(userId);
+      await clearDeviceSession(); // awaited: the reload below would cut a fire-and-forget delete short
       await signOutDevice();
       window.location.reload();
     } catch (e) {
@@ -274,6 +321,58 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
       {/* Session */}
       <SectionLabel className="mt-7 mb-1">This device</SectionLabel>
       <div className="divide-y divide-line border-y border-line">
+        <ToggleRow
+          icon={LockOpen}
+          title="Stay unlocked on this device"
+          description={
+            stayUnlocked
+              ? 'On — reopening kunji here skips the passkey. Locking, signing out, or auto-lock ends it. Anyone who can use this device can open your vault.'
+              : 'Skip the passkey when you reopen kunji here. Convenient, but anyone who can use this device could then open your vault. Off by default.'
+          }
+          checked={stayUnlocked}
+          disabled={stayBusy}
+          onChange={handleStayUnlocked}
+        />
+
+        <Row
+          icon={Timer}
+          title="Auto-lock"
+          count={autoLockLabel}
+          open={open.autolock}
+          onToggle={() => toggle('autolock')}
+        >
+          <p className="text-[13px] text-muted leading-relaxed mb-4">
+            Lock the vault after this long with no activity. Applies to this device only.
+          </p>
+          <div className="flex flex-wrap gap-1 p-1 rounded-full border border-line w-fit mb-1">
+            {AUTO_LOCK_OPTIONS.map((o) => (
+              <button
+                key={o.minutes}
+                onClick={() => {
+                  setAutoLockMinutes(o.minutes);
+                  setAutoLockMinUI(o.minutes);
+                }}
+                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
+                  autoLockMin === o.minutes ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <div className="border-t border-line mt-3">
+            <ToggleRow
+              title="Lock when the tab is hidden"
+              description="Lock the moment you switch tabs or apps. Strict — you'll re-enter your passkey often."
+              checked={lockOnHidden}
+              onChange={(on) => {
+                setLockOnHidden(on);
+                setLockOnHiddenUI(on);
+              }}
+            />
+          </div>
+        </Row>
+
         <InstallButton variant="row" />
         {onLock && (
           <button

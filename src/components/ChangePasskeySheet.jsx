@@ -3,6 +3,8 @@ import { Lock } from 'lucide-react';
 import Sheet from './ui/Sheet';
 import { Btn, PasswordField, SheetHeading } from './ui/primitives';
 import { changePasskey } from '../services/vault';
+import { armDeviceSession } from '../services/deviceSession';
+import { getStayUnlocked } from '../lib/sessionPrefs';
 import { getStrength, MIN_PASSKEY_LENGTH } from '../lib/passkeyStrength';
 import { logActivity } from '../services/activityLog';
 import { useToast } from '../contexts/ToastContext';
@@ -33,6 +35,9 @@ const ChangePasskeySheet = ({ userId, masterKey, onClose }) => {
     setChanging(true);
     try {
       await changePasskey(userId, masterKey, curKey, newKey);
+      // Re-seal any saved session under a fresh device key + a fresh 30-day window, so a device
+      // that stays unlocked doesn't ride out its expiry on a wrap the user just replaced.
+      if (getStayUnlocked()) await armDeviceSession(masterKey, userId);
       logActivity(userId, 'Passkey changed', 'success', 'Lock', masterKey);
       showToast('Passkey updated.');
       onClose();

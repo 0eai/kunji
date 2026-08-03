@@ -159,6 +159,42 @@ export const Btn = ({ variant = 'primary', className = '', children, ...props })
   </button>
 );
 
+/* Hairline settings row with a switch on the right. Matches the row metrics of the navigable rows
+   it sits beside in a divide-y list (py-4 px-3 -mx-3), so a mixed list reads as one column. */
+export const ToggleRow = ({ icon: Icon, title, description, checked, onChange, disabled }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    disabled={disabled}
+    onClick={() => onChange(!checked)}
+    className="w-[calc(100%_+_1.5rem)] flex items-center gap-3 py-4 px-3 -mx-3 rounded-xl text-left
+      transition-colors hover:bg-line/40 active:bg-line/60 disabled:opacity-50
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+  >
+    {Icon && (
+      <Icon size={17} strokeWidth={1.75} className="text-muted shrink-0 self-start mt-0.5" />
+    )}
+    <span className="min-w-0 flex-1">
+      <span className="block text-[15px] font-medium text-ink">{title}</span>
+      {description && (
+        <span className="block text-[13px] text-muted leading-relaxed mt-0.5">{description}</span>
+      )}
+    </span>
+    <span
+      className={`shrink-0 self-start mt-0.5 w-9 h-5 rounded-full p-0.5 transition-colors ${
+        checked ? 'bg-accent-fill' : 'bg-line'
+      }`}
+    >
+      <span
+        className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-4' : ''
+        }`}
+      />
+    </span>
+  </button>
+);
+
 /* Inline spinner for in-button loading states. */
 export const Spinner = ({ size = 16 }) => (
   <svg

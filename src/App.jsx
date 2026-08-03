@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useVault } from './contexts/VaultContext';
 import {
   auth,
@@ -8,11 +8,10 @@ import {
   completeEmailLink,
 } from './lib/firebase';
 import { logActivity } from './services/activityLog';
+import { armDeviceSession, restoreDeviceSession } from './services/deviceSession';
+import { autoLockMs, getLockOnHidden, getStayUnlocked, setSessionSeen } from './lib/sessionPrefs';
 import LockScreen from './components/LockScreen';
 import Dashboard from './components/Dashboard';
-
-// Default auto-lock timeout in minutes (20 hours) when the user hasn't set one.
-const AUTO_LOCK_DEFAULT_MIN = 1200;
 
 // Decode one base64url(JSON) query param into its JSON string (validated), or null.
 function decodeB64urlParam(name) {
@@ -70,6 +69,10 @@ export default function App() {
   const [emailLinkHref, setEmailLinkHref] = useState(null);
   const [emailPrompt, setEmailPrompt] = useState('');
   const [emailPromptBusy, setEmailPromptBusy] = useState(false);
+  // "Stay unlocked on this device": hold the lock screen back until the one restore attempt below
+  // has run, so an armed device doesn't flash a passkey prompt it's about to skip.
+  const [restoring, setRestoring] = useState(getStayUnlocked);
+  const restoreTried = useRef(false);
 
   // Sign in anonymously on first load, persist session.
   // If the URL is a Firebase email sign-in link, complete it first: link the credential to
@@ -107,6 +110,30 @@ export default function App() {
     });
     return unsub;
   }, [setAuthUser]);
+
+  // "Stay unlocked on this device": restore the saved master key instead of prompting. Runs at most
+  // ONCE per page load (the ref) — re-running after a lock would race that lock's clearDeviceSession
+  // and silently re-unlock the vault.
+  useEffect(() => {
+    if (!user || restoreTried.current) return undefined;
+    restoreTried.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!getStayUnlocked()) return;
+        const key = await restoreDeviceSession(user.uid);
+        if (key && !cancelled) {
+          unlockVault(key);
+          logActivity(user.uid, 'Vault Unlocked (saved session)', 'success', 'Unlock', key);
+        }
+      } finally {
+        if (!cancelled) setRestoring(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, unlockVault]);
 
   // Cross-device email-link completion: the user opened the link on a device that didn't
   // request it, so we ask for the email, then sign in as the linked uid.
@@ -173,18 +200,24 @@ export default function App() {
     };
   }, []);
 
-  // Auto-lock on inactivity (default 20 hours, stored in localStorage as kunji_autolock minutes)
+  // Auto-lock on inactivity (configurable in the Security sheet; default 20 hours)
   useEffect(() => {
     if (!cryptoKey || !user) return;
-    const getTimeout = () => {
-      const saved = localStorage.getItem('kunji_autolock');
-      const minutes = saved ? parseInt(saved) : AUTO_LOCK_DEFAULT_MIN;
-      return minutes === 0 ? null : minutes * 60000;
-    };
     let timer = null;
+    // Mirror the idle clock into localStorage so a SAVED session honours auto-lock across app
+    // closures too (S46) — the timer below only ticks while a page is open. Throttled: this runs on
+    // every scroll/keypress, and a synchronous write per event would jank.
+    let lastMark = 0;
+    const markSeen = () => {
+      const now = Date.now();
+      if (now - lastMark < 30000) return;
+      lastMark = now;
+      setSessionSeen(now);
+    };
     const resetTimer = () => {
+      markSeen(); // the initial resetTimer() below stamps the unlock itself
       if (timer) clearTimeout(timer);
-      const timeout = getTimeout();
+      const timeout = autoLockMs(); // re-read each reset so a settings change applies immediately
       if (timeout) {
         timer = setTimeout(() => {
           logActivity(user.uid, 'Vault Auto-Locked', 'info', 'Lock', cryptoKey);
@@ -201,14 +234,15 @@ export default function App() {
     };
   }, [cryptoKey, user, lockVault]);
 
-  // Lock when tab is hidden (opt-in, stored in localStorage as kunji_lock_on_hidden)
+  // Lock when tab is hidden (opt-in, configurable in the Security sheet)
   useEffect(() => {
     if (!cryptoKey || !user) return;
     const handle = () => {
-      if (
-        localStorage.getItem('kunji_lock_on_hidden') === 'true' &&
-        document.visibilityState === 'hidden'
-      ) {
+      if (document.visibilityState !== 'hidden') return;
+      // Leaving the app is the last moment a saved session was demonstrably in use — stamp it
+      // exactly, rather than leaving the throttled activity mark up to 30s stale.
+      setSessionSeen(Date.now());
+      if (getLockOnHidden()) {
         logActivity(user.uid, 'Vault Auto-Locked (Hidden)', 'info', 'Lock', cryptoKey);
         lockVault('Locked because the tab was hidden.');
       }
@@ -279,12 +313,22 @@ export default function App() {
   }
 
   if (!cryptoKey) {
+    if (restoring) {
+      return (
+        <div className="h-[100dvh] w-full flex items-center justify-center bg-paper">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      );
+    }
     return (
       <LockScreen
         user={user}
+        // Every unlock path — new vault, recovery, device-link, plain unlock — funnels through here,
+        // so this is the one place that arms "stay unlocked".
         onUnlock={(key) => {
           unlockVault(key);
           logActivity(user.uid, 'Vault Unlocked', 'success', 'Unlock', key);
+          if (getStayUnlocked()) armDeviceSession(key, user.uid);
         }}
         initialMessage={lockReason || ''}
       />
