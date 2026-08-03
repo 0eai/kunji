@@ -593,7 +593,9 @@ const Dashboard = ({
           code it shows (the typed path resolves against an app you've already added). */}
       {view === 'apps' && !loading && apps.length > 0 && (
         <div className="sticky bottom-0 z-20 shrink-0 border-t border-line bg-paper">
-          <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center">
+          {/* Bottom inset matches the LockScreen footer: safe-area alone is 0 in a browser tab, which
+              left these two targets sitting on the screen edge and awkward to tap. */}
+          <div className="max-w-[34rem] w-full mx-auto px-6 py-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] flex items-center">
             <button
               onClick={() => setShowScanner(true)}
               className="flex-1 flex items-center justify-center gap-2 py-2.5 text-accent hover:text-ink font-medium text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-lg"

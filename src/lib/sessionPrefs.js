@@ -28,13 +28,18 @@ const write = (key, value) => {
   }
 };
 
-/** Auto-lock choices, in minutes. 0 = never (only an explicit lock, or closing the tab). */
+/**
+ * Auto-lock choices, in minutes. 0 = never (only an explicit lock, or closing the tab).
+ * `short` is for the segmented picker — the full labels can't fit five options on one phone-width
+ * row, and wrapping one option onto a second row reads as broken. `label` is the spelled-out form
+ * shown on the collapsed row, where there's room and clarity matters more.
+ */
 export const AUTO_LOCK_OPTIONS = [
-  { minutes: 15, label: '15 min' },
-  { minutes: 60, label: '1 hour' },
-  { minutes: 240, label: '4 hours' },
-  { minutes: 1200, label: '20 hours' },
-  { minutes: 0, label: 'Never' },
+  { minutes: 15, label: '15 min', short: '15m' },
+  { minutes: 60, label: '1 hour', short: '1h' },
+  { minutes: 240, label: '4 hours', short: '4h' },
+  { minutes: 1200, label: '20 hours', short: '20h' },
+  { minutes: 0, label: 'Never', short: 'Never' },
 ];
 
 export const AUTO_LOCK_DEFAULT_MIN = 1200; // 20 hours — the long-standing default

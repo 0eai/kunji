@@ -344,7 +344,9 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
           <p className="text-[13px] text-muted leading-relaxed mb-4">
             Lock the vault after this long with no activity. Applies to this device only.
           </p>
-          <div className="flex flex-wrap gap-1 p-1 rounded-full border border-line w-fit mb-1">
+          {/* Compact labels so all five fit one row — same segmented-pill shape as Appearance above.
+              A stadium outline around a wrapped two-row group reads as a mistake. */}
+          <div className="flex gap-1 p-1 rounded-full border border-line w-fit mb-1">
             {AUTO_LOCK_OPTIONS.map((o) => (
               <button
                 key={o.minutes}
@@ -352,11 +354,15 @@ const SecurityPanel = ({ userId, cryptoKey, onLock, onManageAgents, onClose }) =
                   setAutoLockMinutes(o.minutes);
                   setAutoLockMinUI(o.minutes);
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
-                  autoLockMin === o.minutes ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'
+                aria-label={o.label}
+                aria-pressed={autoLockMin === o.minutes}
+                className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
+                  autoLockMin === o.minutes
+                    ? 'bg-accent-soft text-accent'
+                    : 'text-muted hover:text-ink'
                 }`}
               >
-                {o.label}
+                {o.short}
               </button>
             ))}
           </div>
