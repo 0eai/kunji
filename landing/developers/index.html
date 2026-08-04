@@ -87,20 +87,23 @@
             <b>Pinning + SRI in production.</b> <code class="k">rp.js</code> and
             <code class="k">rp.v1.js</code> are <em>rolling</em> URLs — every release rewrites them,
             so an <code class="k">integrity</code> hash on either one will break your sign-in the
-            next time we ship. Pin the immutable build instead. Cross-origin SRI also requires
-            <code class="k">crossorigin</code>, or the browser blocks the load:
+            next time we ship. Pin the immutable build instead, and pair it with
+            <code class="k">crossorigin</code>: cross-origin SRI is a CORS-mode fetch, so
+            <code class="k">integrity</code> on its own just blocks the load.
           </p>
           <pre><code>&lt;script src="https://kunji.cc/rp-1.0.0.js"
         integrity="sha384-PfvTgx4Qc8mTUOzOTtnVYXm8q848Z9iVhM/Yy7F39ZpX5krg1eUHZ1B65U5Im9qk"
         crossorigin="anonymous"&gt;&lt;/script&gt;</code></pre>
           <p class="note">
-            A <code class="k">rp-&lt;version&gt;.js</code> file is <em>never</em> rewritten once
-            published, so upgrading is always a deliberate edit on your side. Every published
-            version and its hash is listed at
-            <a class="back" href="/rp.versions.json">kunji.cc/rp.versions.json</a>. Prefer no
-            third-party origin at all? The bundle is self-contained — it fetches only
-            <em>your</em> three endpoints — so you can vendor it into your own assets and pin it
-            there.
+            We never rewrite a published <code class="k">rp-&lt;version&gt;.js</code>. Upgrading is
+            always a deliberate edit on your side, and every version we've shipped is listed with
+            its hash at
+            <a class="back" href="/rp.versions.json">kunji.cc/rp.versions.json</a>.
+          </p>
+          <p class="note">
+            Rather not depend on our origin at all? Vendor it. The bundle is self-contained and
+            fetches only <em>your</em> three endpoints, so a copy in your own assets behaves
+            identically — and you pin your own hash.
           </p>
           <p class="note">
             For SPAs, drop <code class="k">data-redirect</code> and listen for

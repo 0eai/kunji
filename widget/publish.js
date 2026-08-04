@@ -72,9 +72,10 @@ writeFileSync(
   JSON.stringify(
     {
       $comment:
-        'Immutable, SRI-pinnable builds of the kunji "Sign in with kunji" widget. ' +
-        'Pin a versions[] url + integrity. The rolling urls below are rewritten on every ' +
-        'release — do NOT attach an integrity hash to them.',
+        'Immutable, SRI-pinnable builds of the kunji sign-in widget. Pin a versions[] url ' +
+        'together with its integrity hash, and send crossorigin="anonymous" — cross-origin SRI ' +
+        'is a CORS-mode fetch, so integrity alone just blocks the load. The rolling urls are ' +
+        'rewritten on every release: never attach an integrity hash to them.',
       latest: version,
       rolling: [`${ORIGIN}/rp.js`, `${ORIGIN}/rp.v1.js`],
       versions,
