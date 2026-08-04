@@ -51,7 +51,7 @@
         <p class="lead">
           The exact stack kunji's own demo runs: <b>Cloud Functions + Firestore + Hosting</b>. Drop
           in the button widget, add three small functions, and your users sign in with keys they
-          hold — no passwords, no Google.
+          hold: no passwords, no Google.
           <b>kunji shares no database and runs no backend in this flow;</b> the wallet posts the
           signed assertion straight to your callback.
         </p>
@@ -62,7 +62,7 @@
           <h2>1 · Add the button</h2>
           <p>
             Include the widget and drop in a button element pointing at your Cloud Function URLs. It
-            renders the official button, opens the QR / code modal, and reports success — all
+            renders the official button, opens the QR / code modal, and reports success, all
             client-side.
           </p>
           <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
@@ -78,16 +78,16 @@
             In production, pin the immutable build:
             <code class="k">https://kunji.cc/rp-1.0.0.js</code> with its
             <code class="k">integrity</code> hash and
-            <code class="k">crossorigin="anonymous"</code> — both attributes, or the browser blocks
+            <code class="k">crossorigin="anonymous"</code>. Both attributes, or the browser blocks
             the load. Hashes live at
             <a class="back" href="/rp.versions.json">rp.versions.json</a>; the
             <a class="back" href="/developers">protocol guide</a> has the reasoning. Never hash
-            <code class="k">rp.js</code> or <code class="k">rp.v1.js</code> — those roll forward on
+            <code class="k">rp.js</code> or <code class="k">rp.v1.js</code>, which roll forward on
             every release.
           </p>
           <p class="note">
             For SPAs, omit <code class="k">data-redirect</code> and listen for the
-            <code class="k">kunji:success</code> event — <code class="k">e.detail.sub</code> is the
+            <code class="k">kunji:success</code> event; <code class="k">e.detail.sub</code> is the
             user's stable id. The widget talks only to <em>your</em> endpoints; it never calls a
             kunji server.
             <a class="back" href="https://demo.kunji.cc/#rpjs" target="_blank" rel="noopener">See it running →</a>
@@ -102,7 +102,7 @@
             <div class="n">STEP 2</div>
             <h3>Wire endpoints same-site (firebase.json)</h3>
             <p>
-              Hosting rewrites make your functions resolve on your own domain — so
+              Hosting rewrites make your functions resolve on your own domain, so
               <code class="k">callbackUrl</code> is same-site as <code class="k">audience</code>,
               which kunji requires.
             </p>
@@ -216,7 +216,7 @@ export const kunjiCallback = onRequest({ cors: true }, async (req, res) => {
 });</code></pre>
             <p class="note">
               <b>Showing the user:</b> you get a stable <code class="k">sub</code>, not a verified
-              name/photo — your app owns the profile. Render a default name + key-sigil avatar with
+              name/photo. Your app owns the profile. Render a default name + key-sigil avatar with
               <code class="k">kunji.handle(sub)</code> (from rp.js); if the user shared
               <code class="k">claims</code>, prefer it but treat it as untrusted (HTML-escape the
               name, render the picture client-side only). Keep unverified claims out of the custom
@@ -294,7 +294,7 @@ document.addEventListener('kunji:success', async ({ detail }) => {
             <li>
               <span><code class="k">timestamp</code> within ±2 minutes.</span>
             </li>
-            <li><span>Session marked consumed — reject re-submission.</span></li>
+            <li><span>Session marked consumed: reject re-submission.</span></li>
           </ul>
         </section>
 

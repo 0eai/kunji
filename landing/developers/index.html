@@ -50,7 +50,7 @@
         <h1>Add Sign in with kunji</h1>
         <p class="lead">
           Passwordless sign-in where the user holds the keys. Each app sees its own per-app identity
-          — a stable <code class="k">sub</code> — and nothing else.
+          (a stable <code class="k">sub</code>) and nothing else.
           <b>kunji shares no database and runs no backend in the login path:</b> you create a
           session, show a code, and verify a signed assertion the wallet posts straight to your own
           callback.
@@ -61,7 +61,7 @@
           <div class="sec-label">Fastest path — the drop-in button</div>
           <p>
             Include the widget and drop in a button. It renders the official "Sign in with kunji"
-            button, opens the QR / code modal, and reports success — entirely client-side, talking
+            button, opens the QR / code modal, and reports success, entirely client-side, talking
             only to your own endpoints.
           </p>
           <pre><code>&lt;script src="https://kunji.cc/rp.js"&gt;&lt;/script&gt;
@@ -78,14 +78,14 @@
             <b>Optional <code class="k">data-code-url</code> (lazy typed-code).</b> The 6-digit "Use a code"
             fallback is minted <em>on demand</em>: when set, clicking "Use a code" POSTs
             <code class="k">{ sessionId }</code> to this endpoint, which mints + returns the code for that
-            session — so the QR / deep-link majority never mints one (fewer live codes). Omit it (and don't
+            session, so the QR / deep-link majority never mints one (fewer live codes). Omit it (and don't
             return a <code class="k">code</code> from <code class="k">/session</code>) for a QR + deep-link
             only button; return a <code class="k">code</code> from <code class="k">/session</code> the old
             way and it still works (the widget just reveals it).
           </p>
           <p class="note">
             <b>Pinning + SRI in production.</b> <code class="k">rp.js</code> and
-            <code class="k">rp.v1.js</code> are <em>rolling</em> URLs — every release rewrites them,
+            <code class="k">rp.v1.js</code> are <em>rolling</em> URLs: every release rewrites them,
             so an <code class="k">integrity</code> hash on either one will break your sign-in the
             next time we ship. Pin the immutable build instead, and pair it with
             <code class="k">crossorigin</code>: cross-origin SRI is a CORS-mode fetch, so
@@ -103,7 +103,7 @@
           <p class="note">
             Rather not depend on our origin at all? Vendor it. The bundle is self-contained and
             fetches only <em>your</em> three endpoints, so a copy in your own assets behaves
-            identically — and you pin your own hash.
+            identically, and you pin your own hash.
           </p>
           <p class="note">
             For SPAs, drop <code class="k">data-redirect</code> and listen for
@@ -113,7 +113,7 @@
           </p>
           <p class="note">
             You still implement the three endpoints below (session · callback · status) and verify
-            server-side — the widget is UI + orchestration only.
+            server-side. The widget is UI + orchestration only.
           </p>
         </section>
 
@@ -123,7 +123,7 @@
           <ol class="flow">
             <li>
               <span
-                ><b>Create a session</b> on your server — a random challenge with a short TTL.</span
+                ><b>Create a session</b> on your server: a random challenge with a short TTL.</span
               >
             </li>
             <li>
@@ -140,7 +140,7 @@
             </li>
             <li>
               <span
-                ><b>The wallet POSTs</b> the signed assertion to <em>your</em> callback URL —
+                ><b>The wallet POSTs</b> the signed assertion to <em>your</em> callback URL:
                 directly, no kunji server.</span
               >
             </li>
@@ -201,7 +201,7 @@ app.post('/kunji/session', async (req, res) => {
               <code class="k">status === 'approved'</code>.
             </p>
             <p>
-              <b>Using <code class="k">rp.js</code>? You need none of this</b> — the widget builds and
+              <b>Using <code class="k">rp.js</code>? You need none of this</b>: the widget builds and
               renders the QR for you (it emits the compact <code class="k">K1</code> encoding below, which
               scans more easily). This snippet is only for hand-rolling your own QR.
             </p>
@@ -279,7 +279,7 @@ app.post('/kunji/callback', async (req, res) => {
             <div class="n">STEP 4</div>
             <h3>Start your session</h3>
             <p>
-              Key your user by <code class="k">sub</code> — a first-seen
+              Key your user by <code class="k">sub</code>: a first-seen
               <code class="k">sub</code> is a new account, a returning one is an existing user (the
               SSH / passkey model). On Firebase, mint a custom token with
               <code class="k">uid = sub</code> so your existing security rules keep working
@@ -321,7 +321,7 @@ const token = await admin.auth().createCustomToken(session.sub, {
           </p>
           <p class="note">
             <b>Compact <code class="k">K1</code> encoding.</b> The wallet also accepts a compact QR string
-            <code class="k">K1:&lt;base32…&gt;</code> — the same request packed to an all-uppercase-alphanumeric
+            <code class="k">K1:&lt;base32…&gt;</code>: the same request packed to an all-uppercase-alphanumeric
             string so the QR encodes in the denser alphanumeric mode (a much less dense, easier-to-scan
             code). <code class="k">rp.js</code> emits it for you; hand-rolled RPs may send JSON <em>or</em>
             <code class="k">K1</code>. The same-device deep link stays JSON. (Spec: discoverable-login §5.1.1.)
@@ -343,7 +343,7 @@ const token = await admin.auth().createCustomToken(session.sub, {
 }</code></pre>
           <p class="note">
             <code class="k">claims</code> appears only if the user consented (see scope above). It's signed
-            (tamper-evident) but <b>self-asserted and never verified</b> — treat it as untrusted.
+            (tamper-evident) but <b>self-asserted and never verified</b>. Treat it as untrusted.
           </p>
         </section>
 
@@ -352,10 +352,10 @@ const token = await admin.auth().createCustomToken(session.sub, {
           <div class="sec-label">Showing the user — name &amp; avatar</div>
           <p>
             kunji authenticates; <b>your app owns the profile.</b> You get a stable, anonymous
-            <code class="k">sub</code> — not a Google-style verified name/email/photo. So you never
+            <code class="k">sub</code>, not a Google-style verified name/email/photo. So you never
             show a blank avatar, every <code class="k">sub</code> maps to a friendly
             <b>default name + key-sigil avatar</b> (a key-shaped mark derived from the
-            <code class="k">sub</code> you already have — distinct per app, stable, unlinkable; no
+            <code class="k">sub</code> you already have: distinct per app, stable, unlinkable; no
             PII, no extra call):
           </p>
           <pre><code>// rp.js exposes the helper — no assertion change needed
@@ -363,12 +363,12 @@ const { name, avatarSvg, avatarDataUri } = kunji.handle(sub);
 profileEl.textContent = name;          // e.g. "Amber Marlowe"
 imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also available)</code></pre>
           <p class="note">
-            If the user shared a custom profile, prefer <code class="k">claims</code> — but render it
+            If the user shared a custom profile, prefer <code class="k">claims</code>, but render it
             as untrusted: HTML-escape <code class="k">name</code>, show <code class="k">picture</code>
             only as a client-side <code class="k">&lt;img&gt;</code> (never server-fetch it), and
             never use claims for auth. Store your profile keyed by <code class="k">sub</code>; for a
             multi-app suite, use one consistent <code class="k">audience</code> for one shared
-            identity. Need a contact email? Ask the user directly — kunji doesn't provide one.
+            identity. Need a contact email? Ask the user directly. kunji doesn't provide one.
           </p>
         </section>
 
@@ -409,7 +409,7 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
             <li>
               <span><code class="k">timestamp</code> is within ±2 minutes of server time.</span>
             </li>
-            <li><span>Mark the session consumed — reject any re-submission (single-use).</span></li>
+            <li><span>Mark the session consumed: reject any re-submission (single-use).</span></li>
             <li>
               <span
                 >If <code class="k">claims</code> is present, treat it as <b>untrusted</b>:
@@ -424,13 +424,13 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
         <section class="sec">
           <div class="sec-label">Security notes</div>
           <p class="note">
-            <b>Audience binding</b> stops a malicious site relaying your QR — the wallet signs your
+            <b>Audience binding</b> stops a malicious site relaying your QR: the wallet signs your
             domain and shows it to the user for confirmation.
             <b>The callback must be HTTPS and same-site</b> as the audience; kunji rejects
             mismatches. The <b>challenge is single-use</b> and session-bound. Keys never leave the
-            vault — only signatures are emitted. One caveat to surface to users: the kunji vault
+            vault; only signatures are emitted. One caveat to surface to users: the kunji vault
             (and its recovery key) becomes the root of access to every connected app, so it's
-            load-bearing — back up the recovery key.
+            load-bearing. Back up the recovery key.
           </p>
         </section>
 
@@ -438,10 +438,10 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
         <section class="sec">
           <div class="sec-label">Beyond anonymous sign-in</div>
           <p>
-            The same wallet can hold <b>verified credentials</b> and let a user prove a fact from one —
+            The same wallet can hold <b>verified credentials</b> and let a user prove a fact from one:
             selective disclosure over standard <b>OpenID4VCI</b> / <b>OpenID4VP</b> (SD-JWT VC), unlinkable
-            and with no kunji backend in the path — or authorize an <b>AI agent</b> to act for them via a
-            scoped, expiring, holder-of-key capability.
+            and with no kunji backend in the path. It can also authorize an <b>AI agent</b> to act for them
+            via a scoped, expiring, holder-of-key capability.
           </p>
           <div class="cta-row" style="margin-top: 20px">
             <a class="cta" href="/developers/credentials">Verified credentials →</a>
@@ -453,9 +453,9 @@ imgEl.src = avatarDataUri;             // kunji key-sigil (inline SVG also avail
         <section class="sec">
           <div class="sec-label">Reference</div>
           <p class="note">
-            Five complete, working relying parties live in the kunji repo —
+            Five complete, working relying parties live in the kunji repo:
             <code class="k">kunji-login-demo</code> (Firebase),
-            <code class="k">kunji-node-demo</code> (plain Node — no Firebase, no framework, with a
+            <code class="k">kunji-node-demo</code> (plain Node: no Firebase, no framework, with a
             wallet simulator),
             <code class="k">kunji-agent-demo</code> (plain Node, also accepts
             <a href="/developers/agents">agent logins</a> via <code class="k">POST /kunji/agent</code>),

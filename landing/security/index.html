@@ -64,10 +64,10 @@
         <section class="sec">
           <div class="sec-label">What kunji can never see</div>
           <ul class="checklist">
-            <li><span>Your passkey — it never leaves your device.</span></li>
-            <li><span>Your master key — generated and held only on your devices.</span></li>
+            <li><span>Your passkey: it never leaves your device.</span></li>
+            <li><span>Your master key: generated and held only on your devices.</span></li>
             <li><span>Which apps you connect to, or your identities within them.</span></li>
-            <li><span>Your per-app private keys — only signatures ever leave the vault.</span></li>
+            <li><span>Your per-app private keys: only signatures ever leave the vault.</span></li>
             <li><span>Any way to link your identities across different apps.</span></li>
           </ul>
         </section>
@@ -83,13 +83,13 @@
           <div class="step" style="border-top: 1px solid var(--line)">
             <div class="n">HOW IT WORKS</div>
             <p>
-              When you choose a passkey, kunji runs it through <code class="k">Argon2id</code> — a
-              memory-hard key-derivation function (≈256&nbsp;MB, 4 passes) — with a random salt,
+              When you choose a passkey, kunji runs it through <code class="k">Argon2id</code>, a
+              memory-hard key-derivation function (≈256&nbsp;MB, 4 passes), with a random salt,
               producing a wrapper key.
               That wrapper key encrypts (<code class="k">AES-GCM</code>) a randomly-generated
               <b>master key</b>, and the master key encrypts everything else. The passkey and master
               key are computed and used <b>only on your device</b>. kunji even authenticates
-              <b>anonymously</b> — no email, phone, or name.
+              <b>anonymously</b>: no email, phone, or name.
             </p>
           </div>
           <div class="step">
@@ -171,17 +171,17 @@
           <div class="step" style="border-top: 1px solid var(--line)">
             <div class="n">HOW IT WORKS</div>
             <p>
-              There's no signup — an anonymous session bootstraps your vault. Your apps list syncs
+              There's no signup: an anonymous session bootstraps your vault. Your apps list syncs
               across your devices via a
               <b>vault id derived from your master key</b>, so only devices holding the key can find
               and decrypt it. You add a device by <b>scanning a QR or entering a short code</b>; the
               master key travels over an <code class="k">ECDH</code>-encrypted channel, and
               <b>both devices show a matching confirmation code you compare before the key is
-              released</b> — so a substituted key is caught. You can also
+              released</b>, so a substituted key is caught. You can also
               <b>change a device's passkey</b> any time (it re-wraps the vault under the new passkey;
               your recovery key and other linked devices are unaffected), and a separately-encrypted
               <b>recovery key</b> restores everything if you lose every device. In the login path,
-              <b>kunji shares no database with apps and runs no backend</b> — the wallet signs
+              <b>kunji shares no database with apps and runs no backend</b>: the wallet signs
               locally and posts straight to the app.
             </p>
           </div>

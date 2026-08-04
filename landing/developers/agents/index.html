@@ -49,8 +49,8 @@
         <p class="kicker">FOR DEVELOPERS</p>
         <h1>Sign in with an agent</h1>
         <p class="lead">
-          Let an AI agent act for a user at your app — within a scope they approve, for a limited
-          time, revocably — <b>without ever giving the agent the user's keys.</b> The user authorizes
+          Let an AI agent act for a user at your app within a scope they approve, for a limited
+          time, revocably, <b>without ever giving the agent the user's keys.</b> The user authorizes
           a <b>capability</b> in their wallet; the agent presents it with a proof it signs itself; you
           verify both locally, exactly like a normal <a class="back" href="/developers">sign-in →</a>.
           Human approval stays the root of trust.
@@ -61,7 +61,7 @@
           <h2 class="sec-label">Live demo — watch an agent get authorized</h2>
           <p>
             See the <b>real</b> flow run against the deployed demo RP
-            (<code class="k">demo.kunji.cc</code>) and the kunji relay — a genuine code + QR, a real
+            (<code class="k">demo.kunji.cc</code>) and the kunji relay: a genuine code + QR, a real
             capability received &amp; decrypted in your browser, a real login. Watch the recorded sample,
             or run it live and approve in your own wallet.
           </p>
@@ -87,11 +87,11 @@
           <h2 class="sec-label">What it is</h2>
           <p>
             A normal sign-in is a person tapping <em>Approve</em>. A delegated sign-in is a person
-            authorizing an <b>agent</b> to sign in for them — once, with a capability that is bound to
+            authorizing an <b>agent</b> to sign in for them: once, with a capability that is bound to
             <em>one</em> app, a chosen <b>scope</b>, and an <b>expiry</b>. The agent holds its own
             keypair; the capability is useless to anyone who doesn't hold that agent key
             (<b>holder-of-key</b>), so it isn't a bearer token to steal. Your app still only ever sees
-            the same per-app <code class="k">sub</code> — no new identifier, nothing correlatable.
+            the same per-app <code class="k">sub</code>: no new identifier, nothing correlatable.
           </p>
         </section>
 
@@ -114,7 +114,7 @@
 }</code></pre>
           <p class="note">
             Signed by the per-app key, so a forged capability only ever authenticates the forger's
-            <em>own</em> <code class="k">sub</code> — never a victim's. Scope, audience, expiry and the
+            <em>own</em> <code class="k">sub</code>, never a victim's. Scope, audience, expiry and the
             <code class="k">cnf</code> key are all inside the signature.
           </p>
         </section>
@@ -131,8 +131,8 @@
             </li>
             <li>
               <span
-                ><b>The user approves</b> in the kunji wallet — Security → <em>Authorize an agent</em>
-                — choosing a scope and TTL. The wallet signs the capability with the per-app key.</span
+                ><b>The user approves</b> in the kunji wallet (Security → <em>Authorize an agent</em>),
+                choosing a scope and TTL. The wallet signs the capability with the per-app key.</span
               >
             </li>
             <li>
@@ -143,7 +143,7 @@
             </li>
             <li>
               <span
-                ><b>You verify</b> both locally — the capability chains to the user's
+                ><b>You verify</b> both locally: the capability chains to the user's
                 <code class="k">sub</code>; the proof matches the <code class="k">cnf</code> key and
                 your fresh challenge; scope / audience / expiry / revocation all hold.</span
               >
@@ -158,7 +158,7 @@
           <p class="note">
             Same trust model as a <a class="back" href="/developers">normal sign-in</a>: no kunji
             backend in the path, single-use per session, challenge-bound. The only new principal is the
-            agent's key — and it can't widen what the user granted.
+            agent's key, and it can't widen what the user granted.
           </p>
         </section>
 
@@ -168,9 +168,9 @@
           <p>
             An agent shouldn't over-ask up front. Start with a narrow scope (say
             <code class="k">login</code>); when an action later needs more, your app returns
-            <code class="k">403 insufficient_scope</code> and the agent <b>steps up</b> — it re-requests
+            <code class="k">403 insufficient_scope</code> and the agent <b>steps up</b>: it re-requests
             with the broader scope, and the wallet shows a <b>delta-aware re-consent</b>: "already
-            connected" + only the new permission to approve. No new kunji infrastructure — it reuses the
+            connected" + only the new permission to approve. No new kunji infrastructure: it reuses the
             same deep link (<code class="k">app.kunji.cc/?authorize=…</code>) and return relay as the
             first authorization.
             <a class="back" href="https://demo.kunji.cc/#stepup" target="_blank" rel="noopener">See it live →</a>
@@ -178,7 +178,7 @@
           <p class="note">
             <b>Opt-in notifications.</b> A channel-less agent (no way to reach you in the moment) can ask
             you to enable <b>per-app notifications</b> at first consent. Then it pings the wallet via
-            <b>Web Push</b> when it needs a step-up — the push carries only an <b>opaque pointer</b>
+            <b>Web Push</b> when it needs a step-up: the push carries only an <b>opaque pointer</b>
             (a request id), never the scope or request; the wallet fetches + shows it, you approve. Off by
             default, revocable per app, and kunji never becomes a user directory. Design:
             <a
@@ -196,7 +196,7 @@
           <h2 class="sec-label">For relying parties</h2>
           <p>
             Add one endpoint that verifies a capability + proof against a session, then approves it.
-            The verifier is the same EdDSA/JWT scheme as the assertion — drop in the reference
+            The verifier is the same EdDSA/JWT scheme as the assertion; drop in the reference
             <code class="k">verifyCapabilityAssertion</code> and a
             <code class="k">revokedCapabilities</code> denylist.
           </p>
@@ -220,7 +220,7 @@ app.post('/kunji/agent', async (req, res) =&gt; {
 });</code></pre>
           <p class="note">
             <b>Revoke</b> by adding a capability's <code class="k">jti</code> to your denylist; short
-            TTLs are the safety net. Enforce <code class="k">scope</code> on every agent action — a
+            TTLs are the safety net. Enforce <code class="k">scope</code> on every agent action: a
             capability is permission to do a <em>specific</em> thing, not full account access.
           </p>
         </section>
@@ -238,13 +238,13 @@ app.post('/kunji/agent', async (req, res) =&gt; {
           </p>
           <pre><code>claude mcp add kunji -- node /path/to/examples/kunji-mcp/server.js</code></pre>
           <ul class="checklist">
-            <li><span><code class="k">kunji_authorize(audience, scope)</code> — returns the request you approve in the wallet.</span></li>
-            <li><span><code class="k">kunji_await_capability</code> — blocks until you approve, then loads the capability over the relay.</span></li>
-            <li><span><code class="k">kunji_set_capability(capability)</code> — stores it (validated: holder-of-key + expiry).</span></li>
-            <li><span><code class="k">kunji_login(baseUrl)</code> — signs in at the app as the authorized agent.</span></li>
-            <li><span><code class="k">kunji_stepup(scope)</code> — on a <code class="k">403 insufficient_scope</code>, re-requests a broader scope or a <code class="k">vc:</code> credential to present.</span></li>
-            <li><span><code class="k">kunji_request_via_push</code> — Transport ② for a channel-less agent (the opt-in Web Push relay).</span></li>
-            <li><span><code class="k">kunji_status</code> — the agent's public key + the loaded capability.</span></li>
+            <li><span><code class="k">kunji_authorize(audience, scope)</code>: returns the request you approve in the wallet.</span></li>
+            <li><span><code class="k">kunji_await_capability</code>: blocks until you approve, then loads the capability over the relay.</span></li>
+            <li><span><code class="k">kunji_set_capability(capability)</code>: stores it (validated: holder-of-key + expiry).</span></li>
+            <li><span><code class="k">kunji_login(baseUrl)</code>: signs in at the app as the authorized agent.</span></li>
+            <li><span><code class="k">kunji_stepup(scope)</code>: on a <code class="k">403 insufficient_scope</code>, re-requests a broader scope or a <code class="k">vc:</code> credential to present.</span></li>
+            <li><span><code class="k">kunji_request_via_push</code>: Transport ② for a channel-less agent (the opt-in Web Push relay).</span></li>
+            <li><span><code class="k">kunji_status</code>: the agent's public key + the loaded capability.</span></li>
           </ul>
         </section>
 
@@ -269,11 +269,11 @@ app.post('/kunji/agent', async (req, res) =&gt; {
             >
             (mint / proof / verify),
             <code class="k">kunji-login-demo/functions/capability.js</code> (RP verifier),
-            <code class="k">examples/kunji-agent-demo</code> (a plain-Node RP you can run — no
-            Firebase — that accepts agent logins via <code class="k">POST /kunji/agent</code>), and
+            <code class="k">examples/kunji-agent-demo</code> (a plain-Node RP you can run without
+            Firebase, accepting agent logins via <code class="k">POST /kunji/agent</code>), and
             <code class="k">examples/kunji-mcp</code> (the bridge). The scope grammar
             (<code class="k">docs/scope.md</code>) and both delivery transports
-            (<code class="k">docs/push-relay.md</code> — same-device step-up and the opt-in Web Push relay)
+            (<code class="k">docs/push-relay.md</code>: same-device step-up and the opt-in Web Push relay)
             are implemented; the scope vocabulary may still grow.
           </p>
           <div class="cta-row" style="margin-top: 20px">
