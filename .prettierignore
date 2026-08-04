@@ -6,5 +6,7 @@ package-lock.json
 **/package-lock.json
 landing/rp.js
 landing/rp.v1.js
+landing/rp-*.js
+landing/rp.versions.json
 landing/fonts
 reports

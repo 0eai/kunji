@@ -75,9 +75,14 @@
      data-poll-url="https://yourapp.com/kunji/status"
      data-redirect="/dashboard"&gt;&lt;/div&gt;</code></pre>
           <p class="note">
-            Pin a version in production:
-            <code class="k">https://kunji.cc/rp.v1.js</code> (optionally with an SRI hash). For
-            SPAs, omit <code class="k">data-redirect</code> and listen for the
+            In production, pin the immutable build and add SRI —
+            <code class="k">https://kunji.cc/rp-1.0.0.js</code> with its
+            <code class="k">integrity</code> hash plus
+            <code class="k">crossorigin="anonymous"</code> (hashes:
+            <a class="back" href="/rp.versions.json">rp.versions.json</a>; details in the
+            <a class="back" href="/developers">protocol guide</a>). Don't hash
+            <code class="k">rp.js</code> or <code class="k">rp.v1.js</code> — those roll forward on
+            every release. For SPAs, omit <code class="k">data-redirect</code> and listen for the
             <code class="k">kunji:success</code> event — <code class="k">e.detail.sub</code> is the
             user's stable id. The widget talks only to <em>your</em> endpoints; it never calls a
             kunji server.

@@ -47,6 +47,25 @@ from kunji.cc/rp.js. **If a change only reformatted code, the minified `rp.js` i
 re-verify the hash is unchanged and skip the `landing` redeploy. Only redeploy `landing` when
 `rp.js` or the site's HTML actually changed.
 
+**Shipping a widget change = cutting a pinned version.** `rp.js`/`rp.v1.js` roll forward, but RPs pin
+the immutable `rp-<version>.js` with an SRI hash, so:
+
+1. Bump `version` in `widget/package.json`, then `cd widget && npm run build`. It emits a new
+   `landing/rp-<version>.js` + updates `landing/rp.versions.json`. If you forget the bump and the
+   bytes changed, `publish.js` **fails on purpose** — never rewrite a published version.
+2. Commit the new `rp-*.js` (it is an immutable published artifact — never delete or regenerate one)
+   and deploy `landing`.
+3. Smoke-check that pinning actually works — both of these are required, and a missing CORS header
+   silently breaks every `integrity=` integration:
+
+```bash
+V=$(node -p "require('./landing/rp.versions.json').latest")
+curl -sI -H "Origin: https://example.com" "https://kunji.cc/rp-$V.js" |
+  grep -iE "access-control-allow-origin|cache-control"     # expect: *  /  immutable, 1y
+curl -s "https://kunji.cc/rp-$V.js" | openssl dgst -sha384 -binary | openssl base64 -A
+  # must equal versions[0].integrity in landing/rp.versions.json
+```
+
 ## Gotchas
 
 - **One codebase, but stay explicit.** Functions live in a single codebase `app`. Deploying

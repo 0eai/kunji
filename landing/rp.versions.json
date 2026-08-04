@@ -1,0 +1,17 @@
+{
+  "$comment": "Immutable, SRI-pinnable builds of the kunji \"Sign in with kunji\" widget. Pin a versions[] url + integrity. The rolling urls below are rewritten on every release — do NOT attach an integrity hash to them.",
+  "latest": "1.0.0",
+  "rolling": [
+    "https://kunji.cc/rp.js",
+    "https://kunji.cc/rp.v1.js"
+  ],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "url": "https://kunji.cc/rp-1.0.0.js",
+      "integrity": "sha384-PfvTgx4Qc8mTUOzOTtnVYXm8q848Z9iVhM/Yy7F39ZpX5krg1eUHZ1B65U5Im9qk",
+      "bytes": 69367,
+      "released": "2026-08-04"
+    }
+  ]
+}

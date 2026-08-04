@@ -118,8 +118,17 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
   **demo.kunji.cc** (the `kunji-demo` site — see below). Pages link to them (and the agents guide has a
   "Watch it live" CTA → `demo.kunji.cc/#agentic`); `/developers/try` 301-redirects to `demo.kunji.cc/#rpjs`.
   The footer links `demo` + `issuer`.
-- `widget/` — `rp.js` source (built with esbuild into `landing/rp.js` + pinned `rp.v1.js`, served at the
-  canonical `kunji.cc/rp.js` — a public contract). The same build also emits `agent-demo.js` →
+- `widget/` — `rp.js` source (built with esbuild into `landing/rp.js`, served at the canonical
+  `kunji.cc/rp.js` — a public contract). `widget/publish.js` then emits the **SRI-pinnable** artifacts:
+  an **immutable** `landing/rp-<version>.js` (version from `widget/package.json`; the script **fails**
+  rather than rewrite an existing version with different bytes — an RP may already have that hash in an
+  `integrity=` attribute, so bump the version instead), the **rolling** `rp.v1.js` alias (kept for
+  existing integrators — mutable by design, documented as not pinnable), and `landing/rp.versions.json`
+  (the published `{version, url, integrity}` manifest). `firebase.json` gives `/rp-*.js`
+  `immutable`+1y cache and the rolling URLs a 5-min cache; **all** of them send
+  `Access-Control-Allow-Origin: *`, which is load-bearing — cross-origin SRI forces a CORS-mode fetch,
+  so without it `integrity=` blocks the load entirely. The build is reproducible: same source → same
+  bytes → same hash. The same build also emits `agent-demo.js` →
   `examples/kunji-login-demo/public/kunji-agent-demo.js` (the agent-demo bundle the demo SPA loads).
 - `examples/` — reference relying parties: `kunji-login-demo` (Firebase; same project `kunji-cc`,
   site `kunji-demo`, **custom domain demo.kunji.cc** — default functions codebase). It's the single home for

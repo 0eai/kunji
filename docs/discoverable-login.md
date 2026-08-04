@@ -447,7 +447,8 @@ No changes to kunji's storage model and **no kunji-side session storage for othe
 
 **Drop-in widget — `rp.js`:**
 
-- Source `widget/src/index.js`, bundled to `landing/rp.js` (+ pinned `rp.v1.js`), served at `https://kunji.cc/rp.js`.
+- Source `widget/src/index.js`, bundled to `landing/rp.js`, served at `https://kunji.cc/rp.js`.
+- **Versioning + SRI.** `kunji.cc/rp.js` and `kunji.cc/rp.v1.js` are **rolling** — every release rewrites them, so they are explicitly **not** SRI-pinnable. Each build also publishes an **immutable** `kunji.cc/rp-<version>.js` that is never rewritten; `kunji.cc/rp.versions.json` lists every published `{version, url, integrity}`. RPs pin `rp-<version>.js` with `integrity` **and** `crossorigin="anonymous"` (cross-origin SRI is a CORS-mode fetch; the widget URLs send `Access-Control-Allow-Origin: *` so this works). Self-hosting is equally supported — the bundle fetches only the RP's own endpoints.
 - Renders the official "Sign in with kunji" button in a shadow root, opens the QR / OTP modal + same-device deep link, and polls the RP's own status endpoint — then fires `kunji:success` (`{ sub, customToken? }`) or redirects. Pure client: it talks only to the RP's endpoints, never to a kunji server.
 
 **Developer guides (live):**

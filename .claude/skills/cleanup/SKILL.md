@@ -11,7 +11,9 @@ judgment-dependent.** This is *hygiene only* — defer bugs to `security-audit`,
 
 ## Know the intentional exceptions (do NOT delete or "fix" these)
 
-- `landing/rp.js` + `landing/rp.v1.js` — the **built** widget (source in `widget/`), committed on purpose.
+- `landing/rp.js`, `landing/rp.v1.js`, `landing/rp-*.js`, `landing/rp.versions.json` — the **built**
+  widget + its published SRI manifest (source in `widget/`), committed on purpose. The `rp-*.js` files
+  are **immutable published artifacts** — never delete or regenerate one; RPs pin their hashes.
 - `examples/*/package-lock.json` — committed deliberately for reproducible installs.
 - `.firebaserc` (root + examples) — holds only **public** project IDs.
 - The Firebase web `apiKey` in client config / `landing/rp.js` is **public — never a finding**.

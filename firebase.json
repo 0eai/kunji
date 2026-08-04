@@ -91,6 +91,35 @@
       ],
       "headers": [
         {
+          "source": "/rp-*.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" },
+            { "key": "Access-Control-Allow-Origin", "value": "*" },
+            { "key": "Timing-Allow-Origin", "value": "*" }
+          ]
+        },
+        {
+          "source": "/rp.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=300, must-revalidate" },
+            { "key": "Access-Control-Allow-Origin", "value": "*" }
+          ]
+        },
+        {
+          "source": "/rp.v1.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=300, must-revalidate" },
+            { "key": "Access-Control-Allow-Origin", "value": "*" }
+          ]
+        },
+        {
+          "source": "/rp.versions.json",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache, must-revalidate" },
+            { "key": "Access-Control-Allow-Origin", "value": "*" }
+          ]
+        },
+        {
           "source": "**",
           "headers": [
             { "key": "X-Frame-Options", "value": "DENY" },
