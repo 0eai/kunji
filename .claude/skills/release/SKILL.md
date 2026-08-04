@@ -10,8 +10,9 @@ An ordered checklist so a release can't skip verification or ship the wrong arti
 
 ## Steps
 
-1. **Clean tree.** `git status` — commit or stash unrelated work first. Never release with
-   `reports/` staged (it's git-ignored; if it shows up, something is wrong).
+1. **Clean tree.** `git status` — commit or stash unrelated work first. The audit ledgers live outside
+   the repo (`~/.local/share/kunji/reports/`); if a `reports/` directory shows up in the tree, stop and
+   move it back out rather than releasing around it.
 2. **Gate.** `npm run lint && npm test && npm run build` — all green. This is identical to CI; if CI
    is red, do not release.
 3. **Version bump.** Update `version` in `package.json` (semver). Patch for fixes, minor for

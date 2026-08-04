@@ -18,7 +18,8 @@ judgment-dependent.** This is *hygiene only* — defer bugs to `security-audit`,
 - `.firebaserc` (root + examples) — holds only **public** project IDs.
 - The Firebase web `apiKey` in client config / `landing/rp.js` is **public — never a finding**.
 - `examples/**` `console.log`s are intentional demo output — leave them.
-- `reports/` is git-ignored audit ledgers — must **never** be staged.
+- Audit ledgers live **outside the repo** (`~/.local/share/kunji/reports/`), so there is nothing to
+  stage. If a `reports/` directory reappears in the tree, that's a finding — move it back out.
 
 ## Checklist
 
@@ -29,14 +30,42 @@ judgment-dependent.** This is *hygiene only* — defer bugs to `security-audit`,
    **Safe-fix:** root currently lacks `.agent-key` / `.mcp-state.json` — add them as a fallback.
    Each `examples/*/.gitignore` should cover `node_modules`, `*.pem`, `serviceAccount.json`, and
    (agent/relay demos) `.agent-key` / `.mcp-state.json`.
-3. **Debug / dead code — production paths only.** Grep `src/ widget/ functions/` for
-   `console.log|console.debug|debugger|TODO|FIXME|XXX|HACK` → must be **zero**. Exclude lockfiles
-   (`':!*package-lock.json'`) — base64 `integrity` hashes contain substrings like `XXX` and false-match.
-   (`console.error`/`warn` are legitimate; `examples/**` demo logs are fine.)
+3. **Debug / dead code — production paths only.** Must be **zero**:
+
+   ```bash
+   git grep -nE 'console\.log|console\.debug|debugger|TODO|FIXME|XXX|HACK' \
+     -- src widget functions issuer-functions \
+     ':!*package-lock.json' ':!widget/publish.js' ':!issuer-functions/scripts/**'
+   ```
+
+   The exclusions are deliberate, not laziness: lockfiles false-match because base64 `integrity`
+   hashes contain substrings like `XXX`; `widget/publish.js` and `issuer-functions/scripts/**` are
+   build tooling and operator CLIs whose stdout **is** their product (`publish.js` prints the SRI
+   hash an integrator pastes). (`console.error`/`warn` are legitimate; `examples/**` demo logs
+   are fine.)
 4. **Dependency hygiene.** No reintroduced unused deps (the removed set: `dexie`, `uuid`,
    `@yudiel/react-qr-scanner`, `tailwindcss-animate`). Lockfile in sync. Optional: `npx depcheck`.
-5. **Gate green.** `npm run lint && npm test && npm run build` (lint is `--max-warnings 0`), plus
-   `npx prettier --check .` — the `format` script is write-only, so check formatting **non-mutating**.
+5. **Gate green.** `npm run lint && npm test && npm run build` (lint is `--max-warnings 0`). For
+   formatting, check only the files the change **adds** — never repo-wide, and not merely-touched
+   files either:
+
+   ```bash
+   git diff --name-only --diff-filter=A main...HEAD \
+     | grep -E '\.(js|jsx|md|json|css)$' | xargs -r npx prettier --check
+   ```
+
+   `--diff-filter=A` (added), not `ACM` (added/copied/modified), is the load-bearing part. On a
+   long-lived branch `ACM` re-flags every pre-existing unformatted file the branch happened to touch —
+   24 files vs 2 on a real sweep, which is noise, not signal. A **new** file has no legacy excuse and
+   should be born formatted; existing files wait for the reformat decision below.
+
+   **Do not run `prettier --write .`** and do not treat a repo-wide `--check` as a gate. It fails on
+   **201 files** (119 `.js`, 44 `.jsx`, 20 `.md`, 12 `.html`, 4 `.json`, 1 `.css`) and always has —
+   prettier has never been enforced here, only `eslint-config-prettier` to stop the two fighting. A
+   mass reformat is *safe* (deterministic formatter, so the byte-identical ports stay byte-identical
+   and the 6 parity tests would catch it if not) but it is a decision, not hygiene: it belongs in its
+   own commit on `main` with the SHA recorded in `.git-blame-ignore-revs`, never mixed into a sweep.
+   **Settled — do not re-litigate this each run.**
 6. **Secrets / PII.** No private keys, tokens, service-account JSON, or PII in tracked code, logs, or
    the built bundle (`dist/`, `landing/rp.js`). `git ls-files | grep -iE 'secret|credential|serviceAccount|\.pem|\.key'`.
 7. **Docs coherence.** `AGENTS.md` repo map + `README.md` example list match what's on disk (e.g. all
@@ -49,4 +78,4 @@ judgment-dependent.** This is *hygiene only* — defer bugs to `security-audit`,
   don't do.**
 - Re-run the gate after any fix.
 - Summarize as a short **pass/fail per item**: what was applied, what's flagged for the user, and what
-  was checked clean. Never stage `reports/`.
+  was checked clean. The audit ledgers are out of tree; if `reports/` reappears, flag it.

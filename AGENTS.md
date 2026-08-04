@@ -2,7 +2,7 @@
 
 Guidance for AI agents (and humans) maintaining this repo. Read this before editing.
 `CLAUDE.md` is a symlink to this file. Deep protocol detail lives in `docs/discoverable-login.md`;
-internal audit ledgers live in `reports/` (git-ignored — see constraints).
+internal audit ledgers live **outside the repo** at `~/.local/share/kunji/reports/` (see constraints).
 
 ## What kunji is
 
@@ -65,7 +65,12 @@ existing users out of their vaults or breaks every app's login. Treat `src/lib/c
 
 ## Standing constraints
 
-- **Never commit `reports/`** — internal audit docs, git-ignored on purpose.
+- **Audit ledgers live outside the repo** — `~/.local/share/kunji/reports/` (mode 700), never in the
+  tree. `SECURITY_AUDIT.md` is a written map of this system's weaknesses and accepted risks; it is the
+  worst thing here to leak after an Admin SDK key. `.gitignore` still lists `reports/` as a fallback,
+  but a git-ignored path is **not** a containment boundary: `git add -f` bypasses it, and `zip -r`
+  ignores git entirely (a 90MB `examples.zip` once captured `.env`, `.issuer-key`, and `key.pem` — all
+  git-ignored). Outside the tree is the only version of this rule that holds.
 - **kunji shares no database with cloq or any other app.** Don't introduce cross-app data coupling.
 - **Accepted, deliberate "won't-fix" risks** — do NOT "fix" these without asking; they're decisions,
   not oversights: CSP breadth (S11), `style-src 'unsafe-inline'`, the in-memory extractable master

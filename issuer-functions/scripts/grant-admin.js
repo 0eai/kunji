@@ -1,8 +1,13 @@
 // One-time: grant the issuer-admin custom claim to a user by email. The gate for admin.kunji.cc is
 // `admin:true`, NOT mere sign-in (this project also mints anonymous wallet tokens).
 //
-//   cd issuer-functions && GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
+//   cd issuer-functions && GOOGLE_APPLICATION_CREDENTIALS=~/.config/kunji/<adminsdk>.json \
 //     node scripts/grant-admin.js you@example.com
+//
+// The Admin SDK key is kept OUTSIDE the repo (conventionally ~/.config/kunji/, mode 600) on purpose:
+// it bypasses firestore.rules entirely, including the `write: if false` that is the only thing
+// stopping direct client vault writes. A git-ignored key inside the tree is still one `git add -f`
+// or one `zip -r` away from leaking.
 //
 // The user must sign in to admin.kunji.cc once first (so the account exists), then sign out + in again
 // AFTER running this so the refreshed ID token carries the claim. Pass `--revoke` to remove it.

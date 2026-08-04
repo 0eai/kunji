@@ -1,18 +1,18 @@
 ---
 name: code-audit
-description: Re-run kunji's code-quality / maintainability audit lens (the C-numbered ledger) against the current code. Use when the user asks for a general/code/maintainability audit, to re-check code-quality findings, or to assess a change's structure/dead-code/dep/test impact. Owns the git-ignored reports/AUDIT.md (C# findings) — never commits it. This is the persistent-ledger counterpart to the one-off code-review skill; for security use security-audit, for hygiene use cleanup.
+description: Re-run kunji's code-quality / maintainability audit lens (the C-numbered ledger) against the current code. Use when the user asks for a general/code/maintainability audit, to re-check code-quality findings, or to assess a change's structure/dead-code/dep/test impact. Owns the out-of-tree ~/.local/share/kunji/reports/AUDIT.md (C# findings) — never commits it. This is the persistent-ledger counterpart to the one-off code-review skill; for security use security-audit, for hygiene use cleanup.
 ---
 
 # Code-quality audit (kunji)
 
-The maintainability counterpart to `security-audit`. The standing ledger is **`reports/AUDIT.md`
-(C-numbered)** with a "Remediation status" table. It's **git-ignored — read and update locally,
+The maintainability counterpart to `security-audit`. The standing ledger is **`~/.local/share/kunji/reports/AUDIT.md`
+(C-numbered)** with a "Remediation status" table. It lives **outside the repo — read and update locally;
 never commit it.** Security findings (S#) belong to `security-audit`; pure hygiene (junk files,
 `.gitignore`, secrets) belongs to `cleanup`.
 
 ## Before auditing: load the ledger
 
-Read `reports/AUDIT.md`. Each finding is **Fixed**, **Mitigated**, or **Won't fix**. Don't re-report
+Read `~/.local/share/kunji/reports/AUDIT.md`. Each finding is **Fixed**, **Mitigated**, or **Won't fix**. Don't re-report
 an accepted decision (e.g. **C10** no service worker — intentional; **C7** theme-color synced by
 cross-reference comments, not code). Note the prior re-sweeps so you extend, not duplicate.
 
@@ -45,6 +45,6 @@ cross-reference comments, not code). Note the prior re-sweeps so you extend, not
 
 ## Output
 
-Update `reports/AUDIT.md` (locally) with any new finding (assign the next **C#**) + status; record a
+Update `~/.local/share/kunji/reports/AUDIT.md` (locally) with any new finding (assign the next **C#**) + status; record a
 short dated re-sweep note of what was checked clean. Summarize to the user: confirmed findings with
-severity + the proof, and what was verified clean. **Never commit `reports/`.**
+severity + the proof, and what was verified clean. **The ledger is outside the repo — never copy it into the tree.**

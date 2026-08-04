@@ -9,6 +9,20 @@ dist
 # Internal audit reports — not committed
 reports/
 
+# Local scratch / throwaway harnesses. A dotdir on purpose: Firebase Hosting's
+# `**/.*` ignore means it can never be published even if it lands in a public dir.
+.local/
+
 # Service-account / Admin SDK keys — NEVER commit (powerful credentials)
 *-firebase-adminsdk-*.json
 *service-account*.json
+
+# Per-example secrets, repeated here as a root fallback so a new demo dir that
+# forgets its own .gitignore still can't leak these.
+*.pem
+.agent-key
+.mcp-state.json
+
+# Ignored today only via the user's global ~/.config/git/ignore — without this
+# line it is committable on any other machine or in CI.
+.claude/settings.local.json

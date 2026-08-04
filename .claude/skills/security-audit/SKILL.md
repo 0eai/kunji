@@ -1,19 +1,19 @@
 ---
 name: security-audit
-description: Re-run kunji's security audit lens against the current code (crypto, auth, protocol, capabilities). Use when the user asks for a security audit/review, to re-check S# findings, or to assess a crypto/auth/capability change for regressions. Owns the git-ignored reports/SECURITY_AUDIT.md (S# findings) — never commits it. Code-quality (C#) is the code-audit skill's; repo hygiene/secrets sweeps are cleanup's.
+description: Re-run kunji's security audit lens against the current code (crypto, auth, protocol, capabilities). Use when the user asks for a security audit/review, to re-check S# findings, or to assess a crypto/auth/capability change for regressions. Owns the out-of-tree ~/.local/share/kunji/reports/SECURITY_AUDIT.md (S# findings) — never commits it. Code-quality (C#) is the code-audit skill's; repo hygiene/secrets sweeps are cleanup's.
 ---
 
 # Security audit (kunji)
 
 kunji is a zero-knowledge crypto wallet — audit it as a **protocol**, not a typical web app. This
-skill owns the security ledger **`reports/SECURITY_AUDIT.md` (S-numbered)**, with a "Remediation
-status" table. It's **git-ignored — read and update locally, never commit it.** Code-quality
-findings (C#, `reports/AUDIT.md`) belong to the **`code-audit`** skill; pure hygiene (junk files,
+skill owns the security ledger **`~/.local/share/kunji/reports/SECURITY_AUDIT.md` (S-numbered)**, with a "Remediation
+status" table. It lives **outside the repo — read and update locally; there is nothing in the tree to commit.** Code-quality
+findings (C#, `~/.local/share/kunji/reports/AUDIT.md`) belong to the **`code-audit`** skill; pure hygiene (junk files,
 `.gitignore`, secret-scanning the tree) belongs to **`cleanup`** — defer those rather than duplicating.
 
 ## Before auditing: load the ledger
 
-Read `reports/SECURITY_AUDIT.md`. Each finding is marked **Fixed (Phase N)**, **Fixed (close-out)**,
+Read `~/.local/share/kunji/reports/SECURITY_AUDIT.md`. Each finding is marked **Fixed (Phase N)**, **Fixed (close-out)**,
 or **Accepted — won't fix**. Don't re-report a known accepted risk as new. Note the dated re-sweeps
 (through the agentic-delegation review, S18a–c / S19) so you extend, not duplicate.
 
@@ -71,7 +71,7 @@ revocation (S19, accepted/documented). A regression in a cloned template ships t
 
 ## Output
 
-Update `reports/SECURITY_AUDIT.md` (locally) with any new finding (assign the next **S#**) and its
+Update `~/.local/share/kunji/reports/SECURITY_AUDIT.md` (locally) with any new finding (assign the next **S#**) and its
 status; add a dated re-sweep note of what was checked clean. Summarize to the user: confirmed
 findings with severity + repro, and explicitly note what was checked and found clean. A code-quality
-issue surfaced in passing → hand it to `code-audit` (don't open a C# here). **Never commit `reports/`.**
+issue surfaced in passing → hand it to `code-audit` (don't open a C# here). **The ledger is outside the repo — never copy it into the tree.**

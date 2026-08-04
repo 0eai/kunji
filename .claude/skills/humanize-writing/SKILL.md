@@ -13,13 +13,13 @@ nicer but the statement weaker, it failed.
 
 Voice is not one thing here. Identify the target before touching a word:
 
-| Target | Register |
-|---|---|
-| `landing/*.html` (marketing) | Second person, short, concrete. Benefit then mechanism. Deliberate fragments are on-brand ("Nothing to phish"). |
-| `landing/developers/**` | Consequence-first. Lead with what breaks and when: "an integrity hash on either one will break your sign-in the next time we ship." |
-| `docs/*.md`, `AGENTS.md` | Dense, normative, invariant-first. Keep the uppercase MUST / NEVER / DO NOT. Not the place for warmth. |
-| Commit message / PR body | Imperative subject; body explains *why* and the consequence, not a file inventory. |
-| Reply to a developer or user | Plain. Own the error in the first sentence, then the fix. No throat-clearing. |
+| Target                       | Register                                                                                                                            |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `landing/*.html` (marketing) | Second person, short, concrete. Benefit then mechanism. Deliberate fragments are on-brand ("Nothing to phish").                     |
+| `landing/developers/**`      | Consequence-first. Lead with what breaks and when: "an integrity hash on either one will break your sign-in the next time we ship." |
+| `docs/*.md`, `AGENTS.md`     | Dense, normative, invariant-first. Keep the uppercase MUST / NEVER / DO NOT. Not the place for warmth.                              |
+| Commit message / PR body     | Imperative subject; body explains _why_ and the consequence, not a file inventory.                                                  |
+| Reply to a developer or user | Plain. Own the error in the first sentence, then the fix. No throat-clearing.                                                       |
 
 ## 2 · The tells (cut these)
 
@@ -31,7 +31,7 @@ Ranked by how often they actually show up in this repo's AI-authored prose:
    Announcing the shape of an answer instead of writing it. Delete and just write the items.
 3. **Antithesis reflex** — "that header is load-bearing, not decoration", "isn't a glitch", "not a
    file inventory." Sounds insightful, asserts nothing. Cut the negative half or drop the sentence.
-   Note the *construction* is the tell, not the vocabulary: "that isolation is load-bearing" is
+   Note the _construction_ is the tell, not the vocabulary: "that isolation is load-bearing" is
    house style (§3); "load-bearing, not decoration" is the tic.
 4. **Tables for non-tabular content.** A table whose second column is sentences is a table
    pretending to be rigor. Use one only for real dimensions × values (a smoke-check matrix qualifies).
@@ -72,9 +72,12 @@ Hard rails. Prose polish stops at the technical boundary:
 
 ## 5 · Mechanics that bite here
 
-- **`landing/**/*.html` and `firebase.json` are NOT prettier-clean at HEAD**, and they're not in
-  `.prettierignore`. Running `prettier --write` on them buries a two-line copy edit in a
-  whole-file reformat. Edit surgically; never format-on-save these.
+- **Not prettier-clean at HEAD:** the HTML under `landing/` and `firebase.json` — and they are not in
+  `.prettierignore`. Running `prettier --write` on them buries a two-line copy edit in a whole-file
+  reformat. Edit surgically; never format-on-save these.
+- **Don't put a `*`-glob inside `**bold**` in markdown.** Prettier misparses the two together and
+  eats the surrounding backtick spacing (it mangled this very bullet once). Name the directory in
+  prose instead of writing the glob.
 - **`.md` prose wraps at ~100 cols.** Match it, or the diff reflows paragraphs you didn't touch.
 - `CLAUDE.md` is a symlink to `AGENTS.md` — edit `AGENTS.md`.
 - Copy that names a URL or hash must be true post-deploy. If it references something not yet
@@ -94,4 +97,4 @@ Hard rails. Prose polish stops at the technical boundary:
 
 For a small edit, apply it and quote the changed lines. For a page or a batch, list each change as
 `file:line` — before → after, one line each — then apply. Flag anything where the honest rewrite
-changes the *meaning* rather than the wording; that's the user's call, not a style fix.
+changes the _meaning_ rather than the wording; that's the user's call, not a style fix.

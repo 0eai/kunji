@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, it } from 'vitest';
-import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds,
+} from '@firebase/rules-unit-testing';
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 
 // S42 regression guard: the `vaults` collection must NOT be enumerable (no top-level `list`), while a
